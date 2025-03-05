@@ -236,15 +236,44 @@ export default function AnimeDetails() {
     
     try {
       const shareUrl = `anipro://anime/${id}`;
-      const message = `Check out ${animeData.info.name}!\n\nOpen in AniPro: ${shareUrl}\n\nInstall AniPro to watch anime: [Add your app store link here]`;
+      const storeLink = Platform.select({
+        ios: '[Your App Store Link]',
+        android: '[Your Play Store Link]',
+        default: '[Your Website Link]'
+      });
+      
+      const message = `Check out ${animeData.info.name}!\n\nOpen in AniPro: ${shareUrl}\n\nInstall AniPro to watch anime: ${storeLink}`;
       
       await Share.share({
         message,
         title: animeData.info.name,
-        url: shareUrl // This makes the URL clickable in some apps
+        url: shareUrl
       });
     } catch (error) {
       console.error('Error sharing:', error);
+    }
+  };
+
+  const handleEpisodeShare = async (episode: Episode) => {
+    if (!animeData) return;
+    
+    try {
+      const shareUrl = `anipro://anime/watch/${episode.episodeId}`;
+      const storeLink = Platform.select({
+        ios: '[Your App Store Link]',
+        android: '[Your Play Store Link]',
+        default: '[Your Website Link]'
+      });
+      
+      const message = `Watch ${animeData.info.name} Episode ${episode.episodeNo} on AniPro!\n\nOpen in AniPro: ${shareUrl}\n\nInstall AniPro to watch anime: ${storeLink}`;
+      
+      await Share.share({
+        message,
+        title: `${animeData.info.name} - Episode ${episode.episodeNo}`,
+        url: shareUrl
+      });
+    } catch (error) {
+      console.error('Error sharing episode:', error);
     }
   };
 
@@ -370,6 +399,12 @@ export default function AnimeDetails() {
               ) : (
                 <MaterialIcons name="file-download" size={24} color="#666" />
               )}
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.shareButton}
+              onPress={() => handleEpisodeShare(item)}
+            >
+              <MaterialIcons name="share" size={24} color="#666" />
             </TouchableOpacity>
           </View>
         </View>
@@ -851,5 +886,8 @@ const styles = StyleSheet.create({
   },
   bookmarkButton: {
     padding: 8,
+  },
+  shareButton: {
+    padding: 4,
   },
 }); 

@@ -21,37 +21,24 @@
         "NSDocumentsDirectory": true,
         "LSSupportsOpeningDocumentsInPlace": true
       },
-      "associatedDomains": ["applinks:yourdomain.com"]
+      "associatedDomains": [
+        "applinks:yourdomain.com"
+      ]
     },
     "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "permissions": [
-        "INTERNET",
-        "WRITE_EXTERNAL_STORAGE",
-        "READ_EXTERNAL_STORAGE",
-        "DOWNLOAD_WITHOUT_NOTIFICATION",
-        "ACCESS_MEDIA_LOCATION",
-        "MEDIA_LIBRARY",
-        "MANAGE_EXTERNAL_STORAGE",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.INTERNET"
-      ],
-      "package": "com.anipro.app",
-      "androidNavigationBar": {
-        "visible": "sticky-immersive"
-      },
       "intentFilters": [
         {
           "action": "VIEW",
           "data": [
             {
               "scheme": "anipro",
-              "host": "*"
+              "host": "*",
+              "pathPrefix": "/anime"
+            },
+            {
+              "scheme": "anipro",
+              "host": "*",
+              "pathPrefix": "/anime/watch"
             }
           ],
           "category": [
@@ -59,7 +46,8 @@
             "DEFAULT"
           ]
         }
-      ]
+      ],
+      "package": "com.r3ap3reditz.anipro"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -112,26 +100,6 @@
       "eas": {
         "projectId": "69442921-1758-493b-9ddf-d3cc35e5604f"
       }
-    },
-    "android": {
-      "intentFilters": [
-        {
-          "action": "VIEW",
-          "data": [
-            {
-              "scheme": "anipro"
-            },
-            {
-              "scheme": "https",
-              "host": "*.yourdomain.com"
-            }
-          ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
-        }
-      ]
     }
   }
 }
