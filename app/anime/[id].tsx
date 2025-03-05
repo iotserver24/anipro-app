@@ -1,9 +1,12 @@
-import { View, Text, Image, StyleSheet, ScrollView, TouchableOpacity, FlatList, ActivityIndicator, Dimensions, Platform, Animated, TouchableWithoutFeedback, TextInput, Alert } from 'react-native';
+import { View, Text, Image, StyleSheet, ScrollView, TouchableOpacity, FlatList, ActivityIndicator, Dimensions, Platform, Animated, TouchableWithoutFeedback, TextInput, Alert, Share } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useEffect, useState, useRef } from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import { DownloadOptionsModal } from '../../components/DownloadOptionsModal';
 import { addToMyList, removeFromMyList, isInMyList } from '../../utils/myList';
 import { useMyListStore } from '../../store/myListStore';
 
@@ -39,6 +42,13 @@ type APIEpisode = {
   name: string;
 };
 
+type DownloadStatus = {
+  [key: string]: {
+    progress: number;
+    status: 'idle' | 'downloading' | 'completed' | 'error';
+  };
+};
+
 const { width, height } = Dimensions.get('window');
 
 export default function AnimeDetails() {
@@ -54,6 +64,15 @@ export default function AnimeDetails() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState<'number' | 'name'>('number');
   const EPISODES_PER_PAGE = 24;
+  const [downloads, setDownloads] = useState<DownloadStatus>({});
+  const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [selectedEpisodeData, setSelectedEpisodeData] = useState<{
+    sourceData: any;
+    episodeInfo: Episode | null;
+  }>({
+    sourceData: null,
+    episodeInfo: null
+  });
   const { isBookmarked, addAnime, removeAnime } = useMyListStore();
 
   useEffect(() => {
@@ -170,11 +189,63 @@ export default function AnimeDetails() {
   };
 
   const handleDownload = async (episode: Episode) => {
-    Alert.alert(
-      'Coming Soon',
-      'Download functionality will be available in future updates.',
-      [{ text: 'OK' }]
-    );
+    try {
+      if (Platform.OS === 'android') {
+        const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (!permissions.granted) {
+          Alert.alert('Permission Required', 'Storage permission is required to download episodes');
+          return;
+        }
+      }
+
+      console.log('Starting download for:', {
+        episodeId: episode.episodeId,
+        episodeNo: episode.episodeNo,
+        name: episode.name
+      });
+
+      const response = await fetch(
+        `https://anime-api-app-nu.vercel.app/aniwatch/episode-srcs?id=${episode.episodeId}&server=megacloud&category=${selectedMode}`
+      );
+      const data = await response.json();
+      console.log('Source data received:', data);
+      
+      if (!data.sources || data.sources.length === 0) {
+        throw new Error('No download source available');
+      }
+
+      // Instead of proceeding with direct download, show the download modal
+      setSelectedEpisodeData({
+        sourceData: data,
+        episodeInfo: episode
+      });
+      setShowDownloadModal(true);
+
+    } catch (error) {
+      console.error('Error fetching episode sources:', error);
+      Alert.alert(
+        'Error',
+        'Failed to fetch episode sources. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const handleShare = async () => {
+    if (!animeData) return;
+    
+    try {
+      const shareUrl = `anipro://anime/${id}`;
+      const message = `Check out ${animeData.info.name}!\n\nOpen in AniPro: ${shareUrl}\n\nInstall AniPro to watch anime: [Add your app store link here]`;
+      
+      await Share.share({
+        message,
+        title: animeData.info.name,
+        url: shareUrl // This makes the URL clickable in some apps
+      });
+    } catch (error) {
+      console.error('Error sharing:', error);
+    }
   };
 
   const renderAnimeHeader = () => {
@@ -218,7 +289,17 @@ export default function AnimeDetails() {
                 </Text>
               </TouchableOpacity>
               
-              {/* You can add more action buttons here */}
+              <TouchableOpacity 
+                style={styles.actionButton}
+                onPress={handleShare}
+              >
+                <MaterialIcons 
+                  name="share" 
+                  size={24} 
+                  color="#f4511e" 
+                />
+                <Text style={styles.actionText}>Share</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </LinearGradient>
@@ -244,6 +325,8 @@ export default function AnimeDetails() {
 
   const renderEpisode = ({ item }: { item: Episode }) => {
     if (!item) return null;
+
+    const downloadStatus = downloads[item.episodeId] || { progress: 0, status: 'idle' };
 
     return (
       <TouchableOpacity 
@@ -272,8 +355,21 @@ export default function AnimeDetails() {
             <TouchableOpacity 
               style={styles.downloadButton}
               onPress={() => handleDownload(item)}
+              disabled={downloadStatus.status === 'downloading'}
             >
-              <MaterialIcons name="file-download" size={24} color="#666" />
+              {downloadStatus.status === 'downloading' ? (
+                <View style={styles.progressContainer}>
+                  <Text style={styles.progressText}>
+                    {Math.round(downloadStatus.progress * 100)}%
+                  </Text>
+                </View>
+              ) : downloadStatus.status === 'completed' ? (
+                <MaterialIcons name="check-circle" size={24} color="#4CAF50" />
+              ) : downloadStatus.status === 'error' ? (
+                <MaterialIcons name="error" size={24} color="#f44336" />
+              ) : (
+                <MaterialIcons name="file-download" size={24} color="#666" />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -454,6 +550,16 @@ export default function AnimeDetails() {
           </>
         )}
       </View>
+
+      <DownloadOptionsModal
+        isVisible={showDownloadModal}
+        onClose={() => {
+          setShowDownloadModal(false);
+          setSelectedEpisodeData({ sourceData: null, episodeInfo: null });
+        }}
+        sourceData={selectedEpisodeData.sourceData}
+        episodeInfo={selectedEpisodeData.episodeInfo}
+      />
     </ScrollView>
   );
 }
@@ -731,6 +837,17 @@ const styles = StyleSheet.create({
   },
   downloadButton: {
     padding: 4,
+  },
+  progressContainer: {
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  progressText: {
+    color: '#f4511e',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   bookmarkButton: {
     padding: 8,

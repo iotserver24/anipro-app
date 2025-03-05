@@ -20,7 +20,8 @@
         ],
         "NSDocumentsDirectory": true,
         "LSSupportsOpeningDocumentsInPlace": true
-      }
+      },
+      "associatedDomains": ["applinks:yourdomain.com"]
     },
     "android": {
       "adaptiveIcon": {
@@ -43,7 +44,22 @@
       "package": "com.anipro.app",
       "androidNavigationBar": {
         "visible": "sticky-immersive"
-      }
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "anipro",
+              "host": "*"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -96,6 +112,26 @@
       "eas": {
         "projectId": "69442921-1758-493b-9ddf-d3cc35e5604f"
       }
+    },
+    "android": {
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [
+            {
+              "scheme": "anipro"
+            },
+            {
+              "scheme": "https",
+              "host": "*.yourdomain.com"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     }
   }
 }

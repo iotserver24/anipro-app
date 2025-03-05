@@ -36,7 +36,7 @@ type Episode = {
   filler: boolean;
 };
 
-// Add VideoPlayerProps type definition
+// Update the VideoPlayerProps type to include all necessary props
 type VideoPlayerProps = {
   source: {
     uri: string;
@@ -50,19 +50,71 @@ type VideoPlayerProps = {
   isLoading?: boolean;
   isPlaying?: boolean;
   onError?: (error: any) => void;
+  onLoadStart?: () => void;
+  onLoad?: (status: AVPlaybackStatus) => void;
 };
 
 const VideoPlayer = React.forwardRef((props: VideoPlayerProps, ref) => {
+  const [localLoading, setLocalLoading] = useState(true);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [showControls, setShowControls] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout>();
+
+  const hideControlsWithDelay = () => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    controlsTimeoutRef.current = setTimeout(() => {
+      setShowControls(false);
+    }, 3000);
+  };
+
+  const handleScreenTap = () => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    setShowControls(!showControls);
+    if (!showControls) {
+      hideControlsWithDelay();
+    }
+  };
+
   const handleFullscreenUpdate = async ({ fullscreenUpdate }: { fullscreenUpdate: VideoFullscreenUpdate }) => {
     try {
       if (fullscreenUpdate === VideoFullscreenUpdate.PLAYER_WILL_PRESENT) {
+        setIsFullscreen(true);
         await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
+        // Show controls briefly when entering fullscreen
+        setShowControls(true);
+        hideControlsWithDelay();
       } else if (fullscreenUpdate === VideoFullscreenUpdate.PLAYER_WILL_DISMISS) {
+        setIsFullscreen(false);
         await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        // Reset controls state when exiting fullscreen
+        setShowControls(true);
+        hideControlsWithDelay();
       }
     } catch (error) {
       console.error('Error updating screen orientation:', error);
     }
+  };
+
+  // Clear timeout when component unmounts
+  useEffect(() => {
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
+    if (status.isLoaded) {
+      setIsBuffering(status.isBuffering && !status.isPlaying);
+      setLocalLoading(false);
+    }
+    props.onPlaybackStatusUpdate?.(status);
   };
 
   // Create textTracks array with proper structure
@@ -74,7 +126,14 @@ const VideoPlayer = React.forwardRef((props: VideoPlayerProps, ref) => {
   }] : [];
 
   return (
-    <View style={styles.videoWrapper}>
+    <TouchableOpacity 
+      activeOpacity={1}
+      onPress={handleScreenTap}
+      style={[
+        styles.videoWrapper,
+        isFullscreen && styles.fullscreenWrapper
+      ]}
+    >
       <Video
         ref={ref}
         source={{
@@ -82,11 +141,18 @@ const VideoPlayer = React.forwardRef((props: VideoPlayerProps, ref) => {
           headers: props.source.headers,
           type: props.source.type
         }}
-        style={styles.video}
+        style={[
+          styles.video,
+          isFullscreen && styles.videoFullscreen
+        ]}
         resizeMode={ResizeMode.CONTAIN}
-        useNativeControls
+        useNativeControls={showControls}
         shouldPlay={!props.paused}
-        onPlaybackStatusUpdate={props.onPlaybackStatusUpdate}
+        onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
+        onLoadStart={() => {
+          setLocalLoading(true);
+          props.onLoadStart?.();
+        }}
         onFullscreenUpdate={handleFullscreenUpdate}
         presentFullscreenPlayer
         textTracks={textTracks}
@@ -95,23 +161,23 @@ const VideoPlayer = React.forwardRef((props: VideoPlayerProps, ref) => {
           value: "English"
         }}
         onLoad={(status) => {
-          console.log('Video loaded with status:', {
-            duration: status.durationMillis,
-            textTracks: status.textTracks,
-            selectedTrack: status.selectedTextTrack
-          });
+          setLocalLoading(false);
+          props.onLoad?.(status);
+          hideControlsWithDelay();
         }}
         onError={(error) => {
+          setLocalLoading(false);
+          setIsBuffering(false);
           console.log('Video Error:', error);
-          props.onError && props.onError(error);
+          props.onError?.(error);
         }}
       />
-      {props.isLoading && !props.isPlaying && (
+      {(localLoading || isBuffering) && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#f4511e" />
         </View>
       )}
-    </View>
+    </TouchableOpacity>
   );
 });
 
@@ -132,10 +198,8 @@ export default function WatchAnime() {
     playableDuration: 0,
     seekableDuration: 0
   });
-  const [showControls, setShowControls] = useState(true);
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
   const [selectedSubtitle, setSelectedSubtitle] = useState<string | null>(null);
-  const controlsTimeout = useRef<NodeJS.Timeout>();
   const [episodes, setEpisodes] = useState<Episode[]>([]);
   const [currentEpisodeIndex, setCurrentEpisodeIndex] = useState(0);
   const [isBuffering, setIsBuffering] = useState(false);
@@ -395,18 +459,6 @@ export default function WatchAnime() {
     return `${h ? `${h}:` : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  const toggleControls = () => {
-    setShowControls(prev => !prev);
-    if (controlsTimeout.current) {
-      clearTimeout(controlsTimeout.current);
-    }
-    if (!showControls) {
-      controlsTimeout.current = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-    }
-  };
-
   const handleVideoLoad = async () => {
     if (videoRef.current && resumePosition > 0 && !isVideoReady) {
       try {
@@ -425,7 +477,7 @@ export default function WatchAnime() {
       
       setCurrentTime(newTime);
       setDuration(newDuration);
-      setIsBuffering(status.isBuffering || false);
+      setIsBuffering(status.isBuffering && !status.isPlaying);
       setIsPlaying(status.isPlaying);
 
       // Handle video load completion
@@ -800,8 +852,7 @@ const styles = StyleSheet.create({
   },
   video: {
     width: '100%',
-    height: Dimensions.get('window').width * (9/16),
-    backgroundColor: 'black',
+    height: '100%',
   },
   videoFullscreen: {
     width: '100%',
@@ -903,11 +954,21 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 1000, // Ensure it's above the video
   },
   captions: {
     fontSize: 20,
     color: 'white',
     backgroundColor: 'rgba(0,0,0,0.5)',
     textAlign: 'center',
+  },
+  fullscreenWrapper: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#000',
+    zIndex: 999,
   },
 }); 
