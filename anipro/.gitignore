@@ -1,0 +1,3 @@
+
+# Remove Android folder since using Expo cloud builds
+/android/
