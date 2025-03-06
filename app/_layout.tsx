@@ -68,9 +68,14 @@ export default function RootLayout() {
           <Stack.Screen
             name="anime/[id]"
             options={{
-              title: 'Details',
-              headerShown: true,
-              animation: 'slide_from_right',
+              title: '',
+              headerTransparent: true,
+              headerTintColor: '#fff',
+              headerBackTitle: ' ',
+              headerStyle: {
+                backgroundColor: 'transparent',
+              },
+              headerShadowVisible: false,
             }}
           />
           <Stack.Screen

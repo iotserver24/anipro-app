@@ -1,93 +1,69 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export type WatchHistoryItem = {
-  id: string;
-  name: string;
-  img: string;
+interface WatchHistoryItem {
   episodeId: string;
-  episodeNumber: number;
-  timestamp: number;
+  animeId: string;
   progress: number;
-  duration: number;
-};
+  timestamp: number;
+}
 
 interface WatchHistoryStore {
   history: WatchHistoryItem[];
-  initializeStore: () => Promise<void>;
+  getHistory: () => Promise<WatchHistoryItem[]>;
   addToHistory: (item: WatchHistoryItem) => Promise<void>;
-  removeFromHistory: (id: string) => Promise<void>;
-  clearHistory: () => Promise<void>;
   updateProgress: (episodeId: string, progress: number) => Promise<void>;
 }
 
 export const useWatchHistoryStore = create<WatchHistoryStore>((set, get) => ({
   history: [],
-
-  initializeStore: async () => {
+  
+  getHistory: async () => {
     try {
-      const saved = await AsyncStorage.getItem('watch_history');
-      if (saved) {
-        const history = JSON.parse(saved);
+      const stored = await AsyncStorage.getItem('watchHistory');
+      if (stored) {
+        const history = JSON.parse(stored);
         set({ history });
+        return history;
       }
+      return [];
     } catch (error) {
-      console.error('Error initializing watch history:', error);
+      console.error('Error getting watch history:', error);
+      return [];
     }
   },
 
-  addToHistory: async (item) => {
+  addToHistory: async (item: WatchHistoryItem) => {
     try {
-      const { history } = get();
-      const existingIndex = history.findIndex(h => h.episodeId === item.episodeId);
+      const history = [...get().history];
+      const index = history.findIndex(h => h.episodeId === item.episodeId);
       
-      let newHistory;
-      if (existingIndex !== -1) {
-        newHistory = [...history];
-        newHistory[existingIndex] = item;
+      if (index > -1) {
+        history[index] = item;
       } else {
-        newHistory = [item, ...history].slice(0, 30); // Keep last 30 items
+        history.push(item);
       }
-
-      await AsyncStorage.setItem('watch_history', JSON.stringify(newHistory));
-      set({ history: newHistory });
+      
+      await AsyncStorage.setItem('watchHistory', JSON.stringify(history));
+      set({ history });
     } catch (error) {
       console.error('Error adding to watch history:', error);
     }
   },
 
-  removeFromHistory: async (id) => {
+  updateProgress: async (episodeId: string, progress: number) => {
     try {
-      const { history } = get();
-      const newHistory = history.filter(item => item.id !== id);
-      await AsyncStorage.setItem('watch_history', JSON.stringify(newHistory));
-      set({ history: newHistory });
+      const history = [...get().history];
+      const index = history.findIndex(h => h.episodeId === episodeId);
+      
+      if (index > -1) {
+        history[index].progress = progress;
+        history[index].timestamp = Date.now();
+        await AsyncStorage.setItem('watchHistory', JSON.stringify(history));
+        set({ history });
+      }
     } catch (error) {
-      console.error('Error removing from watch history:', error);
+      console.error('Error updating watch progress:', error);
     }
-  },
-
-  clearHistory: async () => {
-    try {
-      await AsyncStorage.removeItem('watch_history');
-      set({ history: [] });
-    } catch (error) {
-      console.error('Error clearing watch history:', error);
-    }
-  },
-
-  updateProgress: async (episodeId, progress) => {
-    try {
-      const { history } = get();
-      const newHistory = history.map(item => 
-        item.episodeId === episodeId 
-          ? { ...item, progress }
-          : item
-      );
-      await AsyncStorage.setItem('watch_history', JSON.stringify(newHistory));
-      set({ history: newHistory });
-    } catch (error) {
-      console.error('Error updating progress:', error);
-    }
-  },
+  }
 })); 

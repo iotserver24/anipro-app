@@ -1,21 +1,21 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
-import { Video, AVPlaybackStatus, ResizeMode, VideoFullscreenUpdate } from 'expo-av';
+import Video, { 
+  OnLoadData, 
+  OnProgressData, 
+  OnBufferData
+} from 'react-native-video';
 import { MaterialIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { useWatchHistoryStore } from '../../../store/watchHistoryStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
-
-type Server = {
-  serverName: string;
-  serverId: number;
-};
+import { animeAPI } from '../../../services/api';
 
 type StreamSource = {
   url: string;
+  quality: string;
   isM3U8: boolean;
-  quality?: string;
 };
 
 type Subtitle = {
@@ -23,173 +23,241 @@ type Subtitle = {
   lang: string;
 };
 
+type APIEpisode = {
+  id: string;
+  number: number;
+  title: string;
+  isSubbed: boolean;
+  isDubbed: boolean;
+  url: string;
+};
+
+// Update VideoRef type
+type VideoRef = typeof Video;
+
+// Update VideoPlayerProps type
+type VideoPlayerProps = {
+  source: {
+    uri: string | null;
+    headers?: {
+      Referer: string;
+      'User-Agent': string;
+    };
+  };
+  style?: any;
+  paused?: boolean;
+  resizeMode?: 'contain' | 'cover' | 'stretch' | 'none';
+  onProgress?: (data: OnProgressData) => void;
+  onError?: (error: any) => void;
+  onLoad?: (data: OnLoadData) => void;
+  onBuffer?: (data: OnBufferData) => void;
+  rate?: number;
+  textTracks?: Array<{
+    title: string;
+    language: string;
+    type: string;
+    uri: string;
+  }>;
+  selectedTextTrack?: {
+    type: 'system' | 'disabled' | 'title' | 'language' | 'index';
+    value: string | number;
+  };
+  subtitleUrl?: string;
+  onPlayPause?: () => void;
+  onSeek?: (value: number) => void;
+  onFullscreen?: () => void;
+};
+
+// Update video event types
+type VideoProgress = OnProgressData;
+type LoadError = {
+  error: string | {
+    what: string;
+    extra: number;
+  };
+};
+
+// Add these types at the top
 type Progress = {
   currentTime: number;
   playableDuration: number;
   seekableDuration: number;
 };
 
-type Episode = {
-  episodeId: string;
-  episodeNo: number;
+type Server = {
   name: string;
-  filler: boolean;
+  url: string;
 };
 
-// Update the VideoPlayerProps type to include all necessary props
-type VideoPlayerProps = {
-  source: {
-    uri: string;
-    headers?: any;
-    type?: string;
+// Add these types
+type VideoSource = {
+  url: string;
+  isM3U8: boolean;
+};
+
+type VideoResponse = {
+  headers: {
+    Referer: string;
   };
-  style?: any;
-  paused?: boolean;
-  subtitleUrl?: string;
-  onPlaybackStatusUpdate?: (status: AVPlaybackStatus) => void;
-  isLoading?: boolean;
-  isPlaying?: boolean;
-  onError?: (error: any) => void;
-  onLoadStart?: () => void;
-  onLoad?: (status: AVPlaybackStatus) => void;
+  sources: VideoSource[];
+  subtitles: {
+    kind: string;
+    url: string;
+  }[];
+  intro?: {
+    start: number;
+    end: number;
+  };
+  outro?: {
+    start: number;
+    end: number;
+  };
 };
 
-const VideoPlayer = React.forwardRef((props: VideoPlayerProps, ref) => {
-  const [localLoading, setLocalLoading] = useState(true);
-  const [isBuffering, setIsBuffering] = useState(false);
+// Update the VideoPlayer component
+const VideoPlayer = React.forwardRef<VideoRef, VideoPlayerProps>((props, ref) => {
   const [showControls, setShowControls] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const controlsTimeoutRef = useRef<NodeJS.Timeout>();
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isBuffering, setIsBuffering] = useState(false);
 
-  const hideControlsWithDelay = () => {
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-    controlsTimeoutRef.current = setTimeout(() => {
-      setShowControls(false);
-    }, 3000);
-  };
-
-  const handleScreenTap = () => {
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-    setShowControls(!showControls);
-    if (!showControls) {
-      hideControlsWithDelay();
-    }
-  };
-
-  const handleFullscreenUpdate = async ({ fullscreenUpdate }: { fullscreenUpdate: VideoFullscreenUpdate }) => {
-    try {
-      if (fullscreenUpdate === VideoFullscreenUpdate.PLAYER_WILL_PRESENT) {
-        setIsFullscreen(true);
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
-        // Show controls briefly when entering fullscreen
-        setShowControls(true);
-        hideControlsWithDelay();
-      } else if (fullscreenUpdate === VideoFullscreenUpdate.PLAYER_WILL_DISMISS) {
-        setIsFullscreen(false);
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-        // Reset controls state when exiting fullscreen
-        setShowControls(true);
-        hideControlsWithDelay();
-      }
-    } catch (error) {
-      console.error('Error updating screen orientation:', error);
-    }
-  };
-
-  // Clear timeout when component unmounts
+  // Add control timeout
   useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    if (showControls && isPlaying) {
+      timeout = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    }
     return () => {
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
+      if (timeout) {
+        clearTimeout(timeout);
       }
     };
-  }, []);
+  }, [showControls, isPlaying]);
 
-  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (status.isLoaded) {
-      setIsBuffering(status.isBuffering && !status.isPlaying);
-      setLocalLoading(false);
+  // Memoize handlers to prevent unnecessary re-renders
+  const handleControlsPress = useCallback(() => {
+    setShowControls(!showControls);
+  }, [showControls]);
+
+  const handlePlayPause = useCallback(() => {
+    setIsPlaying(!isPlaying);
+    if (props.onPlayPause) {
+      props.onPlayPause();
     }
-    props.onPlaybackStatusUpdate?.(status);
-  };
+  }, [isPlaying, props.onPlayPause]);
 
-  // Create textTracks array with proper structure
-  const textTracks = props.subtitleUrl ? [{
-    uri: props.subtitleUrl,
-    language: "en",
-    title: "English",
-    type: "text/vtt",
-  }] : [];
+  const handleProgress = useCallback((data: OnProgressData) => {
+    setCurrentTime(data.currentTime);
+    setDuration(data.seekableDuration);
+    
+    // Only call onProgress every 5 seconds
+    if (Math.floor(data.currentTime) % 5 === 0) {
+      if (props.onProgress) {
+        props.onProgress(data);
+      }
+    }
+  }, [props.onProgress]);
 
   return (
-    <TouchableOpacity 
-      activeOpacity={1}
-      onPress={handleScreenTap}
-      style={[
-        styles.videoWrapper,
-        isFullscreen && styles.fullscreenWrapper
-      ]}
-    >
+    <View style={styles.videoWrapper}>
       <Video
         ref={ref}
-        source={{
-          uri: props.source.uri,
-          headers: props.source.headers,
-          type: props.source.type
-        }}
-        style={[
-          styles.video,
-          isFullscreen && styles.videoFullscreen
-        ]}
-        resizeMode={ResizeMode.CONTAIN}
-        useNativeControls={showControls}
-        shouldPlay={!props.paused}
-        onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
-        onLoadStart={() => {
-          setLocalLoading(true);
-          props.onLoadStart?.();
-        }}
-        onFullscreenUpdate={handleFullscreenUpdate}
-        presentFullscreenPlayer
-        textTracks={textTracks}
-        selectedTextTrack={{
-          type: "title",
-          value: "English"
-        }}
-        onLoad={(status) => {
-          setLocalLoading(false);
-          props.onLoad?.(status);
-          hideControlsWithDelay();
-        }}
-        onError={(error) => {
-          setLocalLoading(false);
-          setIsBuffering(false);
-          console.log('Video Error:', error);
-          props.onError?.(error);
-        }}
+        {...props}
+        style={styles.video}
+        paused={!isPlaying}
+        onProgress={handleProgress}
+        onBuffer={({isBuffering}) => setIsBuffering(isBuffering)}
       />
-      {(localLoading || isBuffering) && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#f4511e" />
-        </View>
-      )}
-    </TouchableOpacity>
+
+      <TouchableOpacity 
+        activeOpacity={1}
+        onPress={handleControlsPress}
+        style={StyleSheet.absoluteFill}
+      >
+        {showControls && (
+          <View style={styles.controlsOverlay}>
+            <View style={styles.controlsRow}>
+              <TouchableOpacity onPress={handlePlayPause} style={styles.controlButton}>
+                <MaterialIcons 
+                  name={isPlaying ? "pause" : "play-arrow"} 
+                  size={32} 
+                  color="white" 
+                />
+              </TouchableOpacity>
+              
+              <Text style={styles.timeText}>
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </Text>
+
+              <Slider
+                style={styles.slider}
+                value={currentTime}
+                maximumValue={duration}
+                minimumValue={0}
+                onValueChange={(value) => {
+                  if (props.onSeek) {
+                    props.onSeek(value);
+                  }
+                }}
+                minimumTrackTintColor="#f4511e"
+                maximumTrackTintColor="rgba(255,255,255,0.5)"
+                thumbTintColor="#f4511e"
+              />
+            </View>
+          </View>
+        )}
+
+        {isBuffering && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color="#f4511e" />
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
   );
 });
 
+const EpisodeList = React.memo(({ episodes, currentEpisodeId, onEpisodePress }: {
+  episodes: APIEpisode[];
+  currentEpisodeId: string;
+  onEpisodePress: (episode: APIEpisode) => void;
+}) => (
+  <View style={styles.episodeList}>
+    {episodes.map((episode) => (
+      <TouchableOpacity
+        key={episode.id}
+        style={[
+          styles.episodeItem,
+          episode.id === currentEpisodeId && styles.currentEpisode
+        ]}
+        onPress={() => onEpisodePress(episode)}
+      >
+        <View style={styles.episodeInfo}>
+          <Text style={styles.episodeNumber}>Episode {episode.number}</Text>
+          <Text style={styles.episodeName} numberOfLines={1}>
+            {episode.title}
+          </Text>
+        </View>
+        {episode.id === currentEpisodeId && (
+          <MaterialIcons name="play-circle-filled" size={24} color="#f4511e" />
+        )}
+      </TouchableOpacity>
+    ))}
+  </View>
+));
+
 export default function WatchAnime() {
   const { episodeId, animeId, episodeNumber, title, category } = useLocalSearchParams();
-  const videoRef = useRef(null);
+  const videoRef = useRef<VideoRef>(null);
   const [servers, setServers] = useState<{ sub: Server[], dub: Server[] }>({ sub: [], dub: [] });
   const [selectedServer, setSelectedServer] = useState<Server | null>(null);
   const [streamingUrl, setStreamingUrl] = useState<string | null>(null);
   const [sources, setSources] = useState<StreamSource[]>([]);
   const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
-  const [selectedQuality, setSelectedQuality] = useState<string | null>(null);
+  const [selectedQuality, setSelectedQuality] = useState<string>('auto');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
@@ -199,11 +267,11 @@ export default function WatchAnime() {
     seekableDuration: 0
   });
   const [playbackSpeed, setPlaybackSpeed] = useState(1.0);
-  const [selectedSubtitle, setSelectedSubtitle] = useState<string | null>(null);
-  const [episodes, setEpisodes] = useState<Episode[]>([]);
+  const [selectedSubtitle, setSelectedSubtitle] = useState<Subtitle | null>(null);
+  const [episodes, setEpisodes] = useState<APIEpisode[]>([]);
   const [currentEpisodeIndex, setCurrentEpisodeIndex] = useState(0);
   const [isBuffering, setIsBuffering] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
   const { addToHistory, updateProgress } = useWatchHistoryStore();
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -213,41 +281,20 @@ export default function WatchAnime() {
   const maxRetries = 3;
   const [resumePosition, setResumePosition] = useState(0);
   const [isVideoReady, setIsVideoReady] = useState(false);
+  const [videoUrl, setVideoUrl] = useState<string | null>(() => {
+    if (!videoData?.sources) return null;
+    return videoData.sources[0]?.url || null;
+  });
+  const [videoHeaders, setVideoHeaders] = useState<{[key: string]: string}>({});
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [videoData, setVideoData] = useState<VideoResponse | null>(null);
 
   useEffect(() => {
-    fetchServers();
-  }, [episodeId]);
-
-  useEffect(() => {
-    if (selectedServer) {
-      fetchStreamingSources();
-    }
-  }, [selectedServer]);
-
-  useEffect(() => {
-    fetchEpisodes();
-  }, [animeId]);
-
-  useEffect(() => {
+    fetchEpisodeData();
     if (animeId) {
       fetchAnimeInfo();
     }
-  }, [animeId]);
-
-  useEffect(() => {
-    if (animeInfo && streamingUrl && duration > 0) {
-      addToHistory({
-        id: animeId as string,
-        name: animeInfo.info?.name || 'Unknown Anime',
-        img: animeInfo.info?.img || '',
-        episodeId: episodeId as string,
-        episodeNumber: Number(episodeNumber),
-        timestamp: Date.now(),
-        progress: currentTime,
-        duration: duration
-      });
-    }
-  }, [animeInfo, streamingUrl, duration]);
+  }, [episodeId, animeId]);
 
   useEffect(() => {
     const getResumePosition = async () => {
@@ -292,177 +339,63 @@ export default function WatchAnime() {
     }
   };
 
-  const fetchServers = async () => {
+  const fetchEpisodeData = async () => {
     try {
-      setError(null);
       setLoading(true);
-      
-      console.log('Raw episodeId:', episodeId);
-      
-      const formattedEpisodeId = episodeId as string;
-      console.log('Formatted episodeId:', formattedEpisodeId);
-      
-      const response = await fetchWithRetry(
-        `https://anime-api-app-nu.vercel.app/aniwatch/servers?id=${formattedEpisodeId}`
-      );
-      
-      console.log('Servers response:', response);
-      
-      if (!response) throw new Error('No server data received');
-      
-      setServers({
-        sub: response.sub || [],
-        dub: response.dub || []
-      });
-      
-      const serverList = category === 'dub' ? response.dub : response.sub;
-      if (serverList && serverList.length > 0) {
-        // Prefer megacloud server if available
-        const megacloudServer = serverList.find(s => s.serverName.toLowerCase() === 'megacloud');
-        setSelectedServer(megacloudServer || serverList[0]);
-      } else {
-        throw new Error(`No ${category} servers available`);
-      }
-    } catch (error) {
-      console.error('Error fetching servers:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load servers');
-    } finally {
-      setLoading(false);
-    }
-  };
+      setError(null);
 
-  const fetchStreamingSources = async () => {
-    if (!selectedServer) return;
-    
-    try {
-      setError(null);
-      setLoading(true);
-      
-      const formattedEpisodeId = episodeId as string;
-      
-      console.log('Fetching sources with:', {
-        episodeId: formattedEpisodeId,
-        server: selectedServer.serverName,
-        category
-      });
-      
-      const response = await fetchWithRetry(
-        `https://anime-api-app-nu.vercel.app/aniwatch/episode-srcs?id=${formattedEpisodeId}&server=${selectedServer.serverName}&category=${category}`,
-        3,
-        3000
+      console.log('Episode ID:', episodeId);
+
+      const sources = await animeAPI.getEpisodeSources(
+        episodeId as string, 
+        category === 'dub'
       );
       
-      console.log('Sources response:', response);
-      
-      if (!response || !response.sources || response.sources.length === 0) {
-        // If current server fails, try the next available server
-        const currentServerList = category === 'dub' ? servers.dub : servers.sub;
-        const currentIndex = currentServerList.findIndex(s => s.serverId === selectedServer.serverId);
-        const nextServer = currentServerList[currentIndex + 1];
-        
-        if (nextServer) {
-          console.log('Trying next server:', nextServer.serverName);
-          setSelectedServer(nextServer);
-          return; // The useEffect will trigger another fetch
-        }
-        
+      console.log('API Response:', sources);
+
+      if (!sources || !sources.sources || sources.sources.length === 0) {
         throw new Error('No streaming sources available');
       }
 
-      // Find the default English subtitle or any English subtitle
-      const englishSubtitle = response.tracks?.find(track => 
-        track.default && track.label?.toLowerCase().includes('english')
-      ) || response.tracks?.find(track => 
-        track.label?.toLowerCase().includes('english')
-      );
+      // Set video URL from first source
+      const videoSource = sources.sources[0];
+      setVideoUrl(videoSource.url);
+      setVideoHeaders(sources.headers);
+      setStreamingUrl(videoSource.url);  // For compatibility
 
-      if (englishSubtitle) {
-        console.log('Found English subtitle:', englishSubtitle);
-        // Make sure the subtitle URL is properly formatted
-        const subtitleUrl = englishSubtitle.file.startsWith('http') 
-          ? englishSubtitle.file 
-          : `https:${englishSubtitle.file}`;
-        
-        setSubtitles([{
-          url: subtitleUrl,
-          lang: 'en'
-        }]);
-        setSelectedSubtitle('en'); // Auto-select English subtitle
-      } else {
-        console.log('No English subtitles found');
-        setSubtitles([]);
-        setSelectedSubtitle(null);
-      }
-
-      setSources(response.sources);
-      setStreamingUrl(response.sources[0]?.url || null);
-      setSelectedQuality(response.sources[0]?.quality || null);
-      
     } catch (error) {
-      console.error('Error fetching sources:', error);
-      setError(error instanceof Error ? error.message : 'Failed to load video sources');
-      
-      // If all servers fail, show a more specific error
-      const currentServerList = category === 'dub' ? servers.dub : servers.sub;
-      const isLastServer = currentServerList.findIndex(s => s.serverId === selectedServer.serverId) === currentServerList.length - 1;
-      
-      if (isLastServer) {
-        setError('All servers failed. Please try again later.');
-      } else {
-        // Try next server automatically
-        const currentIndex = currentServerList.findIndex(s => s.serverId === selectedServer.serverId);
-        const nextServer = currentServerList[currentIndex + 1];
-        if (nextServer) {
-          console.log('Automatically trying next server:', nextServer.serverName);
-          setSelectedServer(nextServer);
-        }
-      }
+      console.error('Error fetching episode:', error);
+      setError('Failed to load episode. Please try again.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchEpisodes = async () => {
-    try {
-      const response = await fetchWithRetry(
-        `https://anime-api-app-nu.vercel.app/aniwatch/episodes/${animeId}`
-      );
-      
-      if (response && Array.isArray(response.episodes)) {
-        setEpisodes(response.episodes);
-        // Find current episode index
-        const index = response.episodes.findIndex(
-          (ep: Episode) => ep.episodeId === episodeId
-        );
-        setCurrentEpisodeIndex(index);
-      }
-    } catch (error) {
-      console.error('Error fetching episodes:', error);
     }
   };
 
   const fetchAnimeInfo = async () => {
     try {
-      const response = await fetchWithRetry(
-        `https://anime-api-app-nu.vercel.app/aniwatch/anime/${animeId}`
-      );
-      setAnimeInfo(response);
+      const data = await animeAPI.getAnimeDetails(animeId as string);
+      setAnimeInfo(data);
+      
+      if (data.episodes) {
+        setEpisodes(data.episodes);
+        const index = data.episodes.findIndex(ep => ep.id === episodeId);
+        setCurrentEpisodeIndex(index);
+      }
     } catch (error) {
       console.error('Error fetching anime info:', error);
     }
   };
 
   const formatTime = (seconds: number) => {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = Math.floor(seconds % 60);
-    return `${h ? `${h}:` : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
   };
 
   const handleVideoLoad = async () => {
     if (videoRef.current && resumePosition > 0 && !isVideoReady) {
       try {
-        await videoRef.current.setPositionAsync(resumePosition * 1000); // Convert to milliseconds
+        videoRef.current.seek(resumePosition);
         setIsVideoReady(true);
       } catch (err) {
         console.error('Error seeking to position:', err);
@@ -470,43 +403,41 @@ export default function WatchAnime() {
     }
   };
 
-  const handlePlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (status.isLoaded) {
-      const newTime = status.positionMillis / 1000;
-      const newDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
-      
-      setCurrentTime(newTime);
-      setDuration(newDuration);
-      setIsBuffering(status.isBuffering && !status.isPlaying);
-      setIsPlaying(status.isPlaying);
+  const handlePlaybackStatusUpdate = (data: VideoProgress) => {
+    const newTime = data.currentTime;
+    const newDuration = data.seekableDuration;
+    
+    setCurrentTime(newTime);
+    setDuration(newDuration);
+    setIsBuffering(data.isBuffering);
+    setIsPlaying(!data.paused);
 
-      // Handle video load completion
-      if (!isVideoReady && status.isLoaded) {
-        handleVideoLoad();
+    // Handle video load completion
+    if (!isVideoReady && newDuration > 0) {
+      handleVideoLoad();
+    }
+    
+    // Save progress every 5 seconds while playing
+    const now = Date.now();
+    if (now - lastSaveTime >= 5000) {
+      setLastSaveTime(now);
+      if (animeInfo && newDuration > 0) {
+        addToHistory({
+          id: animeId as string,
+          name: animeInfo.info?.name || 'Unknown Anime',
+          img: animeInfo.info?.img || '',
+          episodeId: episodeId as string,
+          episodeNumber: Number(episodeNumber),
+          timestamp: now,
+          progress: newTime,
+          duration: newDuration
+        });
       }
-      
-      // Save progress every 5 seconds while playing
-      const now = Date.now();
-      if (now - lastSaveTime >= 5000) {
-        setLastSaveTime(now);
-        if (animeInfo && newDuration > 0) {
-          addToHistory({
-            id: animeId as string,
-            name: animeInfo.info?.name || 'Unknown Anime',
-            img: animeInfo.info?.img || '',
-            episodeId: episodeId as string,
-            episodeNumber: Number(episodeNumber),
-            timestamp: now,
-            progress: newTime,
-            duration: newDuration
-          });
-        }
-      }
-      
-      // Auto play next episode when current one ends
-      if (status.didJustFinish) {
-        onVideoEnd();
-      }
+    }
+    
+    // Auto play next episode when current one ends
+    if (newTime >= newDuration - 0.5) {
+      onVideoEnd();
     }
   };
 
@@ -516,19 +447,8 @@ export default function WatchAnime() {
     }
   };
 
-  const togglePlayPause = async () => {
-    if (videoRef.current) {
-      try {
-        if (paused) {
-          await videoRef.current.playAsync();
-        } else {
-          await videoRef.current.pauseAsync();
-        }
-        setPaused(!paused);
-      } catch (error) {
-        console.error('Error toggling play/pause:', error);
-      }
-    }
+  const togglePlayPause = () => {
+    setIsPlaying(!isPlaying);
   };
 
   const onVideoEnd = () => {
@@ -540,25 +460,15 @@ export default function WatchAnime() {
           episodeId: nextEpisode.episodeId,
           animeId: animeId as string,
           episodeNumber: nextEpisode.episodeNo,
-          title: nextEpisode.name,
+          title: nextEpisode.title,
           category: category
         }
       });
     }
   };
 
-  const handlePlaybackSpeedChange = async (speed: number) => {
-    if (videoRef.current) {
-      try {
-        await (videoRef.current as any).setStatusAsync({
-          rate: speed,
-          shouldCorrectPitch: true
-        });
-        setPlaybackSpeed(speed);
-      } catch (error) {
-        console.error('Error changing playback speed:', error);
-      }
-    }
+  const handlePlaybackSpeedChange = (speed: number) => {
+    setPlaybackSpeed(speed);
   };
 
   const handleVideoError = (error: any) => {
@@ -578,9 +488,105 @@ export default function WatchAnime() {
     }
   };
 
+  const handleFullscreen = async () => {
+    if (isFullscreen) {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      setIsFullscreen(false);
+    } else {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+      setIsFullscreen(true);
+    }
+  };
+
+  const handleProgress = (data: OnProgressData) => {
+    setCurrentTime(data.currentTime);
+    setDuration(data.seekableDuration);
+    
+    // Save progress every 5 seconds
+    if (Math.floor(data.currentTime) % 5 === 0) {
+      // Save to watch history
+      if (animeInfo) {
+        addToHistory({
+          animeId: animeId as string,
+          episodeId: episodeId as string,
+          timestamp: data.currentTime,
+          duration: data.seekableDuration
+        });
+      }
+    }
+
+    // Handle intro/outro skipping
+    if (videoData?.intro && data.currentTime >= videoData.intro.start && data.currentTime <= videoData.intro.end) {
+      handleSeek(videoData.intro.end);
+    }
+  };
+
+  // Fetch video data
+  useEffect(() => {
+    const fetchVideoData = async () => {
+      try {
+        const response = await animeAPI.getVideoSource(episodeId);
+        setVideoData(response);
+      } catch (error) {
+        console.error('Error fetching video:', error);
+      }
+    };
+    
+    fetchVideoData();
+  }, [episodeId]);
+
+  // Update useEffect to set videoUrl when videoData changes
+  useEffect(() => {
+    if (videoData?.sources && videoData.sources.length > 0) {
+      setVideoUrl(videoData.sources[0].url);
+    }
+  }, [videoData]);
+
+  // Video control handlers
+  const handleSeek = (value: number) => {
+    if (videoRef.current) {
+      videoRef.current.seek(value);
+    }
+  };
+
+  const handlePlayPause = () => {
+    setIsPlaying(!isPlaying);
+  };
+
+  // Update video props
+  const videoProps = {
+    source: { 
+      uri: videoUrl,
+      headers: videoHeaders
+    },
+    rate: playbackSpeed,
+    paused: !isPlaying,
+    resizeMode: "contain",
+    onProgress: handleProgress,
+    onBuffer: ({ isBuffering }: { isBuffering: boolean }) => {
+      setIsBuffering(isBuffering);
+    },
+    onError: (error: any) => {
+      console.error('Video playback error:', error);
+      setError('Video playback failed');
+      setLoading(false);
+    },
+    onLoad: (data: OnLoadData) => {
+      setDuration(data.duration);
+      setLoading(false);
+      if (resumePosition > 0 && !isVideoReady) {
+        handleSeek(resumePosition);
+        setIsVideoReady(true);
+      }
+    },
+    onPlayPause: togglePlayPause,
+    onSeek: handleSeek,
+    onFullscreen: handleFullscreen
+  };
+
   console.log('Rendering video with:', {
     streamingUrl,
-    subtitleUrl: subtitles[0]?.url,
+    subtitleUrl: subtitles[0]?.uri,
     selectedServer
   });
 
@@ -605,7 +611,7 @@ export default function WatchAnime() {
             onPress={() => {
               setRetryCount(0);
               setError(null);
-              fetchStreamingSources();
+              fetchEpisodeData();
             }}
           >
             <Text style={styles.retryButtonText}>Retry</Text>
@@ -618,31 +624,12 @@ export default function WatchAnime() {
   return (
     <View style={styles.container}>
       <View style={styles.videoContainer}>
-        {streamingUrl ? (
+        {videoUrl && (
           <VideoPlayer
             ref={videoRef}
-            source={{
-              uri: streamingUrl,
-              headers: {
-                'Referer': 'https://aniwatch.to/',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36'
-              },
-              type: 'application/x-mpegURL'
-            }}
             style={styles.video}
-            paused={paused}
-            rate={playbackSpeed}
-            isLoading={isBuffering}
-            isPlaying={isPlaying}
-            subtitleUrl={subtitles[0]?.url}
-            selectedSubtitle={selectedSubtitle}
-            onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
-            onError={handleVideoError}
+            {...videoProps}
           />
-        ) : (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#f4511e" />
-          </View>
         )}
       </View>
 
@@ -719,15 +706,15 @@ export default function WatchAnime() {
                   key={index}
                   style={[
                     styles.subtitleButton,
-                    selectedSubtitle === sub.lang && styles.selectedButton
+                    selectedSubtitle?.language === sub.language && styles.selectedButton
                   ]}
-                  onPress={() => setSelectedSubtitle(sub.lang)}
+                  onPress={() => setSelectedSubtitle(sub)}
                 >
                   <Text style={[
                     styles.subtitleText,
-                    selectedSubtitle === sub.lang && styles.selectedText
+                    selectedSubtitle?.language === sub.language && styles.selectedText
                   ]}>
-                    {sub.lang}
+                    {sub.title}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -738,39 +725,22 @@ export default function WatchAnime() {
         {episodes.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Episodes</Text>
-            <View style={styles.episodeList}>
-              {episodes.map((episode, index) => (
-                <TouchableOpacity
-                  key={episode.episodeId}
-                  style={[
-                    styles.episodeItem,
-                    episode.episodeId === episodeId && styles.currentEpisode
-                  ]}
-                  onPress={() => {
-                    router.replace({
-                      pathname: "/anime/watch/[episodeId]",
-                      params: {
-                        episodeId: episode.episodeId,
-                        animeId: animeId as string,
-                        episodeNumber: episode.episodeNo,
-                        title: episode.name,
-                        category: category
-                      }
-                    });
-                  }}
-                >
-                  <View style={styles.episodeInfo}>
-                    <Text style={styles.episodeNumber}>Episode {episode.episodeNo}</Text>
-                    <Text style={styles.episodeName} numberOfLines={1}>
-                      {episode.name}
-                    </Text>
-                  </View>
-                  {episode.episodeId === episodeId && (
-                    <MaterialIcons name="play-circle-filled" size={24} color="#f4511e" />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
+            <EpisodeList
+              episodes={episodes}
+              currentEpisodeId={episodeId}
+              onEpisodePress={(episode) => {
+                router.replace({
+                  pathname: "/anime/watch/[episodeId]",
+                  params: {
+                    episodeId: episode.episodeId,
+                    animeId: animeId as string,
+                    episodeNumber: episode.episodeNo,
+                    title: episode.title,
+                    category: category
+                  }
+                });
+              }}
+            />
           </View>
         )}
       </ScrollView>
@@ -791,42 +761,47 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   videoWrapper: {
-    position: 'relative',
-    width: '100%',
-    height: '100%',
+    flex: 1,
     backgroundColor: '#000',
+  },
+  controlsContainer: {
+    ...StyleSheet.absoluteFillObject,  // This overlays on top of video
+    backgroundColor: 'transparent',
   },
   controlsOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'space-between',
-  },
-  topControls: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
     padding: 16,
   },
-  centerControls: {
+  controlsRow: {
     flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  controlButton: {
+    padding: 8,
+    marginRight: 16,
+  },
+  timeText: {
+    color: 'white',
+    marginRight: 16,
+    fontSize: 14,
+  },
+  slider: {
+    flex: 1,
+    marginHorizontal: 8,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  bottomControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
   },
   titleText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
-  },
-  timeText: {
-    color: '#fff',
-    fontSize: 12,
-    marginHorizontal: 8,
-  },
-  slider: {
-    flex: 1,
-    height: 40,
   },
   speedButton: {
     paddingHorizontal: 16,
@@ -851,8 +826,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   video: {
-    width: '100%',
-    height: '100%',
+    flex: 1,
   },
   videoFullscreen: {
     width: '100%',
@@ -948,27 +922,5 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 12,
     marginTop: 4,
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000, // Ensure it's above the video
-  },
-  captions: {
-    fontSize: 20,
-    color: 'white',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    textAlign: 'center',
-  },
-  fullscreenWrapper: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#000',
-    zIndex: 999,
   },
 }); 

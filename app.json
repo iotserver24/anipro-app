@@ -54,13 +54,7 @@
     },
     "plugins": [
       "expo-router",
-      [
-        "expo-av",
-        {
-          "microphonePermission": false
-        }
-      ],
-      "expo-video",
+      "react-native-video",
       [
         "expo-file-system",
         {
