@@ -28,6 +28,7 @@ interface VideoPlayerProps {
   title?: string;
   onPositionChange?: (position: number) => void;
   onLoad?: (status: AVPlaybackStatus) => void;
+  onQualityChange?: (position: number) => void;
 }
 
 const VideoPlayer = ({
@@ -40,6 +41,7 @@ const VideoPlayer = ({
   title,
   onPositionChange,
   onLoad,
+  onQualityChange,
 }: VideoPlayerProps) => {
   const videoRef = useRef<Video>(null);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -51,6 +53,8 @@ const VideoPlayer = ({
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
   const [isSeeking, setIsSeeking] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [isQualityChanging, setIsQualityChanging] = useState(false);
+  const [savedPosition, setSavedPosition] = useState(0);
 
   // Format time in MM:SS format
   const formatTime = (seconds: number) => {
@@ -93,9 +97,19 @@ const VideoPlayer = ({
   // Handle seeking
   const handleSeek = async (value: number) => {
     if (videoRef.current) {
+      const wasPlaying = isPlaying;
       setIsSeeking(true);
-      await videoRef.current.setPositionAsync(value * 1000);
-      setIsSeeking(false);
+      try {
+        await videoRef.current.setPositionAsync(value * 1000);
+        // Resume playback if video was playing before seeking
+        if (wasPlaying) {
+          await videoRef.current.playAsync();
+        }
+      } catch (error) {
+        console.error('Error seeking:', error);
+      } finally {
+        setIsSeeking(false);
+      }
     }
   };
 
@@ -197,26 +211,63 @@ const VideoPlayer = ({
   // Add skip functions
   const skipForward = async () => {
     if (videoRef.current) {
+      const wasPlaying = isPlaying;
       const newPosition = Math.min(duration, currentTime + 5);
-      await videoRef.current.setPositionAsync(newPosition * 1000);
-      setCurrentTime(newPosition);
+      try {
+        await videoRef.current.setPositionAsync(newPosition * 1000);
+        setCurrentTime(newPosition);
+        // Resume playback if it was playing
+        if (wasPlaying) {
+          await videoRef.current.playAsync();
+        }
+      } catch (error) {
+        console.error('Error skipping forward:', error);
+      }
     }
   };
 
   const skipBackward = async () => {
     if (videoRef.current) {
+      const wasPlaying = isPlaying;
       const newPosition = Math.max(0, currentTime - 5);
-      await videoRef.current.setPositionAsync(newPosition * 1000);
-      setCurrentTime(newPosition);
+      try {
+        await videoRef.current.setPositionAsync(newPosition * 1000);
+        setCurrentTime(newPosition);
+        // Resume playback if it was playing
+        if (wasPlaying) {
+          await videoRef.current.playAsync();
+        }
+      } catch (error) {
+        console.error('Error skipping backward:', error);
+      }
     }
   };
 
   const handleLoad = async (status: AVPlaybackStatus) => {
     try {
       if (status.isLoaded) {
-        if (initialPosition > 0 && !isReady && videoRef.current) {
-          await videoRef.current.setPositionAsync(initialPosition * 1000);
-          setIsReady(true);
+        const wasPlaying = isPlaying;
+        
+        // Handle initial position or quality change position
+        if ((initialPosition > 0 && !isReady) || isQualityChanging) {
+          const positionToSeek = isQualityChanging ? savedPosition : initialPosition;
+          
+          // Add a small delay to ensure video is ready
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          if (videoRef.current) {
+            await videoRef.current.setPositionAsync(positionToSeek * 1000);
+            
+            // Resume playback if it was playing
+            if (wasPlaying) {
+              await videoRef.current.playAsync();
+            }
+            
+            setIsReady(true);
+            if (isQualityChanging) {
+              setIsQualityChanging(false);
+            }
+          }
         }
         
         // Call parent's onLoad handler
@@ -226,6 +277,7 @@ const VideoPlayer = ({
       }
     } catch (error) {
       console.error('Error in handleLoad:', error);
+      setIsQualityChanging(false);
     }
   };
 

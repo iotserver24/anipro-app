@@ -780,20 +780,27 @@ export default function WatchAnime() {
     const selectedSource = qualities.find(q => q.quality === quality);
     if (selectedSource) {
       try {
-        // First, save current position
+        // Save current position and playback state before quality change
         const currentPos = currentTime;
-        setSavedPosition(currentPos);
+        const wasPlaying = isPlaying;
+        
         setIsQualityChanging(true);
+        setSavedPosition(currentPos);
+        logger.info('Saving position before quality change:', currentPos);
 
-        // Then update quality
+        // Update quality
         setSelectedQuality(quality);
         setVideoUrl(selectedSource.url);
         setStreamingUrl(selectedSource.url);
 
-        // Set a timeout to handle cases where onLoad doesn't fire
+        // Set a timeout to reset quality changing state if onLoad doesn't fire
         setTimeout(() => {
-          setIsQualityChanging(false);
-        }, 10000); // 10 second timeout
+          if (isQualityChanging) {
+            setIsQualityChanging(false);
+            logger.warn('Quality change timeout reached');
+          }
+        }, 10000);
+
       } catch (error) {
         logger.error('Error during quality change:', error);
         setIsQualityChanging(false);
