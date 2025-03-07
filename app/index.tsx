@@ -11,6 +11,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMyListStore } from '../store/myListStore';
 import { animeAPI } from '../services/api';
 import { AnimeResult } from '../services/api';
+import { ContinueWatching } from '../components/ContinueWatching';
+import { logger } from '../utils/logger';
 
 const { width } = Dimensions.get('window');
 const ITEM_WIDTH = width * 0.85;
@@ -51,12 +53,6 @@ export default function Home() {
         animeAPI.getLatestCompleted()
       ]);
 
-      console.log('API Response:', {
-        recent,
-        trending,
-        latest
-      });
-
       // Check if we have results property in the response
       const recentResults = recent?.results || recent;
       const trendingResults = trending?.results || trending;
@@ -88,7 +84,7 @@ export default function Home() {
       });
 
     } catch (error) {
-      console.error('Error fetching anime:', error);
+      logger.error('Error fetching anime:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -287,6 +283,8 @@ export default function Home() {
             <Text style={styles.noDataText}>No trending anime available</Text>
           )}
         </View>
+
+        <ContinueWatching />
 
         {/* New Episodes Section */}
         <View style={styles.section}>

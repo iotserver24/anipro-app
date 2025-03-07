@@ -15,24 +15,31 @@ import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { LinearGradient } from 'expo-linear-gradient';
 
-type VideoPlayerProps = {
-  source: { uri: string | null; headers?: { [key: string]: string } };
-  title?: string;
+interface VideoPlayerProps {
+  source: {
+    uri: string | null;
+    headers?: { [key: string]: string };
+  };
+  style?: any;
+  initialPosition?: number;
   onProgress?: (currentTime: number, duration: number) => void;
   onEnd?: () => void;
-  initialPosition?: number;
-  style?: any;
   onFullscreenChange?: (isFullscreen: boolean) => void;
-};
+  title?: string;
+  onPositionChange?: (position: number) => void;
+  onLoad?: (status: AVPlaybackStatus) => void;
+}
 
 const VideoPlayer = ({
   source,
-  title = '',
+  style,
+  initialPosition = 0,
   onProgress,
   onEnd,
-  initialPosition = 0,
-  style = {},
-  onFullscreenChange
+  onFullscreenChange,
+  title,
+  onPositionChange,
+  onLoad,
 }: VideoPlayerProps) => {
   const videoRef = useRef<Video>(null);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -43,6 +50,7 @@ const VideoPlayer = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
   const [isSeeking, setIsSeeking] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
   // Format time in MM:SS format
   const formatTime = (seconds: number) => {
@@ -94,16 +102,26 @@ const VideoPlayer = ({
   // Handle video status update
   const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
     if (status.isLoaded) {
-      setCurrentTime(status.positionMillis / 1000);
+      const newPosition = status.positionMillis / 1000;
+      setCurrentTime(newPosition);
       setDuration(status.durationMillis ? status.durationMillis / 1000 : 0);
       setIsBuffering(status.isBuffering);
       setIsPlaying(status.isPlaying);
 
       if (onProgress && !isSeeking) {
         onProgress(
-          status.positionMillis / 1000,
+          newPosition,
           status.durationMillis ? status.durationMillis / 1000 : 0
         );
+      }
+
+      // Notify parent of position changes
+      if (onPositionChange && !isSeeking) {
+        onPositionChange(newPosition);
+      }
+
+      if (status.didJustFinish && onEnd) {
+        onEnd();
       }
     }
   };
@@ -193,12 +211,23 @@ const VideoPlayer = ({
     }
   };
 
-  // NEW: When the `initialPosition` prop changes, seek the video to that timestamp
-  useEffect(() => {
-    if (videoRef.current && initialPosition && initialPosition > 0) {
-      videoRef.current.setPositionAsync(initialPosition * 1000);
+  const handleLoad = async (status: AVPlaybackStatus) => {
+    try {
+      if (status.isLoaded) {
+        if (initialPosition > 0 && !isReady && videoRef.current) {
+          await videoRef.current.setPositionAsync(initialPosition * 1000);
+          setIsReady(true);
+        }
+        
+        // Call parent's onLoad handler
+        if (onLoad) {
+          onLoad(status);
+        }
+      }
+    } catch (error) {
+      console.error('Error in handleLoad:', error);
     }
-  }, [initialPosition]);
+  };
 
   return (
     <View style={[styles.container, style, isFullscreen && styles.fullscreenContainer]}>
@@ -212,11 +241,13 @@ const VideoPlayer = ({
           onPlaybackStatusUpdate={onPlaybackStatusUpdate}
           useNativeControls={false}
           onFullscreenUpdate={handleFullscreenUpdate}
+          onLoad={handleLoad}
         />
         
-        {isBuffering && (
+        {/* Only show buffering indicator when buffering AND not playing */}
+        {isBuffering && !isPlaying && (
           <View style={styles.bufferingContainer}>
-            <ActivityIndicator size="large" color="#2196F3" />
+            <ActivityIndicator size="large" color="#f4511e" />
           </View>
         )}
         

@@ -1,11 +1,12 @@
 import { Stack } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, DarkTheme } from '@react-navigation/native';
 import SearchBar from '../components/SearchBar';
+import { useWatchHistoryStore } from '../store/watchHistoryStore';
 
 // Prevent the splash screen from auto-hiding
 SplashScreen.preventAutoHideAsync();
@@ -24,6 +25,13 @@ export default function RootLayout() {
       await SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  const initializeHistory = useWatchHistoryStore(state => state.initializeHistory);
+
+  useEffect(() => {
+    // Load watch history when app starts
+    initializeHistory();
+  }, []);
 
   if (!fontsLoaded && !fontError) {
     return null;

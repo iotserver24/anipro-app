@@ -13,6 +13,7 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import { animeAPI } from '../../../services/api';
 import VideoPlayer from '../../../components/VideoPlayer';
 import { LinearGradient } from 'expo-linear-gradient';
+import { logger } from '../../../utils/logger';
 
 type StreamSource = {
   url: string;
@@ -348,6 +349,19 @@ export default function WatchAnime() {
   const [lastTap, setLastTap] = useState<number | null>(null);
   const DOUBLE_TAP_DELAY = 300; // milliseconds
   const [qualities, setQualities] = useState<Quality[]>([]);
+  const history = useWatchHistoryStore(state => state.history);
+  const savedProgress = useMemo(() => {
+    const historyItem = history.find(item => item.episodeId === episodeId);
+    return historyItem?.progress || 0; // Keep in seconds
+  }, [history, episodeId]);
+  const [isQualityChanging, setIsQualityChanging] = useState(false);
+  const [savedPosition, setSavedPosition] = useState(0);
+
+  useEffect(() => {
+    if (savedProgress > 0) {
+      setResumePosition(savedProgress); // Keep in seconds
+    }
+  }, [savedProgress]);
 
   useEffect(() => {
     fetchEpisodeData();
@@ -404,15 +418,11 @@ export default function WatchAnime() {
       setLoading(true);
       setError(null);
 
-      console.log('Episode ID:', episodeId);
-
       const sources = await animeAPI.getEpisodeSources(
         episodeId as string, 
         category === 'dub'
       );
       
-      console.log('API Response:', sources);
-
       if (!sources || !sources.sources || sources.sources.length === 0) {
         throw new Error('No streaming sources available');
       }
@@ -440,7 +450,7 @@ export default function WatchAnime() {
       }
 
     } catch (error) {
-      console.error('Error fetching episode:', error);
+      logger.error('Error fetching episode:', error);
       setError('Failed to load episode. Please try again.');
     } finally {
       setLoading(false);
@@ -450,15 +460,39 @@ export default function WatchAnime() {
   const fetchAnimeInfo = async () => {
     try {
       const data = await animeAPI.getAnimeDetails(animeId as string);
-      setAnimeInfo(data);
       
+      // Ensure we have the required fields
+      const processedData = {
+        ...data,
+        info: {
+          ...data.info,
+          title: data.title || data.name || data.info?.title || data.info?.name || 'Unknown Anime',
+          image: data.image || data.img || data.info?.image || data.info?.img || '',
+        }
+      };
+      setAnimeInfo(processedData);
+      
+      // Save to history immediately to ensure we have the correct info
+      addToHistory({
+        id: animeId as string,
+        name: processedData.info.title,
+        img: processedData.info.image,
+        episodeId: episodeId as string,
+        episodeNumber: Number(episodeNumber),
+        timestamp: 0,
+        progress: 0,
+        duration: 0,
+        lastWatched: Date.now(),
+        subOrDub: category || 'sub'
+      });
+
       if (data.episodes) {
         setEpisodes(data.episodes);
         const index = data.episodes.findIndex(ep => ep.id === episodeId);
         setCurrentEpisodeIndex(index);
       }
     } catch (error) {
-      console.error('Error fetching anime info:', error);
+      logger.error('Error fetching anime info:', error);
     }
   };
 
@@ -468,7 +502,7 @@ export default function WatchAnime() {
         videoRef.current.seek(resumePosition);
         setIsVideoReady(true);
       } catch (err) {
-        console.error('Error seeking to position:', err);
+        logger.error('Error seeking to position:', err);
       }
     }
   };
@@ -500,7 +534,9 @@ export default function WatchAnime() {
           episodeNumber: Number(episodeNumber),
           timestamp: now,
           progress: newTime,
-          duration: newDuration
+          duration: newDuration,
+          lastWatched: now,
+          subOrDub: category || 'sub'
         });
       }
     }
@@ -564,13 +600,18 @@ export default function WatchAnime() {
     
     // Save progress every 5 seconds
     if (Math.floor(data.currentTime) % 5 === 0) {
-      // Save to watch history
-      if (animeInfo) {
+      if (animeInfo?.info) {  // Make sure we have animeInfo before saving
         addToHistory({
-          animeId: animeId as string,
+          id: animeId as string,
+          name: animeInfo.info.title || animeInfo.title || animeInfo.name || 'Unknown Anime',
+          img: animeInfo.info.image || animeInfo.image || animeInfo.img || '',
           episodeId: episodeId as string,
-          timestamp: data.currentTime,
-          duration: data.seekableDuration
+          episodeNumber: Number(episodeNumber),
+          timestamp: Date.now(),
+          progress: data.currentTime,
+          duration: data.seekableDuration,
+          lastWatched: Date.now(),
+          subOrDub: category || 'sub'
         });
       }
     }
@@ -588,7 +629,7 @@ export default function WatchAnime() {
         const response = await animeAPI.getVideoSource(episodeId);
         setVideoData(response);
       } catch (error) {
-        console.error('Error fetching video:', error);
+        logger.error('Error fetching video:', error);
       }
     };
     
@@ -641,11 +682,6 @@ export default function WatchAnime() {
     onFullscreenChange: setIsFullscreen
   };
 
-  console.log('Rendering video with:', {
-    streamingUrl,
-    subtitleUrl: subtitles[0]?.uri
-  });
-
   // Add control visibility timeout
   useEffect(() => {
     let timeout: NodeJS.Timeout;
@@ -675,7 +711,7 @@ export default function WatchAnime() {
         height: width
       });
     } catch (error) {
-      console.error('Failed to enter fullscreen:', error);
+      logger.error('Failed to enter fullscreen:', error);
     }
   };
 
@@ -694,7 +730,7 @@ export default function WatchAnime() {
         height: width * (9/16)
       });
     } catch (error) {
-      console.error('Failed to exit fullscreen:', error);
+      logger.error('Failed to exit fullscreen:', error);
     }
   };
 
@@ -739,17 +775,31 @@ export default function WatchAnime() {
     }
   };
 
-  // Add quality selection handler
-  const handleQualityChange = (quality: string) => {
-        const selectedSource = qualities.find(q => q.quality === quality);
-       if (selectedSource) {
-          // Preserve current playback position before switching quality
-        setResumePosition(currentTime);
-          setSelectedQuality(quality);
-          setVideoUrl(selectedSource.url);
-          setStreamingUrl(selectedSource.url);
-        }
-      };
+  // Update the quality change handler
+  const handleQualityChange = async (quality: string) => {
+    const selectedSource = qualities.find(q => q.quality === quality);
+    if (selectedSource) {
+      try {
+        // First, save current position
+        const currentPos = currentTime;
+        setSavedPosition(currentPos);
+        setIsQualityChanging(true);
+
+        // Then update quality
+        setSelectedQuality(quality);
+        setVideoUrl(selectedSource.url);
+        setStreamingUrl(selectedSource.url);
+
+        // Set a timeout to handle cases where onLoad doesn't fire
+        setTimeout(() => {
+          setIsQualityChanging(false);
+        }, 10000); // 10 second timeout
+      } catch (error) {
+        logger.error('Error during quality change:', error);
+        setIsQualityChanging(false);
+      }
+    }
+  };
 
   if (loading) {
     return (
@@ -811,15 +861,39 @@ export default function WatchAnime() {
           }}
           title={title as string}
           initialPosition={resumePosition}
+          onLoad={async (status) => {
+            try {
+              if (isQualityChanging && videoRef.current) {
+                // Add a small delay to ensure video is ready
+                await new Promise(resolve => setTimeout(resolve, 100));
+                await videoRef.current.setPositionAsync(savedPosition * 1000);
+                setIsQualityChanging(false);
+                logger.info('Successfully seeked to position after quality change:', savedPosition);
+              }
+            } catch (error) {
+              logger.error('Error seeking after quality change:', error);
+              setIsQualityChanging(false);
+            }
+          }}
+          onError={(error) => {
+            logger.error('Video player error:', error);
+            setIsQualityChanging(false);
+          }}
           onProgress={(currentTime, duration) => {
-            // Save progress every 5 seconds
+            // Save progress every 5 seconds (currentTime is already in seconds)
             if (Math.floor(currentTime) % 5 === 0) {
-              if (animeInfo) {
+              if (animeInfo?.info) {
                 addToHistory({
-                  animeId: animeId as string,
+                  id: animeId as string,
+                  name: animeInfo.info.title || animeInfo.title || animeInfo.name || 'Unknown Anime',
+                  img: animeInfo.info.image || animeInfo.image || animeInfo.img || '',
                   episodeId: episodeId as string,
-                  timestamp: currentTime,
-                  duration: duration
+                  episodeNumber: Number(episodeNumber),
+                  timestamp: Date.now(),
+                  progress: currentTime, // Store in seconds
+                  duration: duration,
+                  lastWatched: Date.now(),
+                  subOrDub: category || 'sub'
                 });
               }
             }
@@ -834,25 +908,20 @@ export default function WatchAnime() {
             {/* Quality Selection */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Quality</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {qualities.map((quality, index) => (
+              <View style={styles.qualityOptions}>
+                {qualities.map((q) => (
                   <TouchableOpacity
-                    key={index}
+                    key={q.quality}
                     style={[
                       styles.qualityButton,
-                      selectedQuality === quality.quality && styles.selectedButton
+                      selectedQuality === q.quality && styles.selectedQuality
                     ]}
-                    onPress={() => handleQualityChange(quality.quality)}
+                    onPress={() => handleQualityChange(q.quality)}
                   >
-                    <Text style={[
-                      styles.qualityText,
-                      selectedQuality === quality.quality && styles.selectedText
-                    ]}>
-                      {quality.quality}
-                    </Text>
+                    <Text style={styles.qualityText}>{q.quality}</Text>
                   </TouchableOpacity>
                 ))}
-              </ScrollView>
+              </View>
             </View>
 
             {/* Playback Speed */}
@@ -1143,6 +1212,10 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
   },
+  qualityOptions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   qualityButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -1153,5 +1226,8 @@ const styles = StyleSheet.create({
   qualityText: {
     color: '#fff',
     fontSize: 14,
+  },
+  selectedQuality: {
+    backgroundColor: '#f4511e',
   },
 }); 
