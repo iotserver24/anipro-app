@@ -127,16 +127,7 @@ class AnimeAPI {
     return response.json();
   }
 
-  getVideoSource: async (episodeId: string) => {
-    try {
-      const response = await fetch(`https://conapi.anipro.site/anime/animekai/watch/${episodeId}`);
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error('Error fetching video source:', error);
-      throw error;
-    }
-  }
+  getVideoSource = this.getEpisodeSources;
 }
 
 export const animeAPI = new AnimeAPI(); 

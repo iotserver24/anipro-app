@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar } from 'react-native';
+import { useLocalSearchParams, router, Stack } from 'expo-router';
 import Video, { 
   OnLoadData, 
   OnProgressData, 
@@ -11,6 +11,7 @@ import Slider from '@react-native-community/slider';
 import { useWatchHistoryStore } from '../../../store/watchHistoryStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { animeAPI } from '../../../services/api';
+import VideoPlayer from '../../../components/VideoPlayer';
 
 type StreamSource = {
   url: string;
@@ -30,6 +31,8 @@ type APIEpisode = {
   isSubbed: boolean;
   isDubbed: boolean;
   url: string;
+  episodeId?: string;
+  episodeNo?: number;
 };
 
 // Update VideoRef type
@@ -66,6 +69,7 @@ type VideoPlayerProps = {
   onPlayPause?: () => void;
   onSeek?: (value: number) => void;
   onFullscreen?: () => void;
+  onFullscreenChange?: (isFullscreen: boolean) => void;
 };
 
 // Update video event types
@@ -114,111 +118,96 @@ type VideoResponse = {
   };
 };
 
-// Update the VideoPlayer component
-const VideoPlayer = React.forwardRef<VideoRef, VideoPlayerProps>((props, ref) => {
-  const [showControls, setShowControls] = useState(true);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [isBuffering, setIsBuffering] = useState(false);
+// Add types for video controls
+type ControlsOverlayProps = {
+  showControls: boolean;
+  isPlaying: boolean;
+  isFullscreen: boolean;
+  currentTime: number;
+  duration: number;
+  isBuffering: boolean;
+  title: string;
+  onPlayPress: () => void;
+  onFullscreenPress: () => void;
+  onSeek: (value: number) => void;
+};
 
-  // Add control timeout
-  useEffect(() => {
-    let timeout: NodeJS.Timeout;
-    if (showControls && isPlaying) {
-      timeout = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-    }
-    return () => {
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    };
-  }, [showControls, isPlaying]);
+// Add ControlsOverlay component
+const ControlsOverlay = ({
+  showControls,
+  isPlaying,
+  isFullscreen,
+  currentTime,
+  duration,
+  isBuffering,
+  title,
+  onPlayPress,
+  onFullscreenPress,
+  onSeek
+}: ControlsOverlayProps) => {
+  const formatTime = (seconds: number) => {
+    if (!seconds) return '0:00';
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  };
 
-  // Memoize handlers to prevent unnecessary re-renders
-  const handleControlsPress = useCallback(() => {
-    setShowControls(!showControls);
-  }, [showControls]);
+  return showControls ? (
+    <View style={styles.controlsOverlay}>
+      {/* Title bar */}
+      <View style={styles.titleBar}>
+        <Text style={styles.titleText}>{title}</Text>
+      </View>
 
-  const handlePlayPause = useCallback(() => {
-    setIsPlaying(!isPlaying);
-    if (props.onPlayPause) {
-      props.onPlayPause();
-    }
-  }, [isPlaying, props.onPlayPause]);
-
-  const handleProgress = useCallback((data: OnProgressData) => {
-    setCurrentTime(data.currentTime);
-    setDuration(data.seekableDuration);
-    
-    // Only call onProgress every 5 seconds
-    if (Math.floor(data.currentTime) % 5 === 0) {
-      if (props.onProgress) {
-        props.onProgress(data);
-      }
-    }
-  }, [props.onProgress]);
-
-  return (
-    <View style={styles.videoWrapper}>
-      <Video
-        ref={ref}
-        {...props}
-        style={styles.video}
-        paused={!isPlaying}
-        onProgress={handleProgress}
-        onBuffer={({isBuffering}) => setIsBuffering(isBuffering)}
-      />
-
-      <TouchableOpacity 
-        activeOpacity={1}
-        onPress={handleControlsPress}
-        style={StyleSheet.absoluteFill}
-      >
-        {showControls && (
-          <View style={styles.controlsOverlay}>
-            <View style={styles.controlsRow}>
-              <TouchableOpacity onPress={handlePlayPause} style={styles.controlButton}>
-                <MaterialIcons 
-                  name={isPlaying ? "pause" : "play-arrow"} 
-                  size={32} 
-                  color="white" 
-                />
-              </TouchableOpacity>
-              
-              <Text style={styles.timeText}>
-                {formatTime(currentTime)} / {formatTime(duration)}
-              </Text>
-
-              <Slider
-                style={styles.slider}
-                value={currentTime}
-                maximumValue={duration}
-                minimumValue={0}
-                onValueChange={(value) => {
-                  if (props.onSeek) {
-                    props.onSeek(value);
-                  }
-                }}
-                minimumTrackTintColor="#f4511e"
-                maximumTrackTintColor="rgba(255,255,255,0.5)"
-                thumbTintColor="#f4511e"
-              />
-            </View>
-          </View>
+      {/* Center play/pause button */}
+      <View style={styles.centerControls}>
+        {isBuffering ? (
+          <ActivityIndicator size="large" color="#f4511e" />
+        ) : (
+          <TouchableOpacity onPress={onPlayPress}>
+            <MaterialIcons 
+              name={isPlaying ? "pause" : "play-arrow"} 
+              size={40} 
+              color="white" 
+            />
+          </TouchableOpacity>
         )}
+      </View>
 
-        {isBuffering && (
-          <View style={styles.loadingOverlay}>
-            <ActivityIndicator size="large" color="#f4511e" />
-          </View>
-        )}
-      </TouchableOpacity>
+      {/* Bottom controls */}
+      <View style={styles.bottomControls}>
+        <View style={styles.progressRow}>
+          <Text style={styles.timeText}>
+            {formatTime(currentTime)}
+          </Text>
+          <Slider
+            style={styles.slider}
+            value={currentTime}
+            maximumValue={duration}
+            minimumValue={0}
+            onValueChange={onSeek}
+            minimumTrackTintColor="#f4511e"
+            maximumTrackTintColor="rgba(255,255,255,0.5)"
+            thumbTintColor="#f4511e"
+          />
+          <Text style={styles.timeText}>
+            {formatTime(duration)}
+          </Text>
+        </View>
+
+        <View style={styles.controlsRow}>
+          <TouchableOpacity onPress={onFullscreenPress}>
+            <MaterialIcons
+              name={isFullscreen ? "fullscreen-exit" : "fullscreen"}
+              size={24}
+              color="white"
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
-  );
-});
+  ) : null;
+};
 
 const EpisodeList = React.memo(({ episodes, currentEpisodeId, onEpisodePress }: {
   episodes: APIEpisode[];
@@ -288,6 +277,13 @@ export default function WatchAnime() {
   const [videoHeaders, setVideoHeaders] = useState<{[key: string]: string}>({});
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [videoData, setVideoData] = useState<VideoResponse | null>(null);
+  const [showControls, setShowControls] = useState(true);
+  const [playerDimensions, setPlayerDimensions] = useState({
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').width * (9/16)
+  });
+  const [lastTap, setLastTap] = useState<number | null>(null);
+  const DOUBLE_TAP_DELAY = 300; // milliseconds
 
   useEffect(() => {
     fetchEpisodeData();
@@ -386,12 +382,6 @@ export default function WatchAnime() {
     }
   };
 
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
   const handleVideoLoad = async () => {
     if (videoRef.current && resumePosition > 0 && !isVideoReady) {
       try {
@@ -457,9 +447,9 @@ export default function WatchAnime() {
       router.replace({
         pathname: "/anime/watch/[episodeId]",
         params: {
-          episodeId: nextEpisode.episodeId,
+          episodeId: nextEpisode.id,
           animeId: animeId as string,
-          episodeNumber: nextEpisode.episodeNo,
+          episodeNumber: nextEpisode.number,
           title: nextEpisode.title,
           category: category
         }
@@ -488,13 +478,15 @@ export default function WatchAnime() {
     }
   };
 
-  const handleFullscreen = async () => {
+  const handleFullscreenToggle = async () => {
     if (isFullscreen) {
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
       setIsFullscreen(false);
+      StatusBar.setHidden(false); // Show status bar
     } else {
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
       setIsFullscreen(true);
+      StatusBar.setHidden(true); // Hide status bar
     }
   };
 
@@ -581,7 +573,8 @@ export default function WatchAnime() {
     },
     onPlayPause: togglePlayPause,
     onSeek: handleSeek,
-    onFullscreen: handleFullscreen
+    onFullscreen: handleFullscreenToggle,
+    onFullscreenChange: setIsFullscreen
   };
 
   console.log('Rendering video with:', {
@@ -589,6 +582,99 @@ export default function WatchAnime() {
     subtitleUrl: subtitles[0]?.uri,
     selectedServer
   });
+
+  // Add control visibility timeout
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    if (showControls && isPlaying) {
+      timeout = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    }
+    return () => {
+      if (timeout) clearTimeout(timeout);
+    };
+  }, [showControls, isPlaying]);
+
+  // Update the fullscreen handlers
+  const enterFullscreen = async () => {
+    try {
+      // Lock to landscape orientation
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+      
+      // Update state
+      setIsFullscreen(true);
+      
+      // Update video dimensions
+      const { width, height } = Dimensions.get('window');
+      setPlayerDimensions({
+        width: height, // Swap width/height for landscape
+        height: width
+      });
+    } catch (error) {
+      console.error('Failed to enter fullscreen:', error);
+    }
+  };
+
+  const exitFullscreen = async () => {
+    try {
+      // Lock to portrait orientation
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      
+      // Update state
+      setIsFullscreen(false);
+      
+      // Reset video dimensions
+      const { width } = Dimensions.get('window');
+      setPlayerDimensions({
+        width: width,
+        height: width * (9/16)
+      });
+    } catch (error) {
+      console.error('Failed to exit fullscreen:', error);
+    }
+  };
+
+  // Add dimension change listener
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      const { width, height } = window;
+      if (isFullscreen) {
+        setPlayerDimensions({
+          width: height,
+          height: width
+        });
+      } else {
+        setPlayerDimensions({
+          width: width,
+          height: width * (9/16)
+        });
+      }
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  }, [isFullscreen]);
+
+  const handleSingleTap = () => {
+    setShowControls(!showControls);
+  };
+
+  const handleDoubleTap = (locationX: number) => {
+    const screenWidth = Dimensions.get('window').width;
+    if (locationX < screenWidth / 2) {
+      // Tap left side, rewind 5 seconds
+      if (videoRef.current) {
+        videoRef.current.seek(Math.max(0, currentTime - 5));
+      }
+    } else {
+      // Tap right side, skip forward 5 seconds
+      if (videoRef.current) {
+        videoRef.current.seek(Math.min(duration, currentTime + 5));
+      }
+    }
+  };
 
   if (loading) {
     return (
@@ -622,129 +708,167 @@ export default function WatchAnime() {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.videoContainer}>
-        {videoUrl && (
-          <VideoPlayer
-            ref={videoRef}
-            style={styles.video}
-            {...videoProps}
-          />
+    <>
+      {/* Configure the header visibility */}
+      <Stack.Screen 
+        options={{
+          headerShown: !isFullscreen,  // Hide header in fullscreen
+          title: title as string,
+          // Add these to ensure header is completely hidden in fullscreen
+          statusBarHidden: isFullscreen,
+          statusBarStyle: isFullscreen ? 'light' : 'dark',
+          statusBarTranslucent: true,
+          headerStyle: {
+            backgroundColor: '#000',
+          },
+          headerTintColor: '#fff',
+        }} 
+      />
+
+      <View style={[
+        styles.container,
+        isFullscreen && { marginTop: 0 } // Remove any top margin in fullscreen
+      ]}>
+        <VideoPlayer
+          source={{ 
+            uri: videoUrl,
+            headers: videoHeaders
+          }}
+          title={title as string}
+          initialPosition={resumePosition}
+          onProgress={(currentTime, duration) => {
+            // Save progress every 5 seconds
+            if (Math.floor(currentTime) % 5 === 0) {
+              if (animeInfo) {
+                addToHistory({
+                  animeId: animeId as string,
+                  episodeId: episodeId as string,
+                  timestamp: currentTime,
+                  duration: duration
+                });
+              }
+            }
+          }}
+          onEnd={onVideoEnd}
+          style={isFullscreen ? styles.fullscreenVideo : {}}
+          onFullscreenChange={(fullscreen) => setIsFullscreen(fullscreen)}
+        />
+        
+        {!isFullscreen && (
+          <ScrollView style={styles.controls}>
+            {/* Server Selection */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Servers</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {(category === 'dub' ? servers.dub : servers.sub).map((server) => (
+                  <TouchableOpacity
+                    key={server.serverId}
+                    style={[
+                      styles.serverButton,
+                      selectedServer?.serverId === server.serverId && styles.selectedButton
+                    ]}
+                    onPress={() => setSelectedServer(server)}
+                  >
+                    <Text style={[
+                      styles.serverText,
+                      selectedServer?.serverId === server.serverId && styles.selectedText
+                    ]}>
+                      {server.serverName}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Playback Speed */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Playback Speed</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(speed => (
+                  <TouchableOpacity
+                    key={speed}
+                    style={[
+                      styles.speedButton,
+                      playbackSpeed === speed && styles.selectedButton
+                    ]}
+                    onPress={() => handlePlaybackSpeedChange(speed)}
+                  >
+                    <Text style={[
+                      styles.speedText,
+                      playbackSpeed === speed && styles.selectedText
+                    ]}>
+                      {speed}x
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* Subtitles */}
+            {subtitles.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Subtitles</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <TouchableOpacity
+                    style={[
+                      styles.subtitleButton,
+                      !selectedSubtitle && styles.selectedButton
+                    ]}
+                    onPress={() => setSelectedSubtitle(null)}
+                  >
+                    <Text style={[
+                      styles.subtitleText,
+                      !selectedSubtitle && styles.selectedText
+                    ]}>
+                      Off
+                    </Text>
+                  </TouchableOpacity>
+                  {subtitles.map((sub, index) => (
+                    <TouchableOpacity
+                      key={index}
+                      style={[
+                        styles.subtitleButton,
+                        selectedSubtitle?.language === sub.language && styles.selectedButton
+                      ]}
+                      onPress={() => setSelectedSubtitle(sub)}
+                    >
+                      <Text style={[
+                        styles.subtitleText,
+                        selectedSubtitle?.language === sub.language && styles.selectedText
+                      ]}>
+                        {sub.title}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
+            {episodes.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Episodes</Text>
+                <EpisodeList
+                  episodes={episodes}
+                  currentEpisodeId={episodeId}
+                  onEpisodePress={(episode) => {
+                    router.replace({
+                      pathname: "/anime/watch/[episodeId]",
+                      params: {
+                        episodeId: episode.id,
+                        animeId: animeId as string,
+                        episodeNumber: episode.number,
+                        title: episode.title,
+                        category: category
+                      }
+                    });
+                  }}
+                />
+              </View>
+            )}
+          </ScrollView>
         )}
       </View>
-
-      <ScrollView style={styles.controls}>
-        {/* Server Selection */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Servers</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {(category === 'dub' ? servers.dub : servers.sub).map((server) => (
-              <TouchableOpacity
-                key={server.serverId}
-                style={[
-                  styles.serverButton,
-                  selectedServer?.serverId === server.serverId && styles.selectedButton
-                ]}
-                onPress={() => setSelectedServer(server)}
-              >
-                <Text style={[
-                  styles.serverText,
-                  selectedServer?.serverId === server.serverId && styles.selectedText
-                ]}>
-                  {server.serverName}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Playback Speed */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Playback Speed</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(speed => (
-              <TouchableOpacity
-                key={speed}
-                style={[
-                  styles.speedButton,
-                  playbackSpeed === speed && styles.selectedButton
-                ]}
-                onPress={() => handlePlaybackSpeedChange(speed)}
-              >
-                <Text style={[
-                  styles.speedText,
-                  playbackSpeed === speed && styles.selectedText
-                ]}>
-                  {speed}x
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Subtitles */}
-        {subtitles.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Subtitles</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <TouchableOpacity
-                style={[
-                  styles.subtitleButton,
-                  !selectedSubtitle && styles.selectedButton
-                ]}
-                onPress={() => setSelectedSubtitle(null)}
-              >
-                <Text style={[
-                  styles.subtitleText,
-                  !selectedSubtitle && styles.selectedText
-                ]}>
-                  Off
-                </Text>
-              </TouchableOpacity>
-              {subtitles.map((sub, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[
-                    styles.subtitleButton,
-                    selectedSubtitle?.language === sub.language && styles.selectedButton
-                  ]}
-                  onPress={() => setSelectedSubtitle(sub)}
-                >
-                  <Text style={[
-                    styles.subtitleText,
-                    selectedSubtitle?.language === sub.language && styles.selectedText
-                  ]}>
-                    {sub.title}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {episodes.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Episodes</Text>
-            <EpisodeList
-              episodes={episodes}
-              currentEpisodeId={episodeId}
-              onEpisodePress={(episode) => {
-                router.replace({
-                  pathname: "/anime/watch/[episodeId]",
-                  params: {
-                    episodeId: episode.episodeId,
-                    animeId: animeId as string,
-                    episodeNumber: episode.episodeNo,
-                    title: episode.title,
-                    category: category
-                  }
-                });
-              }}
-            />
-          </View>
-        )}
-      </ScrollView>
-    </View>
+    </>
   );
 }
 
@@ -756,9 +880,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   videoContainer: {
-    width: width,
-    height: width * (9/16),
     backgroundColor: '#000',
+  },
+  fullscreenContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 999,
   },
   videoWrapper: {
     flex: 1,
@@ -769,19 +899,39 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   controlsOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  titleBar: {
     padding: 16,
+  },
+  titleText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  centerControls: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bottomControls: {
+    padding: 16,
+  },
+  progressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
   },
   controlsRow: {
     flexDirection: 'row',
+    justifyContent: 'flex-end',
     alignItems: 'center',
-    marginBottom: 16,
-  },
-  controlButton: {
-    padding: 8,
-    marginRight: 16,
   },
   timeText: {
     color: 'white',
@@ -798,37 +948,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  titleText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  speedButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#333',
-    borderRadius: 8,
-    marginRight: 8,
-  },
-  speedText: {
-    color: '#fff',
-    fontSize: 14,
-  },
-  subtitleButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#333',
-    borderRadius: 8,
-    marginRight: 8,
-  },
-  subtitleText: {
-    color: '#fff',
-    fontSize: 14,
-  },
   video: {
     flex: 1,
   },
-  videoFullscreen: {
+  fullscreenVideo: {
     width: '100%',
     height: '100%',
   },
@@ -922,5 +1045,27 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 12,
     marginTop: 4,
+  },
+  speedButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#333',
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  speedText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  subtitleButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#333',
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  subtitleText: {
+    color: '#fff',
+    fontSize: 14,
   },
 }); 

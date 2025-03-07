@@ -1,24 +1,32 @@
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, AppState } from 'react-native';
 import { useEffect, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import BottomNav from '../components/BottomNav';
+import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface AnimeScheduleItem {
-  date: string;
+  id: string;
   title: string;
-  season: string;
-  episode: string;
-  release: string;
-  lang: string;
-  cover: string;
-  redirect: string;
-  released: string;
+  japaneseTitle: string;
+  airingTime: string;
+  airingEpisode: string;
 }
 
 interface ScheduleData {
   [key: string]: AnimeScheduleItem[];
 }
+
+// Add new interface for cached data
+interface CachedScheduleData {
+  timestamp: number;
+  data: ScheduleData;
+}
+
+// Add cache constants
+const CACHE_KEY = 'anime_schedule_cache';
+const CACHE_DURATION = 4 * 24 * 60 * 60 * 1000; // 4 days in milliseconds
 
 const MONTHS_DE_TO_EN: { [key: string]: string } = {
   'Januar': 'January',
@@ -88,95 +96,189 @@ export default function Schedule() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Get dates for the current week
+  const getWeekDates = () => {
+    const today = new Date();
+    const dates = [];
+    
+    // Start from today and get next 3 days (total 4 days including today)
+    for (let i = 0; i < 4; i++) {
+      const date = new Date(today);
+      date.setDate(today.getDate() + i);
+      dates.push(date.toISOString().split('T')[0]); // Format: YYYY-MM-DD
+    }
+    
+    return dates;
+  };
+
+  const loadCachedSchedule = async () => {
+    try {
+      const cachedData = await AsyncStorage.getItem(CACHE_KEY);
+      if (cachedData) {
+        const { timestamp, data }: CachedScheduleData = JSON.parse(cachedData);
+        const now = Date.now();
+        
+        // Check if cache is still valid (within 4 days)
+        if (now - timestamp < CACHE_DURATION) {
+          setSchedule(data);
+          
+          // Set today's date as selected
+          const today = new Date().toLocaleDateString('en-US', {
+            weekday: 'long',
+            month: 'short',
+            day: 'numeric'
+          });
+          setSelectedDate(today);
+          return true; // Cache was valid and loaded
+        }
+      }
+      return false; // No valid cache found
+    } catch (error) {
+      console.error('Error loading cached schedule:', error);
+      return false;
+    }
+  };
+
+  const saveScheduleToCache = async (scheduleData: ScheduleData) => {
+    try {
+      const cacheData: CachedScheduleData = {
+        timestamp: Date.now(),
+        data: scheduleData
+      };
+      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cacheData));
+    } catch (error) {
+      console.error('Error saving schedule to cache:', error);
+    }
+  };
+
   const fetchSchedule = async () => {
     try {
       setLoading(true);
-      console.log('Fetching schedule...');
-      
-      const response = await fetch('https://oblivion.wtf/api/animes/schedule', {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`API Error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      
-      // Group anime by date, only including eng-sub and converting dates/times
+      const weekDates = getWeekDates();
       const groupedSchedule: ScheduleData = {};
-      data.schedule
-        .filter((anime: AnimeScheduleItem) => anime.lang === 'eng-sub')
-        .forEach((anime: AnimeScheduleItem) => {
-          const englishDate = convertToEnglishDate(anime.date);
-          const istTime = convertToIST(anime.release);
-          
-          if (!groupedSchedule[englishDate]) {
-            groupedSchedule[englishDate] = [];
-          }
-          
-          groupedSchedule[englishDate].push({
-            ...anime,
-            date: englishDate,
-            release: istTime
-          });
-        });
 
-      // Sort anime within each date by release time
-      Object.keys(groupedSchedule).forEach(date => {
-        groupedSchedule[date].sort((a, b) => {
-          // Extract hours and minutes for comparison
-          const timeA = a.release.match(/(\d+):(\d+)/);
-          const timeB = b.release.match(/(\d+):(\d+)/);
-          if (!timeA || !timeB) return 0;
-          return timeA[0].localeCompare(timeB[0]);
+      // Fetch schedule for each date
+      for (const date of weekDates) {
+        console.log(`Fetching schedule for ${date}...`);
+        const response = await fetch(`https://conapi.anipro.site/anime/animekai/schedule/${date}`);
+        
+        if (!response.ok) {
+          throw new Error(`API Error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        // Format date for display
+        const displayDate = new Date(date).toLocaleDateString('en-US', {
+          weekday: 'long',
+          month: 'short',
+          day: 'numeric'
         });
-      });
+        
+        groupedSchedule[displayDate] = data.results.map((anime: any) => ({
+          id: anime.id,
+          title: anime.title,
+          japaneseTitle: anime.japaneseTitle,
+          airingTime: anime.airingTime,
+          airingEpisode: anime.airingEpisode
+        }));
+      }
 
       setSchedule(groupedSchedule);
       
-      if (Object.keys(groupedSchedule).length > 0 && !selectedDate) {
-        setSelectedDate(Object.keys(groupedSchedule)[0]);
-      }
+      // Save to cache
+      await saveScheduleToCache(groupedSchedule);
+      
+      // Select today's date by default
+      const today = new Date().toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'short',
+        day: 'numeric'
+      });
+      setSelectedDate(today);
+      
     } catch (error) {
       console.error('Error fetching schedule:', error);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
+  // Modified useEffect to check cache first
   useEffect(() => {
-    fetchSchedule();
+    const initializeSchedule = async () => {
+      // Check if we need to refresh the cache
+      const lastUpdate = await AsyncStorage.getItem('last_schedule_update');
+      const today = new Date().toDateString();
+      
+      if (lastUpdate !== today) {
+        // If last update was not today, fetch new data
+        await fetchSchedule();
+        await AsyncStorage.setItem('last_schedule_update', today);
+      } else {
+        // Try loading from cache first
+        const cachedDataLoaded = await loadCachedSchedule();
+        if (!cachedDataLoaded) {
+          await fetchSchedule();
+        }
+      }
+    };
+
+    initializeSchedule();
+
+    // Check for new day when app comes to foreground
+    const subscription = AppState.addEventListener('change', async (nextAppState) => {
+      if (nextAppState === 'active') {
+        const lastUpdate = await AsyncStorage.getItem('last_schedule_update');
+        const today = new Date().toDateString();
+        
+        if (lastUpdate !== today) {
+          await fetchSchedule();
+          await AsyncStorage.setItem('last_schedule_update', today);
+        }
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
-  const onRefresh = () => {
+  // Modified onRefresh to update cache
+  const onRefresh = async () => {
     setRefreshing(true);
-    fetchSchedule();
+    await fetchSchedule(); // This will also update the cache
+    setRefreshing(false);
+  };
+
+  const formatTime = (timestamp: number) => {
+    return new Date(timestamp * 1000).toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
   };
 
   const renderAnimeCard = ({ item }: { item: AnimeScheduleItem }) => (
-    <View style={styles.animeCard}>
+    <TouchableOpacity 
+      style={styles.animeCard}
+      onPress={() => router.push({
+        pathname: "/anime/[id]",
+        params: { id: item.id }
+      })}
+    >
       <View style={styles.cardContent}>
         <Text style={styles.animeName}>{item.title}</Text>
+        <Text style={styles.japaneseTitle}>{item.japaneseTitle}</Text>
         <View style={styles.infoContainer}>
           <View style={styles.episodeInfo}>
-            <MaterialIcons name="live-tv" size={16} color="#f4511e" />
-            <Text style={styles.episodeText}>
-              Season {item.season} Episode {item.episode}
-            </Text>
+            <MaterialIcons name="tv" size={16} color="#f4511e" />
+            <Text style={styles.episodeText}>Episode {item.airingEpisode}</Text>
           </View>
-          <View style={styles.episodeInfo}>
-            <MaterialIcons name="access-time" size={16} color="#f4511e" />
-            <Text style={styles.episodeText}>{item.release}</Text>
-          </View>
+          <Text style={styles.episodeText}>{item.airingTime}</Text>
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const formatDate = (dateString: string) => {
@@ -219,7 +321,7 @@ export default function Schedule() {
       <FlatList
         data={schedule[selectedDate] || []}
         renderItem={renderAnimeCard}
-        keyExtractor={(item) => item.title}
+        keyExtractor={(item) => `${item.id}-${item.airingEpisode}`}
         contentContainerStyle={styles.listContainer}
         refreshControl={
           <RefreshControl 
@@ -318,5 +420,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     opacity: 0.6,
     fontSize: 16,
+  },
+  japaneseTitle: {
+    color: '#fff',
+    fontSize: 14,
+    opacity: 0.6,
+    marginBottom: 8,
   },
 }); 

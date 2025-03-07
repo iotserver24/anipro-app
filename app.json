@@ -14,16 +14,24 @@
     },
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.r3ap3reditz.anipro",
       "infoPlist": {
         "UIBackgroundModes": [
+          "fetch",
           "fetch"
         ],
         "NSDocumentsDirectory": true,
-        "LSSupportsOpeningDocumentsInPlace": true
+        "LSSupportsOpeningDocumentsInPlace": true,
+        "UIFileSharingEnabled": true,
+        "NSPhotoLibraryUsageDescription": "Allow access to save downloaded videos",
+        "NSPhotoLibraryAddUsageDescription": "Allow access to save downloaded videos",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "associatedDomains": [
+        "applinks:yourdomain.com",
         "applinks:yourdomain.com"
-      ]
+      ],
+      "allowsFullScreenVideo": true
     },
     "android": {
       "intentFilters": [
@@ -47,7 +55,15 @@
           ]
         }
       ],
-      "package": "com.r3ap3reditz.anipro"
+      "package": "com.r3ap3reditz.anipro",
+      "permissions": [
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.INTERNET"
+      ],
+      "softwareKeyboardLayoutMode": "pan",
+      "allowsFullScreenVideo": true
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -65,6 +81,12 @@
         "expo-screen-orientation",
         {
           "initialOrientation": "DEFAULT"
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": false
         }
       ]
     ],

@@ -8,15 +8,13 @@ import { useMyListStore } from '../store/myListStore';
 
 type SearchAnime = {
   id: string;
-  name: string;
-  img: string;
-  episodes?: {
-    eps: number;
-    sub: number;
-    dub: number;
-  };
+  title: string;
+  image: string;
   type?: string;
-  duration?: string;
+  releaseDate?: string;
+  subOrDub?: string;
+  episodeNumber?: number;
+  status?: string;
 };
 
 export default function Search() {
@@ -38,7 +36,7 @@ export default function Search() {
     try {
       setLoading(true);
       const response = await fetch(
-        `https://anime-api-app-nu.vercel.app/aniwatch/search?keyword=${encodeURIComponent(query as string)}&page=${currentPage}`
+        `https://conapi.anipro.site/anime/animekai/${encodeURIComponent(query as string)}`
       );
       
       if (!response.ok) {
@@ -47,7 +45,18 @@ export default function Search() {
       
       const data = await response.json();
       
-      setResults(data.animes || []);
+      const transformedResults = data.results.map((item: any) => ({
+        id: item.id,
+        title: item.title || 'Unknown Title',
+        image: item.image || '',
+        type: item.type || '',
+        releaseDate: item.releaseDate || '',
+        subOrDub: item.subOrDub || 'sub',
+        episodeNumber: item.episodeNumber || 0,
+        status: item.status || 'Unknown'
+      }));
+
+      setResults(transformedResults);
       setHasNextPage(data.hasNextPage || false);
       setTotalPages(data.totalPages || 1);
     } catch (error) {
@@ -75,12 +84,27 @@ export default function Search() {
           params: { id: item.id }
         })}
       >
-        <Image source={{ uri: item.img }} style={styles.animeImage} />
+        <Image source={{ uri: item.image }} style={styles.animeImage} />
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.8)']}
           style={styles.gradient}
         >
-          <Text style={styles.animeName} numberOfLines={2}>{item.name}</Text>
+          <Text style={styles.animeName} numberOfLines={2}>{item.title}</Text>
+          {item.episodeNumber > 0 && (
+            <View style={styles.infoContainer}>
+              <View style={styles.episodeInfo}>
+                <MaterialIcons name="tv" size={12} color="#fff" />
+                <Text style={styles.episodeText}>
+                  {item.episodeNumber} Episodes
+                </Text>
+              </View>
+              {item.subOrDub && (
+                <Text style={[styles.episodeText, styles.typeText]}>
+                  {item.subOrDub.toUpperCase()}
+                </Text>
+              )}
+            </View>
+          )}
         </LinearGradient>
       </TouchableOpacity>
       <TouchableOpacity 
@@ -91,8 +115,8 @@ export default function Search() {
           } else {
             await addAnime({
               id: item.id,
-              name: item.name,
-              img: item.img,
+              name: item.title,
+              img: item.image,
               addedAt: Date.now()
             });
           }
@@ -229,5 +253,13 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 4,
     zIndex: 1,
+  },
+  typeText: {
+    backgroundColor: '#f4511e',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    fontSize: 10,
+    marginLeft: 8,
   },
 }); 
