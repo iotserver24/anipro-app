@@ -239,11 +239,73 @@ const EpisodeList = React.memo(({ episodes, currentEpisodeId, onEpisodePress }: 
   </View>
 ));
 
+// Add this type near the top with other type definitions
+type Quality = {
+  url: string;
+  quality: string;
+};
+
+// Add this utility function at the top of the file
+const extractQualities = async (m3u8Url: string): Promise<Quality[]> => {
+  try {
+    const response = await fetch(m3u8Url);
+    const manifest = await response.text();
+    const qualities: Quality[] = [];
+    
+    // Parse m3u8 manifest
+    const lines = manifest.split('\n');
+    let currentQuality = '';
+    
+    for (const line of lines) {
+      if (line.includes('#EXT-X-STREAM-INF')) {
+        // Extract resolution/bandwidth info
+        const resolution = line.match(/RESOLUTION=(\d+x\d+)/)?.[1];
+        const bandwidth = line.match(/BANDWIDTH=(\d+)/)?.[1];
+        
+        if (resolution) {
+          const height = resolution.split('x')[1];
+          currentQuality = `${height}p`;
+        } else if (bandwidth) {
+          // Fallback to bandwidth if no resolution
+          const bw = Math.floor(parseInt(bandwidth) / 1000);
+          currentQuality = `${bw}k`;
+        }
+      } else if (line.trim() && !line.startsWith('#') && currentQuality) {
+        // This is a stream URL
+        const streamUrl = new URL(line, m3u8Url).href;
+        qualities.push({
+          url: streamUrl,
+          quality: currentQuality
+        });
+        currentQuality = '';
+      }
+    }
+
+    // Add the original/auto quality
+    qualities.push({
+      url: m3u8Url,
+      quality: 'auto'
+    });
+
+    return qualities.sort((a, b) => {
+      // Sort qualities with highest first, but keep auto at top
+      if (a.quality === 'auto') return -1;
+      if (b.quality === 'auto') return 1;
+      return parseInt(b.quality) - parseInt(a.quality);
+    });
+
+  } catch (error) {
+    console.error('Error parsing m3u8:', error);
+    return [{
+      url: m3u8Url,
+      quality: 'auto'
+    }];
+  }
+};
+
 export default function WatchAnime() {
   const { episodeId, animeId, episodeNumber, title, category } = useLocalSearchParams();
   const videoRef = useRef<VideoRef>(null);
-  const [servers, setServers] = useState<{ sub: Server[], dub: Server[] }>({ sub: [], dub: [] });
-  const [selectedServer, setSelectedServer] = useState<Server | null>(null);
   const [streamingUrl, setStreamingUrl] = useState<string | null>(null);
   const [sources, setSources] = useState<StreamSource[]>([]);
   const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
@@ -285,6 +347,7 @@ export default function WatchAnime() {
   });
   const [lastTap, setLastTap] = useState<number | null>(null);
   const DOUBLE_TAP_DELAY = 300; // milliseconds
+  const [qualities, setQualities] = useState<Quality[]>([]);
 
   useEffect(() => {
     fetchEpisodeData();
@@ -354,11 +417,27 @@ export default function WatchAnime() {
         throw new Error('No streaming sources available');
       }
 
-      // Set video URL from first source
+      // Get the m3u8 URL
       const videoSource = sources.sources[0];
-      setVideoUrl(videoSource.url);
       setVideoHeaders(sources.headers);
-      setStreamingUrl(videoSource.url);  // For compatibility
+
+      // Extract qualities from m3u8
+      if (videoSource.url.includes('.m3u8')) {
+        const availableQualities = await extractQualities(videoSource.url);
+        setQualities(availableQualities);
+        
+        // Set default quality (auto)
+        const defaultQuality = availableQualities[0]; // 'auto' quality
+        setSelectedQuality(defaultQuality.quality);
+        setVideoUrl(defaultQuality.url);
+        setStreamingUrl(defaultQuality.url);
+      } else {
+        // Fallback for non-m3u8 sources
+        setQualities([{ url: videoSource.url, quality: 'auto' }]);
+        setSelectedQuality('auto');
+        setVideoUrl(videoSource.url);
+        setStreamingUrl(videoSource.url);
+      }
 
     } catch (error) {
       console.error('Error fetching episode:', error);
@@ -464,19 +543,7 @@ export default function WatchAnime() {
 
   const handleVideoError = (error: any) => {
     console.log('Video playback error:', error);
-    
-    // Try next server if available
-    const currentServerList = category === 'dub' ? servers.dub : servers.sub;
-    const currentIndex = currentServerList.findIndex(s => s.serverId === selectedServer?.serverId);
-    const nextServer = currentServerList[currentIndex + 1];
-    
-    if (nextServer && retryCount < maxRetries) {
-      setRetryCount(prev => prev + 1);
-      setSelectedServer(nextServer);
-      setStreamingUrl(null); // Clear current URL to trigger new load
-    } else {
-      setError('Video playback failed. Please try refreshing the page.');
-    }
+    setError('Video playback failed. Please try refreshing the page.');
   };
 
   const handleFullscreenToggle = async () => {
@@ -559,11 +626,7 @@ export default function WatchAnime() {
     onBuffer: ({ isBuffering }: { isBuffering: boolean }) => {
       setIsBuffering(isBuffering);
     },
-    onError: (error: any) => {
-      console.error('Video playback error:', error);
-      setError('Video playback failed');
-      setLoading(false);
-    },
+    onError: handleVideoError,
     onLoad: (data: OnLoadData) => {
       setDuration(data.duration);
       setLoading(false);
@@ -580,8 +643,7 @@ export default function WatchAnime() {
 
   console.log('Rendering video with:', {
     streamingUrl,
-    subtitleUrl: subtitles[0]?.uri,
-    selectedServer
+    subtitleUrl: subtitles[0]?.uri
   });
 
   // Add control visibility timeout
@@ -677,6 +739,18 @@ export default function WatchAnime() {
     }
   };
 
+  // Add quality selection handler
+  const handleQualityChange = (quality: string) => {
+        const selectedSource = qualities.find(q => q.quality === quality);
+       if (selectedSource) {
+          // Preserve current playback position before switching quality
+        setResumePosition(currentTime);
+          setSelectedQuality(quality);
+          setVideoUrl(selectedSource.url);
+          setStreamingUrl(selectedSource.url);
+        }
+      };
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -757,24 +831,24 @@ export default function WatchAnime() {
         
         {!isFullscreen && (
           <ScrollView style={styles.controls}>
-            {/* Server Selection */}
+            {/* Quality Selection */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Servers</Text>
+              <Text style={styles.sectionTitle}>Quality</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {(category === 'dub' ? servers.dub : servers.sub).map((server) => (
+                {qualities.map((quality, index) => (
                   <TouchableOpacity
-                    key={server.serverId}
+                    key={index}
                     style={[
-                      styles.serverButton,
-                      selectedServer?.serverId === server.serverId && styles.selectedButton
+                      styles.qualityButton,
+                      selectedQuality === quality.quality && styles.selectedButton
                     ]}
-                    onPress={() => setSelectedServer(server)}
+                    onPress={() => handleQualityChange(quality.quality)}
                   >
                     <Text style={[
-                      styles.serverText,
-                      selectedServer?.serverId === server.serverId && styles.selectedText
+                      styles.qualityText,
+                      selectedQuality === quality.quality && styles.selectedText
                     ]}>
-                      {server.serverName}
+                      {quality.quality}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -1066,6 +1140,17 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   subtitleText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  qualityButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: '#333',
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  qualityText: {
     color: '#fff',
     fontSize: 14,
   },

@@ -176,6 +176,30 @@ const VideoPlayer = ({
     }
   };
 
+  // Add skip functions
+  const skipForward = async () => {
+    if (videoRef.current) {
+      const newPosition = Math.min(duration, currentTime + 5);
+      await videoRef.current.setPositionAsync(newPosition * 1000);
+      setCurrentTime(newPosition);
+    }
+  };
+
+  const skipBackward = async () => {
+    if (videoRef.current) {
+      const newPosition = Math.max(0, currentTime - 5);
+      await videoRef.current.setPositionAsync(newPosition * 1000);
+      setCurrentTime(newPosition);
+    }
+  };
+
+  // NEW: When the `initialPosition` prop changes, seek the video to that timestamp
+  useEffect(() => {
+    if (videoRef.current && initialPosition && initialPosition > 0) {
+      videoRef.current.setPositionAsync(initialPosition * 1000);
+    }
+  }, [initialPosition]);
+
   return (
     <View style={[styles.container, style, isFullscreen && styles.fullscreenContainer]}>
       <Pressable style={styles.videoWrapper} onPress={handleScreenTap}>
@@ -211,12 +235,34 @@ const VideoPlayer = ({
             {/* Center Controls */}
             <View style={styles.centerControls}>
               <TouchableOpacity 
+                style={styles.skipButton}
+                onPress={skipBackward}
+              >
+                <MaterialIcons
+                  name="replay-5"
+                  size={28}
+                  color="white"
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity 
                 style={styles.playPauseButton}
                 onPress={togglePlayPause}
               >
                 <MaterialIcons
                   name={isPlaying ? 'pause' : 'play-arrow'}
                   size={32}
+                  color="white"
+                />
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.skipButton}
+                onPress={skipForward}
+              >
+                <MaterialIcons
+                  name="forward-5"
+                  size={28}
                   color="white"
                 />
               </TouchableOpacity>
@@ -327,8 +373,10 @@ const styles = StyleSheet.create({
   },
   centerControls: {
     flex: 1,
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 24,
   },
   playPauseButton: {
     width: 48,
@@ -386,6 +434,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  skipButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 
