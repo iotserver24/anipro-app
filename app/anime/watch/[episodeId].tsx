@@ -12,6 +12,7 @@ import { useWatchHistoryStore } from '../../../store/watchHistoryStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { animeAPI } from '../../../services/api';
 import VideoPlayer from '../../../components/VideoPlayer';
+import { LinearGradient } from 'expo-linear-gradient';
 
 type StreamSource = {
   url: string;
@@ -548,8 +549,8 @@ export default function WatchAnime() {
   // Update video props
   const videoProps = {
     source: { 
-      uri: videoUrl,
-      headers: videoHeaders
+      uri: videoUrl || null,
+      headers: videoHeaders || {}
     },
     rate: playbackSpeed,
     paused: !isPlaying,
@@ -731,8 +732,8 @@ export default function WatchAnime() {
       ]}>
         <VideoPlayer
           source={{ 
-            uri: videoUrl,
-            headers: videoHeaders
+            uri: videoUrl || null,
+            headers: videoHeaders || {}
           }}
           title={title as string}
           initialPosition={resumePosition}

@@ -14,21 +14,14 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.r3ap3reditz.anipro",
       "infoPlist": {
         "UIBackgroundModes": [
-          "fetch",
           "fetch"
         ],
         "NSDocumentsDirectory": true,
-        "LSSupportsOpeningDocumentsInPlace": true,
-        "UIFileSharingEnabled": true,
-        "NSPhotoLibraryUsageDescription": "Allow access to save downloaded videos",
-        "NSPhotoLibraryAddUsageDescription": "Allow access to save downloaded videos",
-        "ITSAppUsesNonExemptEncryption": false
+        "LSSupportsOpeningDocumentsInPlace": true
       },
       "associatedDomains": [
-        "applinks:yourdomain.com",
         "applinks:yourdomain.com"
       ],
       "allowsFullScreenVideo": true
@@ -57,10 +50,7 @@
       ],
       "package": "com.r3ap3reditz.anipro",
       "permissions": [
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.INTERNET"
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "softwareKeyboardLayoutMode": "pan",
       "allowsFullScreenVideo": true
@@ -70,7 +60,13 @@
     },
     "plugins": [
       "expo-router",
-      "react-native-video",
+      [
+        "react-native-video",
+        {
+          "androidPackage": "com.android.exoplayer2",
+          "enableAndroidBufferOptimizations": true
+        }
+      ],
       [
         "expo-file-system",
         {

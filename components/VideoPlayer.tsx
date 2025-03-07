@@ -9,10 +9,11 @@ import {
   StatusBar,
   Pressable
 } from 'react-native';
-import Video from 'react-native-video';
+import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { LinearGradient } from 'expo-linear-gradient';
 
 type VideoPlayerProps = {
   source: { uri: string | null; headers?: { [key: string]: string } };
@@ -33,14 +34,13 @@ const VideoPlayer = ({
   style = {},
   onFullscreenChange
 }: VideoPlayerProps) => {
-  const videoRef = useRef<any>(null);
+  const videoRef = useRef<Video>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isBuffering, setIsBuffering] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isVideoReady, setIsVideoReady] = useState(false);
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
   const [isSeeking, setIsSeeking] = useState(false);
 
@@ -55,10 +55,15 @@ const VideoPlayer = ({
   // Handle fullscreen toggle
   const toggleFullscreen = async () => {
     if (isFullscreen) {
+      // Exit fullscreen
+      if (videoRef.current) {
+        await videoRef.current.dismissFullscreenPlayer();
+      }
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
       StatusBar.setHidden(false);
       setIsFullscreen(false);
     } else {
+      // Enter fullscreen
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
       StatusBar.setHidden(true);
       setIsFullscreen(true);
@@ -66,56 +71,54 @@ const VideoPlayer = ({
   };
 
   // Handle play/pause toggle
-  const togglePlayPause = () => {
-    setIsPlaying(!isPlaying);
+  const togglePlayPause = async () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        await videoRef.current.pauseAsync();
+      } else {
+        await videoRef.current.playAsync();
+      }
+      setIsPlaying(!isPlaying);
+    }
   };
 
   // Handle seeking
-  const handleSeek = (value: number) => {
+  const handleSeek = async (value: number) => {
     if (videoRef.current) {
       setIsSeeking(true);
-      videoRef.current.seek(value);
+      await videoRef.current.setPositionAsync(value * 1000);
+      setIsSeeking(false);
     }
   };
 
-  // Handle video load
-  const handleLoad = (data: any) => {
-    setDuration(data.duration);
-    setIsVideoReady(true);
-    
-    // Seek to initial position if provided
-    if (initialPosition > 0 && videoRef.current && !isVideoReady) {
-      videoRef.current.seek(initialPosition);
+  // Handle video status update
+  const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
+    if (status.isLoaded) {
+      setCurrentTime(status.positionMillis / 1000);
+      setDuration(status.durationMillis ? status.durationMillis / 1000 : 0);
+      setIsBuffering(status.isBuffering);
+      setIsPlaying(status.isPlaying);
+
+      if (onProgress && !isSeeking) {
+        onProgress(
+          status.positionMillis / 1000,
+          status.durationMillis ? status.durationMillis / 1000 : 0
+        );
+      }
     }
   };
 
-  // Handle video progress
-  const handleProgress = (data: any) => {
-    if (!isSeeking) {
-      setCurrentTime(data.currentTime);
-    }
-    
-    if (onProgress && !isSeeking) {
-      onProgress(data.currentTime, data.seekableDuration);
-    }
-  };
-
-  // Handle seek complete
-  const handleSeekComplete = () => {
-    setIsSeeking(false);
-  };
-
-  // Handle screen tap to show/hide controls ONLY
+  // Update handleScreenTap to be more reliable
   const handleScreenTap = () => {
-    setShowControls(!showControls);
-    
-    // Clear any existing timeout
-    if (controlsTimeout) {
-      clearTimeout(controlsTimeout);
-    }
-    
-    // Set a new timeout to hide controls after 3 seconds if playing
-    if (showControls && isPlaying) {
+    if (showControls) {
+      // If controls are showing, hide them
+      setShowControls(false);
+      if (controlsTimeout) {
+        clearTimeout(controlsTimeout);
+      }
+    } else {
+      // If controls are hidden, show them and set auto-hide timer
+      setShowControls(true);
       const timeout = setTimeout(() => {
         setShowControls(false);
       }, 3000);
@@ -123,7 +126,7 @@ const VideoPlayer = ({
     }
   };
 
-  // Auto-hide controls after 3 seconds when playing
+  // Auto-hide controls
   useEffect(() => {
     if (showControls && isPlaying) {
       const timeout = setTimeout(() => {
@@ -137,24 +140,41 @@ const VideoPlayer = ({
     }
   }, [showControls, isPlaying]);
 
-  // Clean up on unmount
+  // Clean up
   useEffect(() => {
     return () => {
       if (controlsTimeout) {
         clearTimeout(controlsTimeout);
       }
-      // Reset orientation when component unmounts
       ScreenOrientation.unlockAsync();
       StatusBar.setHidden(false);
     };
   }, []);
 
-  // Make sure we're properly communicating fullscreen state to the parent component
+  // Communicate fullscreen state
   useEffect(() => {
     if (onFullscreenChange) {
       onFullscreenChange(isFullscreen);
     }
   }, [isFullscreen, onFullscreenChange]);
+
+  // Add handler for fullscreen updates
+  const handleFullscreenUpdate = async ({ fullscreenUpdate }: { fullscreenUpdate: number }) => {
+    switch (fullscreenUpdate) {
+      case Video.FULLSCREEN_UPDATE_PLAYER_WILL_PRESENT:
+        setIsFullscreen(true);
+        break;
+      case Video.FULLSCREEN_UPDATE_PLAYER_DID_PRESENT:
+        break;
+      case Video.FULLSCREEN_UPDATE_PLAYER_WILL_DISMISS:
+        break;
+      case Video.FULLSCREEN_UPDATE_PLAYER_DID_DISMISS:
+        setIsFullscreen(false);
+        // Ensure we return to portrait mode
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        break;
+    }
+  };
 
   return (
     <View style={[styles.container, style, isFullscreen && styles.fullscreenContainer]}>
@@ -163,69 +183,95 @@ const VideoPlayer = ({
           ref={videoRef}
           source={source}
           style={styles.video}
-          resizeMode="contain"
-          paused={!isPlaying}
-          onLoad={handleLoad}
-          onProgress={handleProgress}
-          onEnd={onEnd}
-          onSeek={handleSeekComplete}
-          onBuffer={({ isBuffering }) => setIsBuffering(isBuffering)}
-          onError={(error) => console.error('Video error:', error)}
+          resizeMode={ResizeMode.CONTAIN}
+          shouldPlay={isPlaying}
+          onPlaybackStatusUpdate={onPlaybackStatusUpdate}
+          useNativeControls={false}
+          onFullscreenUpdate={handleFullscreenUpdate}
         />
         
         {isBuffering && (
           <View style={styles.bufferingContainer}>
-            <ActivityIndicator size="large" color="#f4511e" />
+            <ActivityIndicator size="large" color="#2196F3" />
           </View>
         )}
         
         {showControls && (
           <View style={styles.controlsOverlay}>
-            {/* Top bar with title */}
-            <View style={styles.topBar}>
-              <Text style={styles.titleText}>{title}</Text>
-            </View>
-            
-            {/* Center play/pause button */}
+            {/* Top Bar */}
+            <LinearGradient
+              colors={['rgba(0,0,0,0.7)', 'transparent']}
+              style={styles.topBar}
+            >
+              <Text style={styles.titleText} numberOfLines={1}>
+                {title}
+              </Text>
+            </LinearGradient>
+
+            {/* Center Controls */}
             <View style={styles.centerControls}>
-              <TouchableOpacity onPress={togglePlayPause}>
+              <TouchableOpacity 
+                style={styles.playPauseButton}
+                onPress={togglePlayPause}
+              >
                 <MaterialIcons
                   name={isPlaying ? 'pause' : 'play-arrow'}
-                  size={50}
+                  size={32}
                   color="white"
                 />
               </TouchableOpacity>
             </View>
-            
-            {/* Bottom controls */}
-            <View style={styles.bottomControls}>
-              <View style={styles.timeRow}>
+
+            {/* Bottom Controls */}
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.7)']}
+              style={styles.bottomControls}
+            >
+              {/* Progress Bar */}
+              <View style={styles.progressContainer}>
                 <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
                 <Slider
                   style={styles.slider}
                   minimumValue={0}
-                  maximumValue={duration > 0 ? duration : 1}
+                  maximumValue={duration}
                   value={currentTime}
                   onSlidingStart={() => setIsSeeking(true)}
-                  onValueChange={(value) => setCurrentTime(value)}
+                  onValueChange={setCurrentTime}
                   onSlidingComplete={handleSeek}
-                  minimumTrackTintColor="#f4511e"
-                  maximumTrackTintColor="rgba(255,255,255,0.5)"
-                  thumbTintColor="#f4511e"
+                  minimumTrackTintColor="#2196F3"
+                  maximumTrackTintColor="rgba(255,255,255,0.3)"
+                  thumbTintColor="#2196F3"
                 />
                 <Text style={styles.timeText}>{formatTime(duration)}</Text>
               </View>
-              
+
+              {/* Bottom Row */}
               <View style={styles.controlsRow}>
-                <TouchableOpacity onPress={toggleFullscreen}>
+                <TouchableOpacity 
+                  style={styles.controlButton}
+                  onPress={togglePlayPause}
+                >
                   <MaterialIcons
-                    name={isFullscreen ? 'fullscreen-exit' : 'fullscreen'}
-                    size={24}
+                    name={isPlaying ? 'pause' : 'play-arrow'}
+                    size={20}
                     color="white"
                   />
                 </TouchableOpacity>
+
+                <View style={styles.rightControls}>
+                  <TouchableOpacity 
+                    style={styles.controlButton}
+                    onPress={toggleFullscreen}
+                  >
+                    <MaterialIcons
+                      name={isFullscreen ? 'fullscreen-exit' : 'fullscreen'}
+                      size={20}
+                      color="white"
+                    />
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
+            </LinearGradient>
           </View>
         )}
       </Pressable>
@@ -263,46 +309,77 @@ const styles = StyleSheet.create({
   },
   controlsOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'space-between',
+    backgroundColor: 'rgba(0,0,0,0.3)',
   },
   topBar: {
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 32,
+    paddingBottom: 16,
   },
   titleText: {
     color: 'white',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   centerControls: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  bottomControls: {
-    padding: 16,
+  playPauseButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  timeRow: {
+  bottomControls: {
+    padding: 12,
+    paddingTop: 16,
+  },
+  progressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
   },
   timeText: {
     color: 'white',
-    fontSize: 12,
-    width: 45,
+    fontSize: 10,
+    fontWeight: '500',
+    width: 40,
     textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   slider: {
     flex: 1,
-    marginHorizontal: 8,
+    marginHorizontal: 6,
+    height: 32,
   },
   controlsRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  rightControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  controlButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 3,
   },
   bufferingContainer: {
     ...StyleSheet.absoluteFillObject,
