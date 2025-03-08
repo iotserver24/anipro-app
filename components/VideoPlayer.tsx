@@ -101,9 +101,13 @@ const VideoPlayer = ({
       setIsSeeking(true);
       try {
         await videoRef.current.setPositionAsync(value * 1000);
-        // Resume playback if video was playing before seeking
+        setCurrentTime(value);
+        
+        // Resume playback if it was playing before
         if (wasPlaying) {
+          await new Promise(resolve => setTimeout(resolve, 50));
           await videoRef.current.playAsync();
+          setIsPlaying(true);
         }
       } catch (error) {
         console.error('Error seeking:', error);
@@ -216,9 +220,12 @@ const VideoPlayer = ({
       try {
         await videoRef.current.setPositionAsync(newPosition * 1000);
         setCurrentTime(newPosition);
-        // Resume playback if it was playing
+        
+        // Resume playback if it was playing before
         if (wasPlaying) {
+          await new Promise(resolve => setTimeout(resolve, 50));
           await videoRef.current.playAsync();
+          setIsPlaying(true);
         }
       } catch (error) {
         console.error('Error skipping forward:', error);
@@ -233,9 +240,12 @@ const VideoPlayer = ({
       try {
         await videoRef.current.setPositionAsync(newPosition * 1000);
         setCurrentTime(newPosition);
-        // Resume playback if it was playing
+        
+        // Resume playback if it was playing before
         if (wasPlaying) {
+          await new Promise(resolve => setTimeout(resolve, 50));
           await videoRef.current.playAsync();
+          setIsPlaying(true);
         }
       } catch (error) {
         console.error('Error skipping backward:', error);
@@ -365,7 +375,6 @@ const VideoPlayer = ({
                   maximumValue={duration}
                   value={currentTime}
                   onSlidingStart={() => setIsSeeking(true)}
-                  onValueChange={setCurrentTime}
                   onSlidingComplete={handleSeek}
                   minimumTrackTintColor="#2196F3"
                   maximumTrackTintColor="rgba(255,255,255,0.3)"

@@ -78,4 +78,4 @@ yarn-error.*
 # @end expo-cli
 
 # Remove Android folder since using Expo cloud builds
-/android/
+# /android/

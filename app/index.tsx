@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, Dimensions, Animated, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, Dimensions, Animated, ActivityIndicator, AppState } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,6 +19,34 @@ const ITEM_WIDTH = width * 0.85;
 const ITEM_SPACING = (width - ITEM_WIDTH) / 2;
 const SPACING = 10;
 
+const CACHE_KEYS = {
+  TRENDING_RECENT: 'home_trending_recent_cache',
+  NEW_EPISODES: 'home_new_episodes_cache'
+};
+
+interface CachedData {
+  timestamp: number;
+  data: any;
+}
+
+const getMidnightIST = () => {
+  const now = new Date();
+  const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000)); // Convert to IST
+  const midnight = new Date(ist);
+  midnight.setHours(24, 0, 0, 0);
+  return midnight.getTime() - (5.5 * 60 * 60 * 1000); // Convert back to local time
+};
+
+const isNewEpisodesCacheValid = (timestamp: number) => {
+  const now = Date.now();
+  const thirtyMinutes = 30 * 60 * 1000;
+  return (now - timestamp) < thirtyMinutes;
+};
+
+const isTrendingRecentCacheValid = (timestamp: number) => {
+  return Date.now() < getMidnightIST();
+};
+
 type AnimeItem = AnimeResult & {
   banner?: string;
   episodes?: {
@@ -27,6 +55,19 @@ type AnimeItem = AnimeResult & {
     dub: number;
   };
 };
+
+const mapToAnimeItem = (item: any): AnimeItem => ({
+  id: item.id,
+  title: item.title || item.name,
+  image: item.image || item.img,
+  banner: item.banner,
+  subOrDub: item.subOrDub || 'sub',
+  episodes: {
+    eps: item.totalEpisodes || item.episodes?.eps || 0,
+    sub: item.sub || item.episodes?.sub || 0,
+    dub: item.dub || item.episodes?.dub || 0
+  }
+});
 
 export default function Home() {
   const [recentAnime, setRecentAnime] = useState<AnimeItem[]>([]);
@@ -42,46 +83,45 @@ export default function Home() {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { isBookmarked, addAnime, removeAnime, initializeStore } = useMyListStore();
 
-  const fetchAnime = async () => {
+  const fetchAnime = async (bypassCache: boolean = false) => {
     try {
       setLoading(true);
-      
-      // Fetch multiple sections in parallel
-      const [recent, trending, latest] = await Promise.all([
-        animeAPI.getRecentAnime(),
-        animeAPI.getTrending(),
-        animeAPI.getLatestCompleted()
-      ]);
 
-      // Check if we have results property in the response
-      const recentResults = recent?.results || recent;
-      const trendingResults = trending?.results || trending;
-      const latestResults = latest?.results || latest;
+      if (!bypassCache) {
+        // Try loading from cache first
+        const [trendingRecentCache, newEpisodesCache] = await Promise.all([
+          AsyncStorage.getItem(CACHE_KEYS.TRENDING_RECENT),
+          AsyncStorage.getItem(CACHE_KEYS.NEW_EPISODES)
+        ]);
 
-      // Map the API response to match our AnimeItem type
-      const mapToAnimeItem = (item: any): AnimeItem => ({
-        id: item.id,
-        title: item.title || item.name,
-        image: item.image || item.img,
-        banner: item.banner,
-        subOrDub: item.subOrDub || 'sub',
-        episodes: {
-          eps: item.totalEpisodes || item.episodes?.eps || 0,
-          sub: item.sub || item.episodes?.sub || 0,
-          dub: item.dub || item.episodes?.dub || 0
+        if (trendingRecentCache) {
+          const { timestamp, data } = JSON.parse(trendingRecentCache);
+          if (isTrendingRecentCacheValid(timestamp)) {
+            setTrendingAnime(data.trending);
+            setRecentAnime(data.recent);
+          }
         }
-      });
 
-      setRecentAnime(recentResults?.map(mapToAnimeItem) || []);
-      setTrendingAnime(trendingResults?.map(mapToAnimeItem) || []);
-      setNewEpisodes(latestResults?.map(mapToAnimeItem) || []);
+        if (newEpisodesCache) {
+          const { timestamp, data } = JSON.parse(newEpisodesCache);
+          if (isNewEpisodesCacheValid(timestamp)) {
+            setNewEpisodes(data);
+            if (!trendingRecentCache || !isTrendingRecentCacheValid(JSON.parse(trendingRecentCache).timestamp)) {
+              // Only fetch trending and recent if their cache is invalid
+              await fetchTrendingAndRecent();
+            }
+            setLoading(false);
+            setRefreshing(false);
+            return;
+          }
+        }
+      }
 
-      // Cache the new data
-      await setCachedData(cacheKeys.HOME_DATA, {
-        recentAnime: recentResults,
-        trendingAnime: trendingResults,
-        latestEpisodes: latestResults
-      });
+      // If cache is invalid or bypassing cache, fetch everything
+      await Promise.all([
+        fetchTrendingAndRecent(),
+        fetchNewEpisodes()
+      ]);
 
     } catch (error) {
       logger.error('Error fetching anime:', error);
@@ -91,8 +131,74 @@ export default function Home() {
     }
   };
 
+  const fetchTrendingAndRecent = async () => {
+    try {
+      const [recent, trending] = await Promise.all([
+        animeAPI.getRecentAnime(),
+        animeAPI.getTrending()
+      ]);
+
+      const recentResults = recent?.results || recent;
+      const trendingResults = trending?.results || trending;
+
+      const mappedRecent = recentResults?.map(mapToAnimeItem) || [];
+      const mappedTrending = trendingResults?.map(mapToAnimeItem) || [];
+
+      setRecentAnime(mappedRecent);
+      setTrendingAnime(mappedTrending);
+
+      // Cache the data
+      const cacheData = {
+        timestamp: Date.now(),
+        data: {
+          recent: mappedRecent,
+          trending: mappedTrending
+        }
+      };
+      await AsyncStorage.setItem(CACHE_KEYS.TRENDING_RECENT, JSON.stringify(cacheData));
+
+    } catch (error) {
+      logger.error('Error fetching trending and recent:', error);
+    }
+  };
+
+  const fetchNewEpisodes = async () => {
+    try {
+      const latest = await animeAPI.getLatestCompleted();
+      const latestResults = latest?.results || latest;
+      const mappedLatest = latestResults?.map(mapToAnimeItem) || [];
+
+      setNewEpisodes(mappedLatest);
+
+      // Cache the data
+      const cacheData = {
+        timestamp: Date.now(),
+        data: mappedLatest
+      };
+      await AsyncStorage.setItem(CACHE_KEYS.NEW_EPISODES, JSON.stringify(cacheData));
+
+    } catch (error) {
+      logger.error('Error fetching new episodes:', error);
+    }
+  };
+
   useEffect(() => {
-    fetchAnime();
+    // Initial fetch
+    fetchAnime(false);
+
+    // Setup app state subscription
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        fetchAnime(false);
+      }
+    });
+
+    return () => {
+      // Cleanup subscription
+      if (subscription) {
+        subscription.remove();
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -101,7 +207,7 @@ export default function Home() {
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchAnime();
+    fetchAnime(true); // Pass true to bypass cache
   };
 
   // Auto slide function

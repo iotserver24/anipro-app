@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput } from 'react-native';
 import { useLocalSearchParams, router, Stack } from 'expo-router';
 import Video, { 
   OnLoadData, 
@@ -228,7 +228,7 @@ const EpisodeList = React.memo(({ episodes, currentEpisodeId, onEpisodePress }: 
       >
         <View style={styles.episodeInfo}>
           <Text style={styles.episodeNumber}>Episode {episode.number}</Text>
-          <Text style={styles.episodeName} numberOfLines={1}>
+          <Text style={styles.episodeTitle} numberOfLines={1}>
             {episode.title}
           </Text>
         </View>
@@ -304,6 +304,20 @@ const extractQualities = async (m3u8Url: string): Promise<Quality[]> => {
   }
 };
 
+// Add this function to sort episodes relative to current episode
+const sortEpisodesByProximity = (episodes: APIEpisode[], currentEpisodeId: string) => {
+  const currentIndex = episodes.findIndex(ep => ep.id === currentEpisodeId);
+  if (currentIndex === -1) return episodes;
+
+  // Split episodes into before and after current
+  const beforeCurrent = episodes.slice(0, currentIndex);
+  const afterCurrent = episodes.slice(currentIndex + 1);
+  const current = episodes[currentIndex];
+
+  // Combine in order: after current, current, before current
+  return [current, ...afterCurrent, ...beforeCurrent];
+};
+
 export default function WatchAnime() {
   const { episodeId, animeId, episodeNumber, title, category } = useLocalSearchParams();
   const videoRef = useRef<VideoRef>(null);
@@ -356,6 +370,10 @@ export default function WatchAnime() {
   }, [history, episodeId]);
   const [isQualityChanging, setIsQualityChanging] = useState(false);
   const [savedPosition, setSavedPosition] = useState(0);
+  const [filteredEpisodes, setFilteredEpisodes] = useState<APIEpisode[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const episodeListRef = useRef<ScrollView>(null);
+  const [isSeeking, setIsSeeking] = useState(false);
 
   useEffect(() => {
     if (savedProgress > 0) {
@@ -595,24 +613,26 @@ export default function WatchAnime() {
   };
 
   const handleProgress = (data: OnProgressData) => {
-    setCurrentTime(data.currentTime);
-    setDuration(data.seekableDuration);
-    
-    // Save progress every 5 seconds
-    if (Math.floor(data.currentTime) % 5 === 0) {
-      if (animeInfo?.info) {  // Make sure we have animeInfo before saving
-        addToHistory({
-          id: animeId as string,
-          name: animeInfo.info.title || animeInfo.title || animeInfo.name || 'Unknown Anime',
-          img: animeInfo.info.image || animeInfo.image || animeInfo.img || '',
-          episodeId: episodeId as string,
-          episodeNumber: Number(episodeNumber),
-          timestamp: Date.now(),
-          progress: data.currentTime,
-          duration: data.seekableDuration,
-          lastWatched: Date.now(),
-          subOrDub: category || 'sub'
-        });
+    if (!isSeeking) {
+      setCurrentTime(data.currentTime);
+      setDuration(data.seekableDuration);
+      
+      // Save progress every 5 seconds
+      if (Math.floor(data.currentTime) % 5 === 0) {
+        if (animeInfo?.info) {
+          addToHistory({
+            id: animeId as string,
+            name: animeInfo.info.title || animeInfo.title || animeInfo.name || 'Unknown Anime',
+            img: animeInfo.info.image || animeInfo.image || animeInfo.img || '',
+            episodeId: episodeId as string,
+            episodeNumber: Number(episodeNumber),
+            timestamp: Date.now(),
+            progress: data.currentTime,
+            duration: data.seekableDuration,
+            lastWatched: Date.now(),
+            subOrDub: category || 'sub'
+          });
+        }
       }
     }
 
@@ -644,9 +664,21 @@ export default function WatchAnime() {
   }, [videoData]);
 
   // Video control handlers
-  const handleSeek = (value: number) => {
+  const handleSeek = async (value: number) => {
     if (videoRef.current) {
-      videoRef.current.seek(value);
+      const wasPlaying = isPlaying;
+      try {
+        await videoRef.current.setPositionAsync(value * 1000);
+        setCurrentTime(value);
+        
+        if (wasPlaying) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+          await videoRef.current.playAsync();
+          setIsPlaying(true);
+        }
+      } catch (error) {
+        logger.error('Error seeking:', error);
+      }
     }
   };
 
@@ -807,6 +839,37 @@ export default function WatchAnime() {
       }
     }
   };
+
+  // Update the search handler to maintain the sorting
+  const handleSearch = (query: string) => {
+    setSearchQuery(query);
+    if (!query.trim()) {
+      setFilteredEpisodes(sortEpisodesByProximity(episodes, episodeId as string));
+      return;
+    }
+    
+    const filtered = episodes.filter(episode => 
+      episode.number.toString().includes(query) ||
+      episode.title?.toLowerCase().includes(query.toLowerCase())
+    );
+    setFilteredEpisodes(filtered);
+  };
+
+  // Update the useEffect that initializes filtered episodes
+  useEffect(() => {
+    const sortedEpisodes = sortEpisodesByProximity(episodes, episodeId as string);
+    setFilteredEpisodes(sortedEpisodes);
+  }, [episodes, episodeId]);
+
+  // Add this useEffect to scroll to current episode when list changes
+  useEffect(() => {
+    if (episodeListRef.current && filteredEpisodes.length > 0) {
+      // Small delay to ensure the list has rendered
+      setTimeout(() => {
+        episodeListRef.current?.scrollTo({ y: 0, animated: true });
+      }, 100);
+    }
+  }, [filteredEpisodes]);
 
   if (loading) {
     return (
@@ -995,27 +1058,77 @@ export default function WatchAnime() {
               </View>
             )}
 
-            {episodes.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Episodes</Text>
-                <EpisodeList
-                  episodes={episodes}
-                  currentEpisodeId={episodeId}
-                  onEpisodePress={(episode) => {
-                    router.replace({
-                      pathname: "/anime/watch/[episodeId]",
-                      params: {
-                        episodeId: episode.id,
-                        animeId: animeId as string,
-                        episodeNumber: episode.number,
-                        title: episode.title,
-                        category: category
-                      }
-                    });
-                  }}
+            {/* Episodes */}
+            <View style={styles.episodeSection}>
+              <Text style={styles.sectionTitle}>Episodes</Text>
+              
+              {/* Search Bar */}
+              <View style={styles.searchContainer}>
+                <MaterialIcons name="search" size={24} color="#666" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search episodes..."
+                  placeholderTextColor="#666"
+                  value={searchQuery}
+                  onChangeText={handleSearch}
                 />
               </View>
-            )}
+
+              {/* Episode List */}
+              <View style={styles.episodeListContainer}>
+                <ScrollView
+                  ref={episodeListRef}
+                  style={styles.episodeList}
+                  contentContainerStyle={styles.episodeListContent}
+                  showsVerticalScrollIndicator={true}
+                  nestedScrollEnabled={true}
+                >
+                  {filteredEpisodes.map((episode) => (
+                    <TouchableOpacity
+                      key={episode.id}
+                      style={[
+                        styles.episodeItem,
+                        episode.id === episodeId && styles.currentEpisode
+                      ]}
+                      onPress={() => {
+                        router.replace({
+                          pathname: "/anime/watch/[episodeId]",
+                          params: {
+                            episodeId: episode.id,
+                            animeId: animeId,
+                            episodeNumber: episode.number,
+                            title: animeInfo?.info?.title || 'Unknown Anime',
+                            category: category
+                          }
+                        });
+                      }}
+                    >
+                      <View style={styles.episodeInfo}>
+                        <Text style={styles.episodeNumber}>
+                          Episode {episode.number}
+                        </Text>
+                        {episode.title && (
+                          <Text style={styles.episodeTitle} numberOfLines={1}>
+                            {episode.title}
+                          </Text>
+                        )}
+                        {/* Add relative position indicator */}
+                        {episode.id === episodeId ? (
+                          <Text style={styles.currentIndicator}>Currently Playing</Text>
+                        ) : (
+                          <Text style={styles.episodePosition}>
+                            {episode.number > Number(episodeNumber) ? 'Next' : 'Previous'}
+                          </Text>
+                        )}
+                      </View>
+                      {episode.id === episodeId && (
+                        <MaterialIcons name="play-circle-filled" size={24} color="#f4511e" />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
           </ScrollView>
         )}
       </View>
@@ -1176,9 +1289,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
+    minHeight: 56,
   },
   currentEpisode: {
     backgroundColor: '#333',
@@ -1189,11 +1304,21 @@ const styles = StyleSheet.create({
   },
   episodeNumber: {
     color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '500',
   },
-  episodeName: {
+  episodeTitle: {
     color: '#999',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  currentIndicator: {
+    color: '#f4511e',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  episodePosition: {
+    color: '#666',
     fontSize: 12,
     marginTop: 4,
   },
@@ -1236,5 +1361,42 @@ const styles = StyleSheet.create({
   },
   selectedQuality: {
     backgroundColor: '#f4511e',
+  },
+  episodeSection: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+  },
+  
+  searchInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  
+  episodeListContainer: {
+    height: 350,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  
+  episodeList: {
+    flex: 1,
+  },
+  
+  episodeListContent: {
+    paddingVertical: 8,
   },
 }); 
