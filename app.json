@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "anipro",
-    "slug": "anipro",
+    "name": "AniSurge",
+    "slug": "anisurge",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -12,32 +12,18 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "ios": {
-      "supportsTablet": true,
-      "infoPlist": {
-        "UIBackgroundModes": [
-          "fetch"
-        ],
-        "NSDocumentsDirectory": true,
-        "LSSupportsOpeningDocumentsInPlace": true
-      },
-      "associatedDomains": [
-        "applinks:yourdomain.com"
-      ],
-      "allowsFullScreenVideo": true
-    },
     "android": {
       "intentFilters": [
         {
           "action": "VIEW",
           "data": [
             {
-              "scheme": "anipro",
+              "scheme": "anisurge",
               "host": "*",
               "pathPrefix": "/anime"
             },
             {
-              "scheme": "anipro",
+              "scheme": "anisurge",
               "host": "*",
               "pathPrefix": "/anime/watch"
             }
@@ -48,7 +34,7 @@
           ]
         }
       ],
-      "package": "com.r3ap3reditz.anipro",
+      "package": "com.r3ap3reditz.anisurge",
       "permissions": [
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.WRITE_EXTERNAL_STORAGE",
@@ -88,7 +74,7 @@
         }
       ]
     ],
-    "scheme": "anipro",
+    "scheme": "anisurge",
     "fonts": [
       {
         "asset": "assets/fonts/Poppins-Regular.ttf",
