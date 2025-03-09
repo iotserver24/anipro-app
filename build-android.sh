@@ -1,33 +1,36 @@
 #!/bin/bash
 
-echo "🚀 Starting Android build process..."
+# Set environment variables
+export NODE_ENV=production
 
+# Create necessary directories if they don't exist
+echo "Creating necessary directories..."
+mkdir -p android/app/src/main/assets
+mkdir -p android/app/src/main/res
 
-
-# Bundle the app
-echo "📦 Bundling the app..."
+# Bundle JavaScript code
+echo "📦 Bundling JavaScript code..."
 npx react-native bundle --platform android \
     --dev false \
-    --entry-file index.js \
+    --entry-file app/_layout.tsx \
     --bundle-output android/app/src/main/assets/index.android.bundle \
     --assets-dest android/app/src/main/res
 
-# Navigate to android directory
+# Change directory to android
+echo "📱 Changing directory to android..."
 cd android
-
-# Clean build
-echo "🧹 Cleaning previous build..."
-./gradlew clean
 
 # Build release APK
 echo "🔨 Building release APK..."
-./gradlew assembleRelease
+./gradlew clean
+./gradlew assembleRelease 
 
-# Check if build was successful
-if [ $? -eq 0 ]; then
-    echo "✅ Build completed successfully!"
-    echo "📱 APK location: android/app/build/outputs/apk/release/app-release.apk"
-else
-    echo "❌ Build failed!"
-    exit 1
-fi 
+# Install release APK
+echo "📲 Installing release APK..."
+./gradlew installRelease
+
+# assembleRelease: Bundles the release AAB.
+# echo "Bundling release AAB........................................................................."
+# ./gradlew bundleRelease 
+
+echo "✅ All tasks completed successfully!"

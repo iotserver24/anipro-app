@@ -27,14 +27,14 @@
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="anipro"/>
-        <data android:scheme="com.r3ap3reditz.anipro"/>
-        <data android:scheme="exp+anipro"/>
+        <data android:scheme="anisurge"/>
+        <data android:scheme="com.anisurge.app"/>
+        <data android:scheme="exp+anisurge"/>
       </intent-filter>
       <intent-filter data-generated="true">
         <action android:name="android.intent.action.VIEW"/>
-        <data android:scheme="anipro" android:host="*" android:pathPrefix="/anime"/>
-        <data android:scheme="anipro" android:host="*" android:pathPrefix="/anime/watch"/>
+        <data android:scheme="anisurge" android:host="*" android:pathPrefix="/anime"/>
+        <data android:scheme="anisurge" android:host="*" android:pathPrefix="/anime/watch"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>
