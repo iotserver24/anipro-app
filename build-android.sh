@@ -2,9 +2,7 @@
 
 echo "🚀 Starting Android build process..."
 
-# Create assets directory if it doesn't exist
-echo "📁 Creating assets directory..."
-mkdir -p android/app/src/main/assets
+
 
 # Bundle the app
 echo "📦 Bundling the app..."
