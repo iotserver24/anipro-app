@@ -34,7 +34,7 @@
           ]
         }
       ],
-      "package": "com.r3ap3reditz.anisurge",
+      "package": "com.anisurge.app",
       "permissions": [
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.WRITE_EXTERNAL_STORAGE",
