@@ -22,10 +22,26 @@ type AnimeInfo = {
       dub: number;
       total?: number;
     };
+    rating?: string;
   };
   moreInfo: {
     [key: string]: string | string[];
   };
+  recommendations?: {
+    id: string;
+    title: string;
+    image: string;
+    type: string;
+    episodes: number;
+  }[];
+  relations?: {
+    id: string;
+    title: string;
+    image: string;
+    type: string;
+    episodes: number;
+    relationType: string;
+  }[];
 };
 
 type APIEpisode = {
@@ -35,6 +51,7 @@ type APIEpisode = {
   isSubbed: boolean;
   isDubbed: boolean;
   url: string;
+  isFiller: boolean;
 };
 
 type DownloadStatus = {
@@ -53,7 +70,7 @@ const EpisodeItem = React.memo(({ episode, onPress, onLongPress, mode }: {
   mode: 'sub' | 'dub';
 }) => (
   <TouchableOpacity
-    style={styles.episodeCard}
+    style={[styles.episodeCard, episode.isFiller && styles.fillerEpisodeCard]}
     onPress={onPress}
     onLongPress={onLongPress}
   >
@@ -65,14 +82,80 @@ const EpisodeItem = React.memo(({ episode, onPress, onLongPress, mode }: {
         <Text style={styles.episodeTitle} numberOfLines={1}>
           {episode.title}
         </Text>
-        {mode === 'dub' && episode.isDubbed && (
-          <Text style={styles.fillerBadge}>DUB</Text>
-        )}
+        <View style={styles.episodeBadges}>
+          {mode === 'dub' && episode.isDubbed && (
+            <Text style={styles.dubBadge}>DUB</Text>
+          )}
+          {episode.isFiller && (
+            <Text style={styles.fillerBadge}>FILLER</Text>
+          )}
+        </View>
       </View>
       <MaterialIcons name="play-circle-outline" size={24} color="#f4511e" />
     </View>
   </TouchableOpacity>
 ));
+
+const RecommendationItem = ({ anime }: { 
+  anime: {
+    id: string;
+    title: string;
+    image: string;
+    type: string;
+    episodes: number;
+  }
+}) => (
+  <TouchableOpacity 
+    style={styles.recommendationCard}
+    onPress={() => router.push(`/anime/${anime.id}`)}
+  >
+    <Image 
+      source={{ uri: anime.image }} 
+      style={styles.recommendationImage}
+    />
+    <View style={styles.recommendationInfo}>
+      <Text style={styles.recommendationTitle} numberOfLines={2}>
+        {anime.title}
+      </Text>
+      <View style={styles.recommendationMeta}>
+        <Text style={styles.recommendationType}>{anime.type}</Text>
+        <Text style={styles.recommendationEpisodes}>
+          {anime.episodes} eps
+        </Text>
+      </View>
+    </View>
+  </TouchableOpacity>
+);
+
+const RelatedAnimeItem = ({ anime }: { 
+  anime: {
+    id: string;
+    title: string;
+    image: string;
+    type: string;
+    episodes: number;
+    relationType: string;
+  }
+}) => (
+  <TouchableOpacity 
+    style={styles.recommendationCard}
+    onPress={() => router.push(`/anime/${anime.id}`)}
+  >
+    <Image 
+      source={{ uri: anime.image }} 
+      style={styles.recommendationImage}
+    />
+    <View style={styles.recommendationInfo}>
+      <Text style={styles.recommendationTitle} numberOfLines={2}>
+        {anime.title}
+      </Text>
+      <View style={styles.recommendationMeta}>
+        <Text style={styles.relationType}>{anime.relationType}</Text>
+        <Text style={styles.recommendationType}>{anime.type}</Text>
+      </View>
+    </View>
+  </TouchableOpacity>
+);
 
 interface AnimeData {
   id: string;
@@ -96,6 +179,14 @@ interface AnimeData {
     image: string;
     type: string;
     episodes: number;
+  }[];
+  relations?: {
+    id: string;
+    title: string;
+    image: string;
+    type: string;
+    episodes: number;
+    relationType: string;
   }[];
 }
 
@@ -122,6 +213,10 @@ export default function AnimeDetails() {
     episodeInfo: null
   });
   const { isBookmarked, addAnime, removeAnime } = useMyListStore();
+  const [showRelated, setShowRelated] = useState(false);
+  const [showRecommendations, setShowRecommendations] = useState(false);
+  const [selectedTab, setSelectedTab] = useState<'episodes' | 'related' | 'recommendations'>('episodes');
+  const fadeAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     if (id) {
@@ -142,7 +237,8 @@ export default function AnimeDetails() {
           episodes: {
             sub: data.hasSub ? data.totalEpisodes : 0,
             dub: data.hasDub ? data.totalEpisodes : 0,
-          }
+          },
+          rating: data.rating,
         },
         moreInfo: {
           Type: data.type || '',
@@ -150,7 +246,9 @@ export default function AnimeDetails() {
           'Release Date': data.season || '',
           'Japanese Title': data.japaneseTitle || '',
           Genres: data.genres?.join(', ') || ''
-        }
+        },
+        recommendations: data.recommendations,
+        relations: data.relations
       };
 
       setAnimeData(formattedData);
@@ -293,22 +391,74 @@ export default function AnimeDetails() {
     }
   };
 
+  const handleTabChange = (tab: 'episodes' | 'related' | 'recommendations') => {
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start(() => {
+      setSelectedTab(tab);
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+    });
+  };
+
   const renderAnimeHeader = () => (
     <View style={styles.headerContainer}>
-      {/* Blurred Background Image */}
+      {/* Top Navigation Bar */}
+      <View style={styles.topBar}>
+        {/* Remove the back button, only keep the right-side actions */}
+        <View style={styles.topBarActions}>
+          <TouchableOpacity 
+            style={styles.topBarButton}
+            onPress={async () => {
+              if (isBookmarked(id as string)) {
+                await removeAnime(id as string);
+              } else if (animeData) {
+                await addAnime({
+                  id: id as string,
+                  name: animeData.info.name,
+                  img: animeData.info.img,
+                  addedAt: Date.now()
+                });
+              }
+            }}
+          >
+            <MaterialIcons 
+              name={isBookmarked(id as string) ? "bookmark" : "bookmark-outline"} 
+              size={28} 
+              color="#fff" 
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.topBarButton}
+            onPress={handleShare}
+          >
+            <MaterialIcons 
+              name="share" 
+              size={28} 
+              color="#fff" 
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Rest of the header content */}
       <Image 
         source={{ uri: animeData?.info.img }} 
         style={styles.backgroundImage}
         blurRadius={3}
       />
       
-      {/* Gradient Overlay */}
       <LinearGradient
         colors={['rgba(18, 18, 18, 0.3)', '#121212']}
         style={styles.headerGradient}
       >
         <View style={styles.headerContent}>
-          {/* Poster Image */}
           <View style={styles.posterContainer}>
             <Image 
               source={{ uri: animeData?.info.img }} 
@@ -316,57 +466,21 @@ export default function AnimeDetails() {
             />
           </View>
 
-          {/* Title and Info */}
           <View style={styles.infoContainer}>
             <Text style={styles.animeTitle}>
               {animeData?.info.name}
             </Text>
             
-            {/* Meta Info (Rating & Episodes) */}
             <View style={styles.metaInfo}>
-              <View style={styles.ratingBadge}>
-                <MaterialIcons name="star" size={16} color="#f4511e" />
-                <Text style={styles.ratingText}>PG-13</Text>
-              </View>
+              {animeData?.info.rating && (
+                <View style={styles.ratingBadge}>
+                  <MaterialIcons name="star" size={16} color="#f4511e" />
+                  <Text style={styles.ratingText}>{animeData.info.rating}</Text>
+                </View>
+              )}
               <TouchableOpacity style={styles.episodesBadge}>
                 <MaterialIcons name="playlist-play" size={20} color="#f4511e" />
                 <Text style={styles.episodesText}>Episodes</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Action Buttons */}
-            <View style={styles.actionButtons}>
-              <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={async () => {
-                  if (isBookmarked(id as string)) {
-                    await removeAnime(id as string);
-                  } else if (animeData) {
-                    await addAnime({
-                      id: id as string,
-                      name: animeData.info.name,
-                      img: animeData.info.img,
-                      addedAt: Date.now()
-                    });
-                  }
-                }}
-              >
-                <MaterialIcons 
-                  name={isBookmarked(id as string) ? "bookmark" : "bookmark-outline"} 
-                  size={24} 
-                  color="#f4511e" 
-                />
-                <Text style={styles.actionText}>
-                  {isBookmarked(id as string) ? 'In My List' : 'Add to List'}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.actionButton}
-                onPress={handleShare}
-              >
-                <MaterialIcons name="share" size={24} color="#f4511e" />
-                <Text style={styles.actionText}>Share</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -374,6 +488,216 @@ export default function AnimeDetails() {
       </LinearGradient>
     </View>
   );
+
+  const TabBar = () => (
+    <View style={styles.tabBar}>
+      <TouchableOpacity 
+        style={[styles.tab, selectedTab === 'episodes' && styles.selectedTab]}
+        onPress={() => handleTabChange('episodes')}
+      >
+        <MaterialIcons 
+          name="playlist-play" 
+          size={24} 
+          color={selectedTab === 'episodes' ? '#f4511e' : '#666'} 
+        />
+        <Text style={[styles.tabText, selectedTab === 'episodes' && styles.selectedTabText]}>
+          Episodes
+        </Text>
+      </TouchableOpacity>
+
+      {animeData?.relations && animeData.relations.length > 0 && (
+        <TouchableOpacity 
+          style={[styles.tab, selectedTab === 'related' && styles.selectedTab]}
+          onPress={() => handleTabChange('related')}
+        >
+          <MaterialIcons 
+            name="link" 
+            size={24} 
+            color={selectedTab === 'related' ? '#f4511e' : '#666'} 
+          />
+          <Text style={[styles.tabText, selectedTab === 'related' && styles.selectedTabText]}>
+            Related
+          </Text>
+        </TouchableOpacity>
+      )}
+
+      {animeData?.recommendations && animeData.recommendations.length > 0 && (
+        <TouchableOpacity 
+          style={[styles.tab, selectedTab === 'recommendations' && styles.selectedTab]}
+          onPress={() => handleTabChange('recommendations')}
+        >
+          <MaterialIcons 
+            name="recommend" 
+            size={24} 
+            color={selectedTab === 'recommendations' ? '#f4511e' : '#666'} 
+          />
+          <Text style={[styles.tabText, selectedTab === 'recommendations' && styles.selectedTabText]}>
+            For You
+          </Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
+  const renderTabContent = () => {
+    const content = (() => {
+      switch (selectedTab) {
+        case 'episodes':
+          return (
+            <View style={styles.tabContent}>
+              {/* Audio Selector */}
+              <View style={styles.audioSelector}>
+                <TouchableOpacity 
+                  style={[styles.audioOption, selectedMode === 'sub' && styles.selectedAudio]}
+                  onPress={() => setSelectedMode('sub')}
+                >
+                  <MaterialIcons 
+                    name="subtitles" 
+                    size={20} 
+                    color={selectedMode === 'sub' ? '#fff' : '#666'} 
+                  />
+                  <Text style={[styles.audioText, selectedMode === 'sub' && styles.selectedAudioText]}>
+                    Sub ({animeData?.info.episodes.sub || 0})
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.audioOption, selectedMode === 'dub' && styles.selectedAudio]}
+                  onPress={() => setSelectedMode('dub')}
+                >
+                  <MaterialIcons 
+                    name="record-voice-over" 
+                    size={20} 
+                    color={selectedMode === 'dub' ? '#fff' : '#666'} 
+                  />
+                  <Text style={[styles.audioText, selectedMode === 'dub' && styles.selectedAudioText]}>
+                    Dub ({animeData?.info.episodes.dub || 0})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Search Bar */}
+              <View style={styles.searchContainer}>
+                <View style={styles.searchInputContainer}>
+                  <MaterialIcons name="search" size={20} color="#666" />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder={`Search by ${searchMode === 'number' ? 'episode number' : 'episode name'}...`}
+                    placeholderTextColor="#666"
+                    value={searchQuery}
+                    onChangeText={text => {
+                      setSearchQuery(text);
+                      setCurrentPage(1);
+                    }}
+                  />
+                  {searchQuery !== '' && (
+                    <TouchableOpacity 
+                      onPress={() => {
+                        setSearchQuery('');
+                        setCurrentPage(1);
+                      }}
+                    >
+                      <MaterialIcons name="close" size={20} color="#666" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <TouchableOpacity 
+                  style={[styles.searchModeButton, searchMode === 'number' && styles.activeModeButton]}
+                  onPress={() => setSearchMode(mode => mode === 'number' ? 'name' : 'number')}
+                >
+                  <MaterialIcons 
+                    name={searchMode === 'number' ? 'format-list-numbered' : 'text-format'} 
+                    size={20} 
+                    color={searchMode === 'number' ? '#fff' : '#666'} 
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Episodes List */}
+              {episodesLoading ? (
+                <ActivityIndicator size="large" color="#f4511e" style={styles.episodesLoader} />
+              ) : (
+                <>
+                  <FlatList
+                    data={getPaginatedEpisodes().paginatedEpisodes}
+                    renderItem={renderEpisode}
+                    keyExtractor={item => item.id}
+                    contentContainerStyle={styles.episodesList}
+                    maxToRenderPerBatch={10}
+                    windowSize={10}
+                    removeClippedSubviews={true}
+                    initialNumToRender={10}
+                    ListEmptyComponent={() => (
+                      <Text style={styles.noEpisodesText}>
+                        {searchQuery ? 'No episodes match your search' : 'No episodes available'}
+                      </Text>
+                    )}
+                  />
+
+                  {/* Pagination */}
+                  {getPaginatedEpisodes().totalPages > 1 && (
+                    <View style={styles.pagination}>
+                      <TouchableOpacity 
+                        style={[styles.pageButton, currentPage === 1 && styles.disabledButton]}
+                        onPress={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                      >
+                        <MaterialIcons name="chevron-left" size={24} color={currentPage === 1 ? '#666' : '#fff'} />
+                      </TouchableOpacity>
+                      
+                      <Text style={styles.pageInfo}>
+                        Page {currentPage} of {getPaginatedEpisodes().totalPages}
+                      </Text>
+                      
+                      <TouchableOpacity 
+                        style={[styles.pageButton, currentPage === getPaginatedEpisodes().totalPages && styles.disabledButton]}
+                        onPress={() => setCurrentPage(p => Math.min(getPaginatedEpisodes().totalPages, p + 1))}
+                        disabled={currentPage === getPaginatedEpisodes().totalPages}
+                      >
+                        <MaterialIcons name="chevron-right" size={24} color={currentPage === getPaginatedEpisodes().totalPages ? '#666' : '#fff'} />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </>
+              )}
+            </View>
+          );
+        
+        case 'related':
+          return (
+            <View style={styles.tabContent}>
+              <ScrollView 
+                contentContainerStyle={styles.gridContainer}
+                showsVerticalScrollIndicator={false}
+              >
+                {animeData?.relations?.map((anime) => (
+                  <RelatedAnimeItem key={anime.id} anime={anime} />
+                ))}
+              </ScrollView>
+            </View>
+          );
+        
+        case 'recommendations':
+          return (
+            <View style={styles.tabContent}>
+              <ScrollView 
+                contentContainerStyle={styles.gridContainer}
+                showsVerticalScrollIndicator={false}
+              >
+                {animeData?.recommendations?.map((anime) => (
+                  <RecommendationItem key={anime.id} anime={anime} />
+                ))}
+              </ScrollView>
+            </View>
+          );
+      }
+    })();
+
+    return (
+      <Animated.View style={[styles.tabContent, { opacity: fadeAnim }]}>
+        {content}
+      </Animated.View>
+    );
+  };
 
   if (loading) {
     return (
@@ -396,20 +720,18 @@ export default function AnimeDetails() {
       episode={item}
       mode={selectedMode}
       onPress={() => {
-        router.replace({
+        router.push({
           pathname: "/anime/watch/[episodeId]",
           params: {
             episodeId: item.id,
-            animeId: id as string,
+            animeId: id,
             episodeNumber: item.number,
-            title: item.title,
+            title: animeData?.info.name || 'Unknown Anime',
             category: selectedMode
           }
         });
       }}
-      onLongPress={() => {
-        handleDownload(item);
-      }}
+      onLongPress={() => handleDownload(item)}
     />
   );
 
@@ -427,61 +749,47 @@ export default function AnimeDetails() {
         data: [null],
         renderItem: () => (
           <View style={styles.section}>
+            {/* Synopsis */}
             <View style={styles.synopsisContainer}>
+              <Text style={styles.sectionTitle}>Synopsis</Text>
               <Text style={styles.description} numberOfLines={showMoreInfo ? undefined : 3}>
                 {animeData?.info.description}
               </Text>
-              <LinearGradient
-                colors={['transparent', '#121212']}
-                style={styles.gradientOverlay}
-                pointerEvents={showMoreInfo ? 'none' : 'auto'}
-                opacity={showMoreInfo ? 0 : 1}
-              >
-                <TouchableOpacity 
-                  style={styles.moreInfoButton}
-                  onPress={toggleMoreInfo}
+              {!showMoreInfo && (
+                <LinearGradient
+                  colors={['transparent', '#121212']}
+                  style={styles.gradientOverlay}
                 >
-                  <Text style={styles.moreInfoText}>
-                    {showMoreInfo ? 'Show Less' : 'Show More'}
-                  </Text>
-                  <MaterialIcons 
-                    name={showMoreInfo ? "keyboard-arrow-up" : "keyboard-arrow-down"} 
-                    size={24} 
-                    color="#f4511e" 
-                  />
-                </TouchableOpacity>
-              </LinearGradient>
+                  <TouchableOpacity style={styles.moreInfoButton} onPress={toggleMoreInfo}>
+                    <Text style={styles.moreInfoText}>More Info</Text>
+                    <MaterialIcons name="keyboard-arrow-down" size={20} color="#f4511e" />
+                  </TouchableOpacity>
+                </LinearGradient>
+              )}
             </View>
 
-            {/* More Info Content */}
-            <Animated.View style={[
-              styles.moreInfoContent,
-              {
-                maxHeight: animatedHeight.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, 1000]
-                }),
-                opacity: animatedHeight
-              }
-            ]}>
+            {/* More Info Grid */}
+            <Animated.View 
+              style={[
+                styles.moreInfoContent,
+                {
+                  maxHeight: animatedHeight.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, 500]
+                  })
+                }
+              ]}
+            >
               <View style={styles.infoGrid}>
                 {Object.entries(animeData?.moreInfo || {}).map(([key, value]) => (
                   <View key={key} style={styles.infoItem}>
                     <Text style={styles.infoLabel}>{key}</Text>
-                    <Text style={styles.infoValue}>
-                      {Array.isArray(value) ? value.join(', ') : value}
-                    </Text>
+                    <Text style={styles.infoValue}>{value}</Text>
                   </View>
                 ))}
               </View>
-              
-              {/* Show Less button when expanded */}
               {showMoreInfo && (
-                <TouchableOpacity 
-                  style={[styles.moreInfoButton, styles.showLessButton]}
-                  onPress={toggleMoreInfo}
-                >
-                  <Text style={styles.moreInfoText}>Show Less</Text>
+                <TouchableOpacity style={styles.showLessButton} onPress={toggleMoreInfo}>
                   <MaterialIcons name="keyboard-arrow-up" size={24} color="#f4511e" />
                 </TouchableOpacity>
               )}
@@ -490,123 +798,12 @@ export default function AnimeDetails() {
         )
       },
       {
-        title: 'episodes',
+        title: 'content',
         data: [null],
         renderItem: () => (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Episodes</Text>
-            <View style={styles.audioSelector}>
-              <TouchableOpacity 
-                style={[styles.audioOption, selectedMode === 'sub' && styles.selectedAudio]}
-                onPress={() => setSelectedMode('sub')}
-              >
-                <MaterialIcons 
-                  name="subtitles" 
-                  size={20} 
-                  color={selectedMode === 'sub' ? '#fff' : '#666'} 
-                />
-                <Text style={[styles.audioText, selectedMode === 'sub' && styles.selectedAudioText]}>
-                  Sub ({animeData.info.episodes.sub || 0})
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.audioOption, selectedMode === 'dub' && styles.selectedAudio]}
-                onPress={() => setSelectedMode('dub')}
-              >
-                <MaterialIcons 
-                  name="record-voice-over" 
-                  size={20} 
-                  color={selectedMode === 'dub' ? '#fff' : '#666'} 
-                />
-                <Text style={[styles.audioText, selectedMode === 'dub' && styles.selectedAudioText]}>
-                  Dub ({animeData.info.episodes.dub || 0})
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Search Bar */}
-            <View style={styles.searchContainer}>
-              <View style={styles.searchInputContainer}>
-                <MaterialIcons name="search" size={20} color="#666" />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder={`Search by ${searchMode === 'number' ? 'episode number' : 'episode name'}...`}
-                  placeholderTextColor="#666"
-                  value={searchQuery}
-                  onChangeText={text => {
-                    setSearchQuery(text);
-                    setCurrentPage(1); // Reset to first page on search
-                  }}
-                />
-                {searchQuery !== '' && (
-                  <TouchableOpacity 
-                    onPress={() => {
-                      setSearchQuery('');
-                      setCurrentPage(1);
-                    }}
-                  >
-                    <MaterialIcons name="close" size={20} color="#666" />
-                  </TouchableOpacity>
-                )}
-              </View>
-              <TouchableOpacity 
-                style={[styles.searchModeButton, searchMode === 'number' && styles.activeModeButton]}
-                onPress={() => setSearchMode(mode => mode === 'number' ? 'name' : 'number')}
-              >
-                <MaterialIcons 
-                  name={searchMode === 'number' ? 'format-list-numbered' : 'text-format'} 
-                  size={20} 
-                  color={searchMode === 'number' ? '#fff' : '#666'} 
-                />
-              </TouchableOpacity>
-            </View>
-
-            {episodesLoading ? (
-              <ActivityIndicator size="large" color="#f4511e" style={styles.episodesLoader} />
-            ) : (
-              <>
-                <FlatList
-                  data={getPaginatedEpisodes().paginatedEpisodes}
-                  renderItem={renderEpisode}
-                  keyExtractor={item => item.id}
-                  contentContainerStyle={styles.episodesList}
-                  maxToRenderPerBatch={10}
-                  windowSize={10}
-                  removeClippedSubviews={true}
-                  initialNumToRender={10}
-                  ListEmptyComponent={() => (
-                    <Text style={styles.noEpisodesText}>
-                      {searchQuery ? 'No episodes match your search' : 'No episodes available'}
-                    </Text>
-                  )}
-                />
-
-                {/* Pagination */}
-                {getPaginatedEpisodes().totalPages > 1 && (
-                  <View style={styles.pagination}>
-                    <TouchableOpacity 
-                      style={[styles.pageButton, currentPage === 1 && styles.disabledButton]}
-                      onPress={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                    >
-                      <MaterialIcons name="chevron-left" size={24} color={currentPage === 1 ? '#666' : '#fff'} />
-                    </TouchableOpacity>
-                    
-                    <Text style={styles.pageInfo}>
-                      Page {currentPage} of {getPaginatedEpisodes().totalPages}
-                    </Text>
-                    
-                    <TouchableOpacity 
-                      style={[styles.pageButton, currentPage === getPaginatedEpisodes().totalPages && styles.disabledButton]}
-                      onPress={() => setCurrentPage(p => Math.min(getPaginatedEpisodes().totalPages, p + 1))}
-                      disabled={currentPage === getPaginatedEpisodes().totalPages}
-                    >
-                      <MaterialIcons name="chevron-right" size={24} color={currentPage === getPaginatedEpisodes().totalPages ? '#666' : '#fff'} />
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </>
-            )}
+            <TabBar />
+            {renderTabContent()}
           </View>
         )
       }
@@ -637,61 +834,47 @@ export default function AnimeDetails() {
             data: [null],
             renderItem: () => (
               <View style={styles.section}>
+                {/* Synopsis */}
                 <View style={styles.synopsisContainer}>
+                  <Text style={styles.sectionTitle}>Synopsis</Text>
                   <Text style={styles.description} numberOfLines={showMoreInfo ? undefined : 3}>
                     {animeData?.info.description}
                   </Text>
-                  <LinearGradient
-                    colors={['transparent', '#121212']}
-                    style={styles.gradientOverlay}
-                    pointerEvents={showMoreInfo ? 'none' : 'auto'}
-                    opacity={showMoreInfo ? 0 : 1}
-                  >
-                    <TouchableOpacity 
-                      style={styles.moreInfoButton}
-                      onPress={toggleMoreInfo}
+                  {!showMoreInfo && (
+                    <LinearGradient
+                      colors={['transparent', '#121212']}
+                      style={styles.gradientOverlay}
                     >
-                      <Text style={styles.moreInfoText}>
-                        {showMoreInfo ? 'Show Less' : 'Show More'}
-                      </Text>
-                      <MaterialIcons 
-                        name={showMoreInfo ? "keyboard-arrow-up" : "keyboard-arrow-down"} 
-                        size={24} 
-                        color="#f4511e" 
-                      />
-                    </TouchableOpacity>
-                  </LinearGradient>
+                      <TouchableOpacity style={styles.moreInfoButton} onPress={toggleMoreInfo}>
+                        <Text style={styles.moreInfoText}>More Info</Text>
+                        <MaterialIcons name="keyboard-arrow-down" size={20} color="#f4511e" />
+                      </TouchableOpacity>
+                    </LinearGradient>
+                  )}
                 </View>
 
-                {/* More Info Content */}
-                <Animated.View style={[
-                  styles.moreInfoContent,
-                  {
-                    maxHeight: animatedHeight.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, 1000]
-                    }),
-                    opacity: animatedHeight
-                  }
-                ]}>
+                {/* More Info Grid */}
+                <Animated.View 
+                  style={[
+                    styles.moreInfoContent,
+                    {
+                      maxHeight: animatedHeight.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0, 500]
+                      })
+                    }
+                  ]}
+                >
                   <View style={styles.infoGrid}>
                     {Object.entries(animeData?.moreInfo || {}).map(([key, value]) => (
                       <View key={key} style={styles.infoItem}>
                         <Text style={styles.infoLabel}>{key}</Text>
-                        <Text style={styles.infoValue}>
-                          {Array.isArray(value) ? value.join(', ') : value}
-                        </Text>
+                        <Text style={styles.infoValue}>{value}</Text>
                       </View>
                     ))}
                   </View>
-                  
-                  {/* Show Less button when expanded */}
                   {showMoreInfo && (
-                    <TouchableOpacity 
-                      style={[styles.moreInfoButton, styles.showLessButton]}
-                      onPress={toggleMoreInfo}
-                    >
-                      <Text style={styles.moreInfoText}>Show Less</Text>
+                    <TouchableOpacity style={styles.showLessButton} onPress={toggleMoreInfo}>
                       <MaterialIcons name="keyboard-arrow-up" size={24} color="#f4511e" />
                     </TouchableOpacity>
                   )}
@@ -700,123 +883,12 @@ export default function AnimeDetails() {
             )
           },
           {
-            title: 'episodes',
+            title: 'content',
             data: [null],
             renderItem: () => (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Episodes</Text>
-                <View style={styles.audioSelector}>
-                  <TouchableOpacity 
-                    style={[styles.audioOption, selectedMode === 'sub' && styles.selectedAudio]}
-                    onPress={() => setSelectedMode('sub')}
-                  >
-                    <MaterialIcons 
-                      name="subtitles" 
-                      size={20} 
-                      color={selectedMode === 'sub' ? '#fff' : '#666'} 
-                    />
-                    <Text style={[styles.audioText, selectedMode === 'sub' && styles.selectedAudioText]}>
-                      Sub ({animeData.info.episodes.sub || 0})
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[styles.audioOption, selectedMode === 'dub' && styles.selectedAudio]}
-                    onPress={() => setSelectedMode('dub')}
-                  >
-                    <MaterialIcons 
-                      name="record-voice-over" 
-                      size={20} 
-                      color={selectedMode === 'dub' ? '#fff' : '#666'} 
-                    />
-                    <Text style={[styles.audioText, selectedMode === 'dub' && styles.selectedAudioText]}>
-                      Dub ({animeData.info.episodes.dub || 0})
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Search Bar */}
-                <View style={styles.searchContainer}>
-                  <View style={styles.searchInputContainer}>
-                    <MaterialIcons name="search" size={20} color="#666" />
-                    <TextInput
-                      style={styles.searchInput}
-                      placeholder={`Search by ${searchMode === 'number' ? 'episode number' : 'episode name'}...`}
-                      placeholderTextColor="#666"
-                      value={searchQuery}
-                      onChangeText={text => {
-                        setSearchQuery(text);
-                        setCurrentPage(1); // Reset to first page on search
-                      }}
-                    />
-                    {searchQuery !== '' && (
-                      <TouchableOpacity 
-                        onPress={() => {
-                          setSearchQuery('');
-                          setCurrentPage(1);
-                        }}
-                      >
-                        <MaterialIcons name="close" size={20} color="#666" />
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                  <TouchableOpacity 
-                    style={[styles.searchModeButton, searchMode === 'number' && styles.activeModeButton]}
-                    onPress={() => setSearchMode(mode => mode === 'number' ? 'name' : 'number')}
-                  >
-                    <MaterialIcons 
-                      name={searchMode === 'number' ? 'format-list-numbered' : 'text-format'} 
-                      size={20} 
-                      color={searchMode === 'number' ? '#fff' : '#666'} 
-                    />
-                  </TouchableOpacity>
-                </View>
-
-                {episodesLoading ? (
-                  <ActivityIndicator size="large" color="#f4511e" style={styles.episodesLoader} />
-                ) : (
-                  <>
-                    <FlatList
-                      data={getPaginatedEpisodes().paginatedEpisodes}
-                      renderItem={renderEpisode}
-                      keyExtractor={item => item.id}
-                      contentContainerStyle={styles.episodesList}
-                      maxToRenderPerBatch={10}
-                      windowSize={10}
-                      removeClippedSubviews={true}
-                      initialNumToRender={10}
-                      ListEmptyComponent={() => (
-                        <Text style={styles.noEpisodesText}>
-                          {searchQuery ? 'No episodes match your search' : 'No episodes available'}
-                        </Text>
-                      )}
-                    />
-
-                    {/* Pagination */}
-                    {getPaginatedEpisodes().totalPages > 1 && (
-                      <View style={styles.pagination}>
-                        <TouchableOpacity 
-                          style={[styles.pageButton, currentPage === 1 && styles.disabledButton]}
-                          onPress={() => setCurrentPage(p => Math.max(1, p - 1))}
-                          disabled={currentPage === 1}
-                        >
-                          <MaterialIcons name="chevron-left" size={24} color={currentPage === 1 ? '#666' : '#fff'} />
-                        </TouchableOpacity>
-                        
-                        <Text style={styles.pageInfo}>
-                          Page {currentPage} of {getPaginatedEpisodes().totalPages}
-                        </Text>
-                        
-                        <TouchableOpacity 
-                          style={[styles.pageButton, currentPage === getPaginatedEpisodes().totalPages && styles.disabledButton]}
-                          onPress={() => setCurrentPage(p => Math.min(getPaginatedEpisodes().totalPages, p + 1))}
-                          disabled={currentPage === getPaginatedEpisodes().totalPages}
-                        >
-                          <MaterialIcons name="chevron-right" size={24} color={currentPage === getPaginatedEpisodes().totalPages ? '#666' : '#fff'} />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </>
-                )}
+                <TabBar />
+                {renderTabContent()}
               </View>
             )
           }
@@ -1072,6 +1144,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginBottom: 4,
   },
+  episodeBadges: {
+    flexDirection: 'row',
+    gap: 8,
+  },
   fillerBadge: {
     color: '#f4511e',
     fontSize: 12,
@@ -1158,5 +1234,121 @@ const styles = StyleSheet.create({
   showLessButton: {
     marginTop: 16,
     alignSelf: 'center',
+  },
+  fillerEpisodeCard: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#f4511e',
+  },
+  dubBadge: {
+    color: '#4CAF50',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  recommendationsContainer: {
+    paddingHorizontal: 16,
+    gap: 16,
+  },
+  recommendationCard: {
+    width: 140,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  recommendationImage: {
+    width: '100%',
+    height: 190,
+    resizeMode: 'cover',
+  },
+  recommendationInfo: {
+    padding: 8,
+  },
+  recommendationTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  recommendationMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  recommendationType: {
+    color: '#666',
+    fontSize: 12,
+  },
+  recommendationEpisodes: {
+    color: '#666',
+    fontSize: 12,
+  },
+  relationType: {
+    color: '#f4511e',
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  relatedHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 16,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    gap: 8,
+  },
+  selectedTab: {
+    backgroundColor: '#222',
+  },
+  tabText: {
+    color: '#666',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  selectedTabText: {
+    color: '#f4511e',
+  },
+  tabContent: {
+    flex: 1,
+    minHeight: 200,
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+    padding: 16,
+  },
+  topBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: Platform.OS === 'ios' ? 53 : 21,
+    paddingBottom: 8,
+  },
+  topBarActions: {
+    flexDirection: 'row',
+    gap: 16,
+  },
+  topBarButton: {
+    padding: 8,
   },
 }); 

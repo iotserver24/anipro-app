@@ -1,14 +1,16 @@
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { useCallback, useEffect } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { View } from 'react-native';
+import { View, BackHandler, Alert } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, DarkTheme } from '@react-navigation/native';
 import SearchBar from '../components/SearchBar';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
+import * as ScreenOrientation from 'expo-screen-orientation';
+import BottomTabBar from '../components/BottomTabBar';
 
-// Prevent the splash screen from auto-hiding
+// Make sure SplashScreen is prevented from auto-hiding
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -33,6 +35,62 @@ export default function RootLayout() {
     initializeHistory();
   }, []);
 
+  useEffect(() => {
+    const backAction = () => {
+      // Check if we can go back in navigation stack
+      if (router.canGoBack()) {
+        router.back(); // Let the normal back navigation happen
+        return true;
+      }
+      
+      // If we're at the root screen, show exit dialog
+      Alert.alert(
+        'Exit App',
+        'Are you sure you want to exit?',
+        [
+          {
+            text: 'Cancel',
+            onPress: () => null,
+            style: 'cancel',
+          },
+          { 
+            text: 'Exit',
+            onPress: () => BackHandler.exitApp(),
+            style: 'destructive'
+          },
+        ],
+        { cancelable: true }
+      );
+      return true; // Prevents default back action
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      backAction
+    );
+
+    return () => backHandler.remove();
+  }, []);
+
+  useEffect(() => {
+    const lockOrientation = async () => {
+      try {
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      } catch (error) {
+        console.error('Failed to lock orientation:', error);
+      }
+    };
+
+    lockOrientation();
+
+    return () => {
+      // Cleanup
+      ScreenOrientation.unlockAsync().catch(error => {
+        console.error('Failed to unlock orientation:', error);
+      });
+    };
+  }, []);
+
   if (!fontsLoaded && !fontError) {
     return null;
   }
@@ -48,13 +106,14 @@ export default function RootLayout() {
             },
             headerTintColor: '#fff',
             headerTitleStyle: {
-              // Temporarily remove font family
-              // fontFamily: 'Poppins-SemiBold',
               fontWeight: 'bold',
             },
             contentStyle: {
               backgroundColor: '#121212',
+              paddingBottom: 60,
             },
+            animation: 'fade',
+            animationDuration: 200,
           }}
         >
           <Stack.Screen 
@@ -84,6 +143,7 @@ export default function RootLayout() {
                 backgroundColor: 'transparent',
               },
               headerShadowVisible: false,
+              animation: 'slide_from_right',
             }}
           />
           <Stack.Screen
@@ -92,7 +152,7 @@ export default function RootLayout() {
               title: 'Watch',
               headerShown: true,
               animation: 'slide_from_right',
-              presentation: 'fullScreenModal',
+              presentation: 'card',
             }}
           />
           <Stack.Screen
@@ -112,6 +172,7 @@ export default function RootLayout() {
             }}
           />
         </Stack>
+        <BottomTabBar />
       </View>
     </ThemeProvider>
   );

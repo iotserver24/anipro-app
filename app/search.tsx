@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
-import BottomNav from '../components/BottomNav';
 import { useMyListStore } from '../store/myListStore';
 
 type SearchAnime = {
@@ -157,7 +156,6 @@ export default function Search() {
           )}
         />
       )}
-      <BottomNav />
     </View>
   );
 }
@@ -178,7 +176,7 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     padding: 8,
-    paddingBottom: 80,
+    paddingBottom: 16,
   },
   animeCardContainer: {
     position: 'relative',

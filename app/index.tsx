@@ -4,7 +4,6 @@ import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import BottomNav from '../components/BottomNav';
 import { getCachedData, setCachedData, cacheKeys } from '../utils/cache';
 import { addToMyList, removeFromMyList, isInMyList } from '../utils/myList';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -15,7 +14,7 @@ import { ContinueWatching } from '../components/ContinueWatching';
 import { logger } from '../utils/logger';
 
 const { width } = Dimensions.get('window');
-const ITEM_WIDTH = width * 0.85;
+const ITEM_WIDTH = width * 0.9;
 const ITEM_SPACING = (width - ITEM_WIDTH) / 2;
 const SPACING = 10;
 
@@ -430,9 +429,6 @@ export default function Home() {
           )}
         </View>
       </ScrollView>
-
-      {/* Floating Navigation Bar */}
-      <BottomNav />
     </View>
   );
 }
@@ -443,7 +439,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
   trendingSection: {
-    paddingVertical: 16,
+    paddingVertical: 8,
   },
   section: {
     paddingVertical: 16,
@@ -456,7 +452,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   trendingList: {
-    paddingHorizontal: ITEM_SPACING,
+    paddingHorizontal: ITEM_SPACING / 2,
   },
   trendingCard: {
     width: ITEM_WIDTH,

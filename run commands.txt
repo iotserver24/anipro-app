@@ -1,6 +1,6 @@
 
 
-cd "C:\Users\Asus\all repos\anime app\anipro\android"
+cd "C:\Users\Asus\all repos\anime app\anipro"
 
 
 npx react-native bundle --platform android `

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput } from 'react-native';
-import { useLocalSearchParams, router, Stack } from 'expo-router';
+import { useLocalSearchParams, router, Stack, useNavigation } from 'expo-router';
 import Video, { 
   OnLoadData, 
   OnProgressData, 
@@ -374,6 +374,7 @@ export default function WatchAnime() {
   const [searchQuery, setSearchQuery] = useState('');
   const episodeListRef = useRef<ScrollView>(null);
   const [isSeeking, setIsSeeking] = useState(false);
+  const navigation = useNavigation();
 
   useEffect(() => {
     if (savedProgress > 0) {
@@ -405,15 +406,41 @@ export default function WatchAnime() {
 
   useEffect(() => {
     const setupOrientation = async () => {
-      // Set initial orientation to portrait
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      try {
+        // Set initial orientation to portrait
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+      } catch (error) {
+        console.error('Failed to lock orientation:', error);
+      }
     };
     
     setupOrientation();
     
-    // Cleanup function to unlock orientation when component unmounts
+    // Cleanup function
     return () => {
-      ScreenOrientation.unlockAsync();
+      // Ensure we're back in portrait mode when leaving
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(error => {
+        console.error('Failed to reset orientation:', error);
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    // Hide bottom tab bar when entering this screen
+    const parent = navigation.getParent();
+    if (parent) {
+      parent.setOptions({
+        tabBarStyle: { display: 'none' }
+      });
+    }
+
+    return () => {
+      // Show bottom tab bar when leaving this screen
+      if (parent) {
+        parent.setOptions({
+          tabBarStyle: { display: 'flex' }
+        });
+      }
     };
   }, []);
 
@@ -578,7 +605,7 @@ export default function WatchAnime() {
   const onVideoEnd = () => {
     if (currentEpisodeIndex < episodes.length - 1) {
       const nextEpisode = episodes[currentEpisodeIndex + 1];
-      router.replace({
+      router.push({
         pathname: "/anime/watch/[episodeId]",
         params: {
           episodeId: nextEpisode.id,
@@ -907,16 +934,17 @@ export default function WatchAnime() {
       {/* Configure the header visibility */}
       <Stack.Screen 
         options={{
-          headerShown: !isFullscreen,  // Hide header in fullscreen
+          headerShown: !isFullscreen,
           title: title as string,
-          // Add these to ensure header is completely hidden in fullscreen
           statusBarHidden: isFullscreen,
-          statusBarStyle: isFullscreen ? 'light' : 'dark',
+          statusBarStyle: 'light',
           statusBarTranslucent: true,
           headerStyle: {
             backgroundColor: '#000',
           },
           headerTintColor: '#fff',
+          animation: 'fade',
+          presentation: 'card',
         }} 
       />
 
@@ -1091,7 +1119,7 @@ export default function WatchAnime() {
                         episode.id === episodeId && styles.currentEpisode
                       ]}
                       onPress={() => {
-                        router.replace({
+                        router.push({
                           pathname: "/anime/watch/[episodeId]",
                           params: {
                             episodeId: episode.id,

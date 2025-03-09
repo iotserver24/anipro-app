@@ -4,7 +4,6 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import BottomNav from '../components/BottomNav';
 import { useMyListStore } from '../store/myListStore';
 
 type MyListAnime = {
@@ -98,7 +97,6 @@ export default function MyList() {
           contentContainerStyle={styles.listContainer}
         />
       )}
-      <BottomNav />
     </View>
   );
 }
