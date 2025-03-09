@@ -1,7 +1,7 @@
 
 
 cd "C:\Users\Asus\all repos\anime app\anipro"
-
+npx expo prebuild --clean
 
 npx react-native bundle --platform android `
     --dev false `

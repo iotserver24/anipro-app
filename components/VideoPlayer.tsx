@@ -29,6 +29,8 @@ interface VideoPlayerProps {
   onPositionChange?: (position: number) => void;
   onLoad?: (status: AVPlaybackStatus) => void;
   onQualityChange?: (position: number) => void;
+  rate?: number;
+  onPlaybackRateChange?: (rate: number) => void;
 }
 
 const VideoPlayer = ({
@@ -42,6 +44,8 @@ const VideoPlayer = ({
   onPositionChange,
   onLoad,
   onQualityChange,
+  rate = 1.0,
+  onPlaybackRateChange,
 }: VideoPlayerProps) => {
   const videoRef = useRef<Video>(null);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -290,6 +294,13 @@ const VideoPlayer = ({
       setIsQualityChanging(false);
     }
   };
+
+  // Add this useEffect to handle rate changes
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.setRateAsync(rate, true);
+    }
+  }, [rate]);
 
   return (
     <View style={[styles.container, style, isFullscreen && styles.fullscreenContainer]}>

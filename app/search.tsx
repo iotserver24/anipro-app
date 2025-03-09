@@ -1,8 +1,8 @@
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useMyListStore } from '../store/myListStore';
 
 type SearchAnime = {
@@ -18,6 +18,7 @@ type SearchAnime = {
 
 export default function Search() {
   const { query } = useLocalSearchParams();
+  const [searchText, setSearchText] = useState(decodeURIComponent(query as string));
   const [results, setResults] = useState<SearchAnime[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -25,17 +26,24 @@ export default function Search() {
   const [totalPages, setTotalPages] = useState(1);
   const { isBookmarked, addAnime, removeAnime } = useMyListStore();
 
+  const handleSearch = (text: string) => {
+    setSearchText(text);
+    const apiQuery = text.toLowerCase().trim().replace(/\s+/g, '-');
+    router.setParams({ query: apiQuery });
+  };
+
   useEffect(() => {
-    if (query) {
+    if (searchText) {
       searchAnime();
     }
-  }, [query, currentPage]);
+  }, [searchText]);
 
   const searchAnime = async () => {
     try {
       setLoading(true);
+      const apiQuery = searchText.toLowerCase().trim().replace(/\s+/g, '-');
       const response = await fetch(
-        `https://conapi.anipro.site/anime/animekai/${encodeURIComponent(query as string)}`
+        `https://conapi.anipro.site/anime/animekai/${encodeURIComponent(apiQuery)}`
       );
       
       if (!response.ok) {
@@ -132,7 +140,34 @@ export default function Search() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.searchTitle}>Results for "{query}"</Text>
+      <View style={styles.searchBarContainer}>
+        <View style={styles.searchBar}>
+          <Ionicons name="search" size={20} color="#666" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search anime..."
+            placeholderTextColor="#666"
+            value={searchText}
+            onChangeText={handleSearch}
+            returnKeyType="search"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchText ? (
+            <TouchableOpacity 
+              onPress={() => handleSearch('')}
+              style={styles.clearButton}
+            >
+              <Ionicons name="close" size={20} color="#666" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      </View>
+
+      {searchText && (
+        <Text style={styles.searchTitle}>Results for "{searchText}"</Text>
+      )}
+
       {loading && currentPage === 1 ? (
         <ActivityIndicator size="large" color="#f4511e" style={styles.loader} />
       ) : (
@@ -165,11 +200,36 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
   },
+  searchBarContainer: {
+    padding: 16,
+    paddingBottom: 8,
+    backgroundColor: '#1a1a1a',
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#222',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    height: 44,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 16,
+    marginLeft: 8,
+    height: '100%',
+    padding: 0,
+  },
+  clearButton: {
+    padding: 4,
+  },
   searchTitle: {
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
   },
   loader: {
     flex: 1,

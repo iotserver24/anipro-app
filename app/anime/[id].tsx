@@ -408,46 +408,6 @@ export default function AnimeDetails() {
 
   const renderAnimeHeader = () => (
     <View style={styles.headerContainer}>
-      {/* Top Navigation Bar */}
-      <View style={styles.topBar}>
-        {/* Remove the back button, only keep the right-side actions */}
-        <View style={styles.topBarActions}>
-          <TouchableOpacity 
-            style={styles.topBarButton}
-            onPress={async () => {
-              if (isBookmarked(id as string)) {
-                await removeAnime(id as string);
-              } else if (animeData) {
-                await addAnime({
-                  id: id as string,
-                  name: animeData.info.name,
-                  img: animeData.info.img,
-                  addedAt: Date.now()
-                });
-              }
-            }}
-          >
-            <MaterialIcons 
-              name={isBookmarked(id as string) ? "bookmark" : "bookmark-outline"} 
-              size={28} 
-              color="#fff" 
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.topBarButton}
-            onPress={handleShare}
-          >
-            <MaterialIcons 
-              name="share" 
-              size={28} 
-              color="#fff" 
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Rest of the header content */}
       <Image 
         source={{ uri: animeData?.info.img }} 
         style={styles.backgroundImage}
@@ -478,10 +438,20 @@ export default function AnimeDetails() {
                   <Text style={styles.ratingText}>{animeData.info.rating}</Text>
                 </View>
               )}
-              <TouchableOpacity style={styles.episodesBadge}>
-                <MaterialIcons name="playlist-play" size={20} color="#f4511e" />
-                <Text style={styles.episodesText}>Episodes</Text>
-              </TouchableOpacity>
+              <View style={styles.statusBadge}>
+                <MaterialIcons 
+                  name={
+                    animeData?.moreInfo.Status === 'Completed' ? 'check-circle' : 
+                    animeData?.moreInfo.Status === 'Ongoing' ? 'play-circle' : 
+                    'schedule'
+                  } 
+                  size={16} 
+                  color="#f4511e" 
+                />
+                <Text style={styles.statusText}>
+                  {animeData?.moreInfo.Status || 'Unknown'}
+                </Text>
+              </View>
             </View>
           </View>
         </View>
@@ -794,6 +764,42 @@ export default function AnimeDetails() {
                 </TouchableOpacity>
               )}
             </Animated.View>
+
+            {/* Action Buttons */}
+            <View style={styles.actionButtonsContainer}>
+              <TouchableOpacity 
+                style={styles.actionButton}
+                onPress={async () => {
+                  if (isBookmarked(id as string)) {
+                    await removeAnime(id as string);
+                  } else if (animeData) {
+                    await addAnime({
+                      id: id as string,
+                      name: animeData.info.name,
+                      img: animeData.info.img,
+                      addedAt: Date.now()
+                    });
+                  }
+                }}
+              >
+                <MaterialIcons 
+                  name={isBookmarked(id as string) ? "bookmark" : "bookmark-outline"} 
+                  size={24} 
+                  color="#f4511e" 
+                />
+                <Text style={styles.actionText}>
+                  {isBookmarked(id as string) ? 'In My List' : 'Add to List'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.actionButton}
+                onPress={handleShare}
+              >
+                <MaterialIcons name="share" size={24} color="#f4511e" />
+                <Text style={styles.actionText}>Share</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )
       },
@@ -879,6 +885,42 @@ export default function AnimeDetails() {
                     </TouchableOpacity>
                   )}
                 </Animated.View>
+
+                {/* Action Buttons */}
+                <View style={styles.actionButtonsContainer}>
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={async () => {
+                      if (isBookmarked(id as string)) {
+                        await removeAnime(id as string);
+                      } else if (animeData) {
+                        await addAnime({
+                          id: id as string,
+                          name: animeData.info.name,
+                          img: animeData.info.img,
+                          addedAt: Date.now()
+                        });
+                      }
+                    }}
+                  >
+                    <MaterialIcons 
+                      name={isBookmarked(id as string) ? "bookmark" : "bookmark-outline"} 
+                      size={24} 
+                      color="#f4511e" 
+                    />
+                    <Text style={styles.actionText}>
+                      {isBookmarked(id as string) ? 'In My List' : 'Add to List'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={styles.actionButton}
+                    onPress={handleShare}
+                  >
+                    <MaterialIcons name="share" size={24} color="#f4511e" />
+                    <Text style={styles.actionText}>Share</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )
           },
@@ -1003,18 +1045,19 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
   },
-  episodesBadge: {
+  statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(244,81,30,0.15)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
     gap: 4,
   },
-  episodesText: {
-    color: '#f4511e',
-    fontSize: 14,
+  statusText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
   },
   section: {
     padding: 16,
@@ -1210,19 +1253,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
   },
-  bookmarkButton: {
-    padding: 8,
-  },
-  actionButtons: {
-    flexDirection: 'column',
-    gap: 8,
-    marginTop: 12,
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 16,
+    marginTop: 16,
+    marginBottom: 16,
   },
   actionButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: 8,
+    justifyContent: 'center',
+    backgroundColor: '#1a1a1a',
+    padding: 12,
     borderRadius: 8,
     gap: 8,
   },
@@ -1330,25 +1374,5 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 16,
     padding: 16,
-  },
-  topBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 53 : 21,
-    paddingBottom: 8,
-  },
-  topBarActions: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  topBarButton: {
-    padding: 8,
   },
 }); 

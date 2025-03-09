@@ -14,6 +14,7 @@ import { animeAPI } from '../../../services/api';
 import VideoPlayer from '../../../components/VideoPlayer';
 import { LinearGradient } from 'expo-linear-gradient';
 import { logger } from '../../../utils/logger';
+import { activateKeepAwakeAsync, deactivateKeepAwakeAsync } from 'expo-keep-awake';
 
 type StreamSource = {
   url: string;
@@ -33,8 +34,7 @@ type APIEpisode = {
   isSubbed: boolean;
   isDubbed: boolean;
   url: string;
-  episodeId?: string;
-  episodeNo?: number;
+  isFiller: boolean;
 };
 
 // Update VideoRef type
@@ -72,6 +72,7 @@ type VideoPlayerProps = {
   onSeek?: (value: number) => void;
   onFullscreen?: () => void;
   onFullscreenChange?: (isFullscreen: boolean) => void;
+  onPlaybackRateChange?: (rate: number) => void;
 };
 
 // Update video event types
@@ -211,33 +212,44 @@ const ControlsOverlay = ({
   ) : null;
 };
 
-const EpisodeList = React.memo(({ episodes, currentEpisodeId, onEpisodePress }: {
-  episodes: APIEpisode[];
-  currentEpisodeId: string;
-  onEpisodePress: (episode: APIEpisode) => void;
+const EpisodeItem = React.memo(({ episode, onPress, onLongPress, mode, isCurrentEpisode }: {
+  episode: APIEpisode;
+  onPress: () => void;
+  onLongPress: () => void;
+  mode: 'sub' | 'dub';
+  isCurrentEpisode: boolean;
 }) => (
-  <View style={styles.episodeList}>
-    {episodes.map((episode) => (
-      <TouchableOpacity
-        key={episode.id}
-        style={[
-          styles.episodeItem,
-          episode.id === currentEpisodeId && styles.currentEpisode
-        ]}
-        onPress={() => onEpisodePress(episode)}
-      >
-        <View style={styles.episodeInfo}>
-          <Text style={styles.episodeNumber}>Episode {episode.number}</Text>
-          <Text style={styles.episodeTitle} numberOfLines={1}>
-            {episode.title}
-          </Text>
+  <TouchableOpacity
+    style={[
+      styles.episodeCard,
+      episode.isFiller && styles.fillerEpisodeCard,
+      isCurrentEpisode && styles.currentEpisode
+    ]}
+    onPress={onPress}
+    onLongPress={onLongPress}
+  >
+    <View style={styles.episodeContent}>
+      <View style={styles.episodeNumberContainer}>
+        <Text style={styles.episodeNumber}>{episode.number}</Text>
+      </View>
+      <View style={styles.episodeInfo}>
+        <Text style={styles.episodeTitle} numberOfLines={1}>
+          {episode.title}
+        </Text>
+        <View style={styles.episodeBadges}>
+          {mode === 'dub' && episode.isDubbed && (
+            <Text style={styles.dubBadge}>DUB</Text>
+          )}
+          {episode.isFiller && (
+            <Text style={styles.fillerBadge}>FILLER</Text>
+          )}
         </View>
-        {episode.id === currentEpisodeId && (
-          <MaterialIcons name="play-circle-filled" size={24} color="#f4511e" />
-        )}
-      </TouchableOpacity>
-    ))}
-  </View>
+      </View>
+      {isCurrentEpisode && (
+        <MaterialIcons name="play-circle-filled" size={24} color="#f4511e" />
+      )}
+    </View>
+  </TouchableOpacity>
 ));
 
 // Add this type near the top with other type definitions
@@ -320,6 +332,7 @@ const sortEpisodesByProximity = (episodes: APIEpisode[], currentEpisodeId: strin
 
 export default function WatchAnime() {
   const { episodeId, animeId, episodeNumber, title, category } = useLocalSearchParams();
+  const categoryAsMode = (category || 'sub') as 'sub' | 'dub';
   const videoRef = useRef<VideoRef>(null);
   const [streamingUrl, setStreamingUrl] = useState<string | null>(null);
   const [sources, setSources] = useState<StreamSource[]>([]);
@@ -444,6 +457,26 @@ export default function WatchAnime() {
     };
   }, []);
 
+  // Add useEffect to handle keep awake
+  useEffect(() => {
+    const enableKeepAwake = async () => {
+      try {
+        await activateKeepAwakeAsync();
+      } catch (error) {
+        logger.error('Failed to activate keep awake:', error);
+      }
+    };
+
+    enableKeepAwake();
+
+    // Cleanup function to deactivate keep awake when leaving the screen
+    return () => {
+      deactivateKeepAwakeAsync().catch(error => {
+        logger.error('Failed to deactivate keep awake:', error);
+      });
+    };
+  }, []);
+
   const fetchWithRetry = async (url: string, retries = 3, delay = 2000) => {
     for (let i = 0; i < retries; i++) {
       try {
@@ -509,25 +542,27 @@ export default function WatchAnime() {
       // Ensure we have the required fields
       const processedData = {
         ...data,
-        info: {
-          ...data.info,
-          title: data.title || data.name || data.info?.title || data.info?.name || 'Unknown Anime',
-          image: data.image || data.img || data.info?.image || data.info?.img || '',
-        }
+        title: data.title,
+        image: data.image,
+        description: data.description,
+        type: data.type,
+        status: data.status,
+        genres: data.genres
       };
       setAnimeInfo(processedData);
       
       // Save to history immediately to ensure we have the correct info
+      const now = Date.now();
       addToHistory({
         id: animeId as string,
-        name: processedData.info.title,
-        img: processedData.info.image,
+        name: processedData.title,
+        img: processedData.image,
         episodeId: episodeId as string,
         episodeNumber: Number(episodeNumber),
-        timestamp: 0,
+        timestamp: now,
         progress: 0,
         duration: 0,
-        lastWatched: Date.now(),
+        lastWatched: now,
         subOrDub: category || 'sub'
       });
 
@@ -558,7 +593,14 @@ export default function WatchAnime() {
     
     setCurrentTime(newTime);
     setDuration(newDuration);
-    setIsBuffering(data.isBuffering);
+    
+    // Only show buffering if we're actually waiting for data and playing
+    if (data.isBuffering && isPlaying && data.playableDuration - newTime < 2) {
+      setIsBuffering(true);
+    } else {
+      setIsBuffering(false);
+    }
+    
     setIsPlaying(!data.paused);
 
     // Handle video load completion
@@ -573,15 +615,15 @@ export default function WatchAnime() {
       if (animeInfo && newDuration > 0) {
         addToHistory({
           id: animeId as string,
-          name: animeInfo.info?.name || 'Unknown Anime',
-          img: animeInfo.info?.img || '',
+          name: animeInfo.title || 'Unknown Anime',
+          img: animeInfo.image || '',
           episodeId: episodeId as string,
           episodeNumber: Number(episodeNumber),
           timestamp: now,
           progress: newTime,
           duration: newDuration,
           lastWatched: now,
-          subOrDub: category || 'sub'
+          subOrDub: categoryAsMode
         });
       }
     }
@@ -620,6 +662,8 @@ export default function WatchAnime() {
 
   const handlePlaybackSpeedChange = (speed: number) => {
     setPlaybackSpeed(speed);
+    // The VideoPlayer component will handle the actual speed change
+    // through the rate prop and useEffect
   };
 
   const handleVideoError = (error: any) => {
@@ -738,7 +782,15 @@ export default function WatchAnime() {
     onPlayPause: togglePlayPause,
     onSeek: handleSeek,
     onFullscreen: handleFullscreenToggle,
-    onFullscreenChange: setIsFullscreen
+    onFullscreenChange: setIsFullscreen,
+    onPlaybackRateChange: handlePlaybackSpeedChange,
+    bufferConfig: {
+      minBufferMs: 15000,
+      maxBufferMs: 50000,
+      bufferForPlaybackMs: 2500,
+      bufferForPlaybackAfterRebufferMs: 5000
+    },
+    progressUpdateInterval: 1000
   };
 
   // Add control visibility timeout
@@ -959,15 +1011,18 @@ export default function WatchAnime() {
           }}
           title={title as string}
           initialPosition={resumePosition}
+          rate={playbackSpeed}
+          onPlaybackRateChange={handlePlaybackSpeedChange}
           onLoad={async (status) => {
             try {
               if (isQualityChanging && videoRef.current) {
-                // Add a small delay to ensure video is ready
                 await new Promise(resolve => setTimeout(resolve, 100));
                 await videoRef.current.setPositionAsync(savedPosition * 1000);
                 setIsQualityChanging(false);
                 logger.info('Successfully seeked to position after quality change:', savedPosition);
               }
+              setIsBuffering(false);
+              setIsVideoReady(true);
             } catch (error) {
               logger.error('Error seeking after quality change:', error);
               setIsQualityChanging(false);
@@ -999,6 +1054,13 @@ export default function WatchAnime() {
           onEnd={onVideoEnd}
           style={isFullscreen ? styles.fullscreenVideo : {}}
           onFullscreenChange={(fullscreen) => setIsFullscreen(fullscreen)}
+          bufferConfig={{
+            minBufferMs: 15000,
+            maxBufferMs: 50000,
+            bufferForPlaybackMs: 2500,
+            bufferForPlaybackAfterRebufferMs: 5000
+          }}
+          progressUpdateInterval={1000}
         />
         
         {!isFullscreen && (
@@ -1112,12 +1174,9 @@ export default function WatchAnime() {
                   nestedScrollEnabled={true}
                 >
                   {filteredEpisodes.map((episode) => (
-                    <TouchableOpacity
+                    <EpisodeItem
                       key={episode.id}
-                      style={[
-                        styles.episodeItem,
-                        episode.id === episodeId && styles.currentEpisode
-                      ]}
+                      episode={episode}
                       onPress={() => {
                         router.push({
                           pathname: "/anime/watch/[episodeId]",
@@ -1130,29 +1189,12 @@ export default function WatchAnime() {
                           }
                         });
                       }}
-                    >
-                      <View style={styles.episodeInfo}>
-                        <Text style={styles.episodeNumber}>
-                          Episode {episode.number}
-                        </Text>
-                        {episode.title && (
-                          <Text style={styles.episodeTitle} numberOfLines={1}>
-                            {episode.title}
-                          </Text>
-                        )}
-                        {/* Add relative position indicator */}
-                        {episode.id === episodeId ? (
-                          <Text style={styles.currentIndicator}>Currently Playing</Text>
-                        ) : (
-                          <Text style={styles.episodePosition}>
-                            {episode.number > Number(episodeNumber) ? 'Next' : 'Previous'}
-                          </Text>
-                        )}
-                      </View>
-                      {episode.id === episodeId && (
-                        <MaterialIcons name="play-circle-filled" size={24} color="#f4511e" />
-                      )}
-                    </TouchableOpacity>
+                      onLongPress={() => {
+                        // Implement long press action
+                      }}
+                      mode={categoryAsMode}
+                      isCurrentEpisode={episode.id === episodeId}
+                    />
                   ))}
                 </ScrollView>
               </View>
@@ -1426,5 +1468,46 @@ const styles = StyleSheet.create({
   
   episodeListContent: {
     paddingVertical: 8,
+  },
+  episodeCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  fillerEpisodeCard: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#f4511e',
+  },
+  currentEpisode: {
+    backgroundColor: '#333',
+  },
+  episodeContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+  },
+  episodeNumberContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#222',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  episodeBadges: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  fillerBadge: {
+    color: '#f4511e',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  dubBadge: {
+    color: '#4CAF50', 
+    fontSize: 12,
+    fontWeight: '600',
   },
 }); 
