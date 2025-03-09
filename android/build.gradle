@@ -2,93 +2,29 @@
 
 buildscript {
     ext {
-        buildToolsVersion = "33.0.0"
-        minSdkVersion = 21
-        compileSdkVersion = 33
-        targetSdkVersion = 33
-        kotlinVersion = '1.9.25'
-        kspVersion = '1.9.25-1.0.13'
-        multiDexEnabled = true
-        
-        composeCompilerVersion = '1.5.10'
+        buildToolsVersion = findProperty('android.buildToolsVersion') ?: '35.0.0'
+        minSdkVersion = Integer.parseInt(findProperty('android.minSdkVersion') ?: '24')
+        compileSdkVersion = Integer.parseInt(findProperty('android.compileSdkVersion') ?: '35')
+        targetSdkVersion = Integer.parseInt(findProperty('android.targetSdkVersion') ?: '34')
+        kotlinVersion = findProperty('android.kotlinVersion') ?: '1.9.25'
 
-        ndkVersion = "25.1.8937393"
-        useExoplayerIMA = true
-        useExoplayerRtsp = true
-        useExoplayerSmoothStreaming = true
-        useExoplayerDash = true
-        useExoplayerHls = true
-        
-        // Update Java version compatibility
-        javaVersion = JavaVersion.VERSION_17
+        ndkVersion = "26.1.10909125"
     }
     repositories {
         google()
         mavenCentral()
-        maven { url 'https://maven.pkg.jetbrains.space/public/p/compose/dev' }
     }
     dependencies {
         classpath('com.android.tools.build:gradle')
-        classpath("com.facebook.react:react-native-gradle-plugin")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlinVersion}")
+        classpath('com.facebook.react:react-native-gradle-plugin')
+        classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
     }
 }
 
 apply plugin: "com.facebook.react.rootproject"
 
-subprojects { subproject ->
-    subproject.plugins.withId('kotlin-android') {
-        subproject.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-            kotlinOptions {
-                // Update JVM target to match Java version
-                jvmTarget = "17"
-            }
-        }
-    }
-    
-    // Add Java compatibility configuration
-    subproject.plugins.withId('java') {
-        subproject.java {
-            sourceCompatibility = javaVersion
-            targetCompatibility = javaVersion
-        }
-    }
-    
-    subproject.plugins.withId('com.android.library') {
-        if (subproject.name.contains('expo-modules-core')) {
-            subproject.android {
-                buildFeatures {
-                    compose = true
-                }
-                composeOptions {
-                    kotlinCompilerExtensionVersion = rootProject.ext.composeCompilerVersion
-                }
-            }
-            // Update suppressions for Compose compiler warnings with correct Kotlin version
-            subproject.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-                kotlinOptions {
-                    freeCompilerArgs += [
-                        "-P",
-                        "plugin:androidx.compose.compiler.plugins.kotlin:suppressKotlinVersionCompatibilityCheck=1.9.25"
-                    ]
-                }
-            }
-        }
-        
-        // Add Android compatibility configuration
-        subproject.android {
-            compileOptions {
-                sourceCompatibility javaVersion
-                targetCompatibility javaVersion
-            }
-        }
-    }
-}
-
 allprojects {
     repositories {
-        google()
-        mavenCentral()
         maven {
             // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
             url(new File(['node', '--print', "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim(), '../android'))
@@ -97,7 +33,9 @@ allprojects {
             // Android JSC is installed from npm
             url(new File(['node', '--print', "require.resolve('jsc-android/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim(), '../dist'))
         }
-        maven { url 'https://www.jitpack.io/' }
-        maven { url 'https://maven.pkg.jetbrains.space/public/p/compose/dev' }
+
+        google()
+        mavenCentral()
+        maven { url 'https://www.jitpack.io' }
     }
 }
