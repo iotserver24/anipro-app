@@ -457,7 +457,7 @@ export default function WatchAnime() {
     };
   }, []);
 
-  // Update the keep awake effect
+  // Add useEffect to handle keep awake
   useEffect(() => {
     const enableKeepAwake = async () => {
       try {
@@ -471,11 +471,7 @@ export default function WatchAnime() {
 
     // Cleanup function to deactivate keep awake when leaving the screen
     return () => {
-      try {
-        deactivateKeepAwake();
-      } catch (error) {
-        logger.error('Failed to deactivate keep awake:', error);
-      }
+      deactivateKeepAwake();
     };
   }, []);
 
@@ -962,7 +958,7 @@ export default function WatchAnime() {
     }
   }, [filteredEpisodes]);
 
-  // Update the cleanup effect
+  // Add cleanup effect
   useEffect(() => {
     return () => {
       // Cleanup function
@@ -970,14 +966,9 @@ export default function WatchAnime() {
       setStreamingUrl(null);
       setPaused(true);
       setIsVideoReady(false);
+      deactivateKeepAwake();
       
-      try {
-        deactivateKeepAwake();
-      } catch (error) {
-        logger.error('Failed to deactivate keep awake:', error);
-      }
-      
-      // Reset orientation and show UI elements
+      // Reset orientation to portrait
       ScreenOrientation.lockAsync(
         ScreenOrientation.OrientationLock.PORTRAIT_UP
       ).catch(console.error);
