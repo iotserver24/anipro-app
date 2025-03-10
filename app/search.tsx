@@ -1,10 +1,22 @@
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, TextInput } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, TextInput, ScrollView } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useMyListStore } from '../store/myListStore';
+import { API_BASE, ENDPOINTS } from '../constants/api';
 
+// Add types for filters
+type FilterType = 'ALL' | 'TV' | 'MOVIE' | 'OVA' | 'ONA' | 'SPECIAL';
+type SortType = 'POPULARITY' | 'NEWEST' | 'TITLE';
+
+// Add genre type
+type Genre = {
+  id: string;
+  name: string;
+};
+
+// Update SearchAnime type
 type SearchAnime = {
   id: string;
   title: string;
@@ -14,7 +26,27 @@ type SearchAnime = {
   subOrDub?: string;
   episodeNumber?: number;
   status?: string;
+  genres?: string[];
 };
+
+// Add predefined genres
+const ANIME_GENRES = [
+  { id: 'action', name: 'Action' },
+  { id: 'adventure', name: 'Adventure' },
+  { id: 'comedy', name: 'Comedy' },
+  { id: 'drama', name: 'Drama' },
+  { id: 'fantasy', name: 'Fantasy' },
+  { id: 'horror', name: 'Horror' },
+  { id: 'mecha', name: 'Mecha' },
+  { id: 'mystery', name: 'Mystery' },
+  { id: 'psychological', name: 'Psychological' },
+  { id: 'romance', name: 'Romance' },
+  { id: 'sci-fi', name: 'Sci-Fi' },
+  { id: 'slice-of-life', name: 'Slice of Life' },
+  { id: 'sports', name: 'Sports' },
+  { id: 'supernatural', name: 'Supernatural' },
+  { id: 'thriller', name: 'Thriller' }
+];
 
 export default function Search() {
   const { query } = useLocalSearchParams();
@@ -26,25 +58,73 @@ export default function Search() {
   const [totalPages, setTotalPages] = useState(1);
   const { isBookmarked, addAnime, removeAnime } = useMyListStore();
 
+  // Add new states for filters
+  const [selectedType, setSelectedType] = useState<FilterType>('ALL');
+  const [selectedSort, setSelectedSort] = useState<SortType>('POPULARITY');
+  const [genres] = useState<Genre[]>(ANIME_GENRES);
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
+
+  // Add filter options
+  const typeFilters: FilterType[] = ['ALL', 'TV', 'MOVIE', 'OVA', 'ONA', 'SPECIAL'];
+  const sortOptions: SortType[] = ['POPULARITY', 'NEWEST', 'TITLE'];
+
   const handleSearch = (text: string) => {
     setSearchText(text);
+    setCurrentPage(1);
     const apiQuery = text.toLowerCase().trim().replace(/\s+/g, '-');
     router.setParams({ query: apiQuery });
   };
 
+  // Add genre toggle handler
+  const toggleGenre = (genreId: string) => {
+    setSelectedGenres(prev => 
+      prev.includes(genreId) 
+        ? prev.filter(id => id !== genreId)
+        : [...prev, genreId]
+    );
+    setCurrentPage(1);
+  };
+
   useEffect(() => {
-    if (searchText) {
+    if (searchText || selectedGenres.length > 0 || selectedType !== 'ALL') {
       searchAnime();
     }
-  }, [searchText]);
+  }, [searchText, selectedType, selectedSort, selectedGenres, currentPage]);
 
   const searchAnime = async () => {
     try {
       setLoading(true);
       const apiQuery = searchText.toLowerCase().trim().replace(/\s+/g, '-');
-      const response = await fetch(
-        `https://conapi.anipro.site/anime/animekai/${encodeURIComponent(apiQuery)}`
-      );
+      
+      // Build query parameters
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        type: selectedType !== 'ALL' ? selectedType.toLowerCase() : '',
+        sort: selectedSort.toLowerCase(),
+      });
+
+      let url;
+      if (!apiQuery && selectedGenres.length > 0) {
+        // Use genre endpoint with the first selected genre
+        url = `${API_BASE}${ENDPOINTS.GENRE.replace(':genre', selectedGenres[0])}?${params}`;
+      } else if (!apiQuery && selectedType !== 'ALL') {
+        // Use type endpoint if only type is selected
+        const typeEndpoint = selectedType === 'MOVIE' ? ENDPOINTS.MOVIES :
+                           selectedType === 'OVA' ? ENDPOINTS.OVA :
+                           selectedType === 'ONA' ? ENDPOINTS.ONA :
+                           selectedType === 'SPECIAL' ? ENDPOINTS.SPECIALS :
+                           ENDPOINTS.TV;
+        url = `${API_BASE}${typeEndpoint}?${params}`;
+      } else if (apiQuery) {
+        // Use search endpoint if there's a search query
+        url = `${API_BASE}${ENDPOINTS.SEARCH.replace(':query', apiQuery)}?${params}`;
+      } else {
+        // Default to trending if no filters
+        url = `${API_BASE}${ENDPOINTS.TRENDING}?${params}`;
+      }
+
+      const response = await fetch(url);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -52,7 +132,8 @@ export default function Search() {
       
       const data = await response.json();
       
-      const transformedResults = data.results.map((item: any) => ({
+      // Check if data.results exists before mapping
+      const transformedResults = data?.results?.map((item: any) => ({
         id: item.id,
         title: item.title || 'Unknown Title',
         image: item.image || '',
@@ -60,15 +141,16 @@ export default function Search() {
         releaseDate: item.releaseDate || '',
         subOrDub: item.subOrDub || 'sub',
         episodeNumber: item.episodeNumber || 0,
-        status: item.status || 'Unknown'
-      }));
+        status: item.status || 'Unknown',
+        genres: item.genres || []
+      })) || [];
 
-      setResults(transformedResults);
+      setResults(currentPage === 1 ? transformedResults : [...results, ...transformedResults]);
       setHasNextPage(data.hasNextPage || false);
       setTotalPages(data.totalPages || 1);
     } catch (error) {
       console.error('Error searching anime:', error);
-      setResults([]);
+      setResults(currentPage === 1 ? [] : results);
       setHasNextPage(false);
       setTotalPages(1);
     } finally {
@@ -81,6 +163,94 @@ export default function Search() {
       setCurrentPage(prev => prev + 1);
     }
   };
+
+  // Add Filter Section Component
+  const FilterSection = () => (
+    <View style={styles.filterSection}>
+      {/* Type Filters */}
+      <View key="type-section">
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+        >
+          <View style={styles.filterGroup}>
+            {typeFilters.map((type, index) => (
+              <TouchableOpacity
+                key={`type-${type}-${index}`}
+                style={[
+                  styles.filterButton,
+                  selectedType === type && styles.filterButtonActive
+                ]}
+                onPress={() => setSelectedType(type)}
+              >
+                <Text style={[
+                  styles.filterText,
+                  selectedType === type && styles.filterTextActive
+                ]}>
+                  {type}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
+
+      {/* Genre Filters */}
+      <View key="genre-section">
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.genreContainer}
+        >
+          {genres.map((genre, index) => (
+            <TouchableOpacity
+              key={`genre-${genre.id}-${index}`}
+              style={[
+                styles.genreButton,
+                selectedGenres.includes(genre.id) && styles.genreButtonActive
+              ]}
+              onPress={() => toggleGenre(genre.id)}
+            >
+              <Text style={[
+                styles.genreText,
+                selectedGenres.includes(genre.id) && styles.genreTextActive
+              ]}>
+                {genre.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* Sort Options */}
+      <View key="sort-section">
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+        >
+          <View style={styles.filterGroup}>
+            {sortOptions.map((sort, index) => (
+              <TouchableOpacity
+                key={`sort-${sort}-${index}`}
+                style={[
+                  styles.filterButton,
+                  selectedSort === sort && styles.filterButtonActive
+                ]}
+                onPress={() => setSelectedSort(sort)}
+              >
+                <Text style={[
+                  styles.filterText,
+                  selectedSort === sort && styles.filterTextActive
+                ]}>
+                  {sort}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </ScrollView>
+      </View>
+    </View>
+  );
 
   const renderAnimeCard = ({ item }: { item: SearchAnime }) => (
     <View style={styles.animeCardContainer}>
@@ -162,7 +332,19 @@ export default function Search() {
             </TouchableOpacity>
           ) : null}
         </View>
+        <TouchableOpacity 
+          style={styles.filterToggle}
+          onPress={() => setShowFilters(!showFilters)}
+        >
+          <MaterialIcons 
+            name="filter-list" 
+            size={24} 
+            color={showFilters ? "#f4511e" : "#666"} 
+          />
+        </TouchableOpacity>
       </View>
+
+      {showFilters && <FilterSection />}
 
       {searchText && (
         <Text style={styles.searchTitle}>Results for "{searchText}"</Text>
@@ -201,11 +383,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
   searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 16,
     paddingBottom: 8,
     backgroundColor: '#1a1a1a',
   },
   searchBar: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#222',
@@ -318,6 +503,57 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 4,
     fontSize: 10,
+    marginLeft: 8,
+  },
+  filterSection: {
+    backgroundColor: '#1a1a1a',
+    paddingVertical: 8,
+  },
+  filterGroup: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  filterButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: '#222',
+    marginRight: 8,
+  },
+  filterButtonActive: {
+    backgroundColor: '#f4511e',
+  },
+  filterText: {
+    color: '#666',
+    fontSize: 14,
+  },
+  filterTextActive: {
+    color: '#fff',
+  },
+  genreContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  genreButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#222',
+    marginRight: 8,
+  },
+  genreButtonActive: {
+    backgroundColor: '#f4511e',
+  },
+  genreText: {
+    color: '#666',
+    fontSize: 12,
+  },
+  genreTextActive: {
+    color: '#fff',
+  },
+  filterToggle: {
+    padding: 8,
     marginLeft: 8,
   },
 }); 
