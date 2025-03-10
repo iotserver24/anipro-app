@@ -7,18 +7,26 @@ export default function SearchBar() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const expandAnim = useRef(new Animated.Value(0)).current;
+  const [isAnimating, setIsAnimating] = useState(false);
 
   const toggleSearch = () => {
+    if (isAnimating) return;
+    
+    setIsAnimating(true);
     const toValue = isExpanded ? 0 : 1;
     setIsExpanded(!isExpanded);
+    
     Animated.spring(expandAnim, {
       toValue,
       useNativeDriver: false,
-    }).start();
-
-    if (isExpanded) {
-      setSearchQuery('');
-    }
+      friction: 8,
+      tension: 40,
+    }).start(() => {
+      setIsAnimating(false);
+      if (toValue === 0) {
+        setSearchQuery('');
+      }
+    });
   };
 
   const handleSearch = () => {
@@ -27,7 +35,7 @@ export default function SearchBar() {
       router.push({
         pathname: "/search",
         params: { 
-          query: trimmedQuery.toLowerCase().replace(/\s+/g, '-') // Convert to kebab case
+          query: trimmedQuery.toLowerCase().replace(/\s+/g, '-')
         }
       });
       toggleSearch();
@@ -42,8 +50,16 @@ export default function SearchBar() {
 
   const width = expandAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [40, 200]  // Adjusted width values
+    outputRange: [40, 200],
   });
+
+  const handleSearchPress = () => {
+    if (isExpanded) {
+      handleSearch();
+    } else {
+      toggleSearch();
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -64,7 +80,9 @@ export default function SearchBar() {
         )}
         <TouchableOpacity 
           style={styles.searchButton} 
-          onPress={isExpanded ? handleSearch : toggleSearch}
+          onPress={handleSearchPress}
+          activeOpacity={0.7}
+          disabled={isAnimating}
         >
           <Ionicons 
             name={isExpanded ? "search" : "search-outline"} 
@@ -98,8 +116,10 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   searchButton: {
-    padding: 4,
+    padding: 8,
     justifyContent: 'center',
     alignItems: 'center',
+    minWidth: 40,
+    minHeight: 40,
   },
 }); 

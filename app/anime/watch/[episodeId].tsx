@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput, BackHandler } from 'react-native';
 import { useLocalSearchParams, router, Stack, useNavigation } from 'expo-router';
 import Video, { 
   OnLoadData, 
@@ -14,7 +14,7 @@ import { animeAPI } from '../../../services/api';
 import VideoPlayer from '../../../components/VideoPlayer';
 import { LinearGradient } from 'expo-linear-gradient';
 import { logger } from '../../../utils/logger';
-import { activateKeepAwakeAsync, deactivateKeepAwakeAsync } from 'expo-keep-awake';
+import { activateKeepAwake, deactivateKeepAwake } from 'expo-keep-awake';
 
 type StreamSource = {
   url: string;
@@ -457,11 +457,11 @@ export default function WatchAnime() {
     };
   }, []);
 
-  // Add useEffect to handle keep awake
+  // Update the keep awake effect
   useEffect(() => {
     const enableKeepAwake = async () => {
       try {
-        await activateKeepAwakeAsync();
+        activateKeepAwake();
       } catch (error) {
         logger.error('Failed to activate keep awake:', error);
       }
@@ -471,9 +471,11 @@ export default function WatchAnime() {
 
     // Cleanup function to deactivate keep awake when leaving the screen
     return () => {
-      deactivateKeepAwakeAsync().catch(error => {
+      try {
+        deactivateKeepAwake();
+      } catch (error) {
         logger.error('Failed to deactivate keep awake:', error);
-      });
+      }
     };
   }, []);
 
@@ -675,11 +677,21 @@ export default function WatchAnime() {
     if (isFullscreen) {
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
       setIsFullscreen(false);
-      StatusBar.setHidden(false); // Show status bar
+      StatusBar.setHidden(false);
+      
+      // Show navigation header
+      navigation.setOptions({
+        headerShown: true
+      });
     } else {
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
       setIsFullscreen(true);
-      StatusBar.setHidden(true); // Hide status bar
+      StatusBar.setHidden(true);
+      
+      // Hide navigation header
+      navigation.setOptions({
+        headerShown: false
+      });
     }
   };
 
@@ -950,6 +962,101 @@ export default function WatchAnime() {
     }
   }, [filteredEpisodes]);
 
+  // Update the cleanup effect
+  useEffect(() => {
+    return () => {
+      // Cleanup function
+      setVideoUrl(null);
+      setStreamingUrl(null);
+      setPaused(true);
+      setIsVideoReady(false);
+      
+      try {
+        deactivateKeepAwake();
+      } catch (error) {
+        logger.error('Failed to deactivate keep awake:', error);
+      }
+      
+      // Reset orientation and show UI elements
+      ScreenOrientation.lockAsync(
+        ScreenOrientation.OrientationLock.PORTRAIT_UP
+      ).catch(console.error);
+      
+      StatusBar.setHidden(false);
+      navigation.setOptions({
+        headerShown: true
+      });
+    };
+  }, []);
+
+  // Add back handler effect
+  useEffect(() => {
+    const backAction = () => {
+      if (isFullscreen) {
+        // If fullscreen, exit fullscreen first
+        setIsFullscreen(false);
+        return true;
+      }
+      return false;
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      backAction
+    );
+
+    return () => backHandler.remove();
+  }, [isFullscreen]);
+
+  // Update the navigation effect
+  useEffect(() => {
+    const parent = navigation.getParent();
+    if (parent) {
+      parent.setOptions({
+        tabBarStyle: { display: 'none' }
+      });
+    }
+
+    // Add navigation listener for cleanup
+    const unsubscribe = navigation.addListener('beforeRemove', () => {
+      // Cleanup when navigating away
+      setVideoUrl(null);
+      setStreamingUrl(null);
+      setPaused(true);
+      setIsVideoReady(false);
+      
+      // Reset orientation
+      ScreenOrientation.lockAsync(
+        ScreenOrientation.OrientationLock.PORTRAIT_UP
+      ).catch(console.error);
+      
+      // Show tab bar
+      if (parent) {
+        parent.setOptions({
+          tabBarStyle: { 
+            display: 'flex',
+            backgroundColor: '#121212',
+            borderTopWidth: 0
+          }
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+      // Additional cleanup
+      if (parent) {
+        parent.setOptions({
+          tabBarStyle: { 
+            display: 'flex',
+            backgroundColor: '#121212',
+            borderTopWidth: 0
+          }
+        });
+      }
+    };
+  }, [navigation]);
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -1061,6 +1168,16 @@ export default function WatchAnime() {
             bufferForPlaybackAfterRebufferMs: 5000
           }}
           progressUpdateInterval={1000}
+          onUnload={() => {
+            setVideoUrl(null);
+            setStreamingUrl(null);
+            setIsVideoReady(false);
+          }}
+          onPlaybackStatusUpdate={(status) => {
+            if (!status.isPlaying) {
+              setPaused(true);
+            }
+          }}
         />
         
         {!isFullscreen && (

@@ -1,5 +1,5 @@
 import { Stack, router } from 'expo-router';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { View, BackHandler, Alert } from 'react-native';
@@ -9,6 +9,7 @@ import SearchBar from '../components/SearchBar';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import BottomTabBar from '../components/BottomTabBar';
+import { useGlobalStore } from '../store/globalStore';
 
 // Make sure SplashScreen is prevented from auto-hiding
 SplashScreen.preventAutoHideAsync();
@@ -91,6 +92,19 @@ export default function RootLayout() {
     };
   }, []);
 
+  const [isVideoFullscreen, setIsVideoFullscreen] = useState(false);
+
+  useEffect(() => {
+    const subscription = ScreenOrientation.addOrientationChangeListener((event) => {
+      const isLandscape = event.orientationInfo.orientation >= 3; // 3 and 4 are landscape orientations
+      setIsVideoFullscreen(isLandscape);
+    });
+
+    return () => {
+      ScreenOrientation.removeOrientationChangeListener(subscription);
+    };
+  }, []);
+
   if (!fontsLoaded && !fontError) {
     return null;
   }
@@ -110,7 +124,7 @@ export default function RootLayout() {
             },
             contentStyle: {
               backgroundColor: '#121212',
-              paddingBottom: 60,
+              paddingBottom: isVideoFullscreen ? 0 : 60,
             },
             animation: 'fade',
             animationDuration: 200,
@@ -172,7 +186,7 @@ export default function RootLayout() {
             }}
           />
         </Stack>
-        <BottomTabBar />
+        {!isVideoFullscreen && <BottomTabBar />}
       </View>
     </ThemeProvider>
   );
