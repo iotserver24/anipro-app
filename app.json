@@ -60,7 +60,8 @@
         "xhdpi": "./assets/splash.png",
         "xxhdpi": "./assets/splash.png",
         "xxxhdpi": "./assets/splash.png"
-      }
+      },
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png"

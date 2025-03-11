@@ -63,11 +63,13 @@ type DownloadStatus = {
 
 const { width, height } = Dimensions.get('window');
 
-const EpisodeItem = React.memo(({ episode, onPress, onLongPress, mode }: {
+const EpisodeItem = React.memo(({ episode, onPress, onLongPress, mode, animeTitle, onShare }: {
   episode: APIEpisode;
   onPress: () => void;
   onLongPress: () => void;
   mode: 'sub' | 'dub';
+  animeTitle: string;
+  onShare: () => void;
 }) => (
   <TouchableOpacity
     style={[styles.episodeCard, episode.isFiller && styles.fillerEpisodeCard]}
@@ -91,7 +93,12 @@ const EpisodeItem = React.memo(({ episode, onPress, onLongPress, mode }: {
           )}
         </View>
       </View>
-      <MaterialIcons name="play-circle-outline" size={24} color="#f4511e" />
+      <View style={styles.episodeActions}>
+        <TouchableOpacity onPress={onShare} style={styles.episodeActionButton}>
+          <MaterialIcons name="share" size={20} color="#f4511e" />
+        </TouchableOpacity>
+        <MaterialIcons name="play-circle-outline" size={24} color="#f4511e" />
+      </View>
     </View>
   </TouchableOpacity>
 ));
@@ -349,14 +356,9 @@ export default function AnimeDetails() {
     if (!animeData) return;
     
     try {
-      const shareUrl = `anipro://anime/${id}`;
-      const storeLink = Platform.select({
-        ios: '[Your App Store Link]',
-        android: '[Your Play Store Link]',
-        default: '[Your Website Link]'
-      });
-      
-      const message = `Check out ${animeData.info.name}!\n\nOpen in AniPro: ${shareUrl}\n\nInstall AniPro to watch anime: ${storeLink}`;
+      const shareUrl = `https://app.animeverse.cc/share/${id}`;
+      const episodeInfo = `${animeData.info.episodes.sub > 0 ? `🗣️ ${animeData.info.episodes.sub} Sub Episodes` : ''}${animeData.info.episodes.dub > 0 ? `\n🎙️ ${animeData.info.episodes.dub} Dub Episodes` : ''}`;
+      const message = `📺 ${animeData.info.name}\n\n${episodeInfo}\n\n${animeData.info.description?.slice(0, 150)}...\n\n🔥 Watch now on AniSurge!\n\n${shareUrl}`;
       
       await Share.share({
         message,
@@ -372,14 +374,9 @@ export default function AnimeDetails() {
     if (!animeData) return;
     
     try {
-      const shareUrl = `anipro://anime/watch/${episode.id}`;
-      const storeLink = Platform.select({
-        ios: '[Your App Store Link]',
-        android: '[Your Play Store Link]',
-        default: '[Your Website Link]'
-      });
-      
-      const message = `Watch ${animeData.info.name} Episode ${episode.number} on AniPro!\n\nOpen in AniPro: ${shareUrl}\n\nInstall AniPro to watch anime: ${storeLink}`;
+      const shareUrl = `https://app.animeverse.cc/share/${id}/${episode.number}`;
+      const emojiType = selectedMode === 'sub' ? '🗣️' : '🎙️';
+      const message = `📺 ${animeData.info.name}\n${emojiType} Episode ${episode.number}${episode.title ? `: ${episode.title}` : ''}\n\n${episode.isFiller ? '⚠️ Filler Episode\n\n' : ''}🔥 Watch now on AniSurge!\n\n${shareUrl}`;
       
       await Share.share({
         message,
@@ -689,6 +686,7 @@ export default function AnimeDetails() {
     <EpisodeItem
       episode={item}
       mode={selectedMode}
+      animeTitle={animeData?.info.name || ''}
       onPress={() => {
         router.push({
           pathname: "/anime/watch/[episodeId]",
@@ -702,6 +700,7 @@ export default function AnimeDetails() {
         });
       }}
       onLongPress={() => handleDownload(item)}
+      onShare={() => handleEpisodeShare(item)}
     />
   );
 
@@ -1374,5 +1373,13 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 16,
     padding: 16,
+  },
+  episodeActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  episodeActionButton: {
+    padding: 4,
   },
 }); 

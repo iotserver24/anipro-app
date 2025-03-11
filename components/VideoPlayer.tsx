@@ -7,13 +7,15 @@ import {
   Dimensions,
   ActivityIndicator,
   StatusBar,
-  Pressable
+  Pressable,
+  Platform
 } from 'react-native';
 import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as NavigationBar from 'expo-navigation-bar';
 
 interface VideoPlayerProps {
   source: {
@@ -70,19 +72,29 @@ const VideoPlayer = ({
 
   // Handle fullscreen toggle
   const toggleFullscreen = async () => {
-    if (isFullscreen) {
-      // Exit fullscreen
-      if (videoRef.current) {
-        await videoRef.current.dismissFullscreenPlayer();
+    try {
+      if (isFullscreen) {
+        // Exit fullscreen
+        if (videoRef.current) {
+          await videoRef.current.dismissFullscreenPlayer();
+        }
+        await Promise.all([
+          ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP),
+          Platform.OS === 'android' ? NavigationBar.setVisibilityAsync('visible') : Promise.resolve(),
+        ]);
+        StatusBar.setHidden(false);
+        setIsFullscreen(false);
+      } else {
+        // Enter fullscreen
+        await Promise.all([
+          ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE),
+          Platform.OS === 'android' ? NavigationBar.setVisibilityAsync('hidden') : Promise.resolve(),
+        ]);
+        StatusBar.setHidden(true);
+        setIsFullscreen(true);
       }
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-      StatusBar.setHidden(false);
-      setIsFullscreen(false);
-    } else {
-      // Enter fullscreen
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-      StatusBar.setHidden(true);
-      setIsFullscreen(true);
+    } catch (error) {
+      console.error('Error toggling fullscreen:', error);
     }
   };
 
@@ -188,6 +200,9 @@ const VideoPlayer = ({
       }
       ScreenOrientation.unlockAsync();
       StatusBar.setHidden(false);
+      if (Platform.OS === 'android') {
+        NavigationBar.setVisibilityAsync('visible');
+      }
     };
   }, []);
 
@@ -200,19 +215,28 @@ const VideoPlayer = ({
 
   // Add handler for fullscreen updates
   const handleFullscreenUpdate = async ({ fullscreenUpdate }: { fullscreenUpdate: number }) => {
-    switch (fullscreenUpdate) {
-      case Video.FULLSCREEN_UPDATE_PLAYER_WILL_PRESENT:
-        setIsFullscreen(true);
-        break;
-      case Video.FULLSCREEN_UPDATE_PLAYER_DID_PRESENT:
-        break;
-      case Video.FULLSCREEN_UPDATE_PLAYER_WILL_DISMISS:
-        break;
-      case Video.FULLSCREEN_UPDATE_PLAYER_DID_DISMISS:
-        setIsFullscreen(false);
-        // Ensure we return to portrait mode
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-        break;
+    try {
+      switch (fullscreenUpdate) {
+        case 0: // FULLSCREEN_UPDATE_PLAYER_WILL_PRESENT
+          setIsFullscreen(true);
+          if (Platform.OS === 'android') {
+            await NavigationBar.setVisibilityAsync('hidden');
+          }
+          break;
+        case 1: // FULLSCREEN_UPDATE_PLAYER_DID_PRESENT
+          break;
+        case 2: // FULLSCREEN_UPDATE_PLAYER_WILL_DISMISS
+          break;
+        case 3: // FULLSCREEN_UPDATE_PLAYER_DID_DISMISS
+          setIsFullscreen(false);
+          await Promise.all([
+            ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP),
+            Platform.OS === 'android' ? NavigationBar.setVisibilityAsync('visible') : Promise.resolve(),
+          ]);
+          break;
+      }
+    } catch (error) {
+      console.error('Error handling fullscreen update:', error);
     }
   };
 
@@ -309,12 +333,13 @@ const VideoPlayer = ({
           ref={videoRef}
           source={source}
           style={styles.video}
-          resizeMode={ResizeMode.CONTAIN}
+          resizeMode={isFullscreen ? ResizeMode.CONTAIN : ResizeMode.CONTAIN}
           shouldPlay={isPlaying}
           onPlaybackStatusUpdate={onPlaybackStatusUpdate}
           useNativeControls={false}
           onFullscreenUpdate={handleFullscreenUpdate}
           onLoad={handleLoad}
+          progressUpdateIntervalMillis={500}
         />
         
         {/* Only show buffering indicator when buffering AND not playing */}
@@ -440,21 +465,20 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 999,
-    width: '100%',
-    height: '100%',
+    width: Dimensions.get('window').width,
+    height: Dimensions.get('window').height,
+    backgroundColor: '#000',
   },
   videoWrapper: {
     flex: 1,
+    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
   },
   video: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    bottom: 0,
-    right: 0,
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
   },
   controlsOverlay: {
     ...StyleSheet.absoluteFillObject,
