@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput, BackHandler, Platform, Linking, Modal } from 'react-native';
 import { useLocalSearchParams, router, Stack, useNavigation } from 'expo-router';
-import { Video, AVPlaybackStatus, ResizeMode } from 'expo-av';
+import Video from 'react-native-video';
 import { MaterialIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { useWatchHistoryStore } from '../../../store/watchHistoryStore';
@@ -56,8 +56,12 @@ type OnBufferData = {
 };
 
 // Update VideoRef type
-type VideoRef = Video & {
+type VideoRef = {
   seek: (seconds: number) => void;
+  pauseAsync: () => Promise<void>;
+  setPositionAsync: (position: number) => Promise<void>;
+  playAsync: () => Promise<void>;
+  play: () => Promise<void>;
 };
 
 // Update VideoPlayerProps type
@@ -106,9 +110,9 @@ type VideoProgress = {
   currentTime: number;
   playableDuration: number;
   seekableDuration: number;
-  isBuffering?: boolean;
-  isPlaying?: boolean;
-  paused?: boolean;
+  isBuffering: boolean;
+  isPlaying: boolean;
+  didJustFinish: boolean;
 };
 
 type LoadError = {
@@ -860,7 +864,7 @@ export default function WatchEpisode() {
       setIsBuffering(false);
     }
     
-    setIsPlaying(!data.paused);
+    setIsPlaying(data.isPlaying);
 
     // Handle video load completion
     if (!isVideoReady && newDuration > 0) {
@@ -888,7 +892,7 @@ export default function WatchEpisode() {
     }
     
     // Auto play next episode when current one ends
-    if (newTime >= newDuration - 0.5) {
+    if (data.didJustFinish) {
       onVideoEnd();
     }
   };
@@ -932,12 +936,6 @@ export default function WatchEpisode() {
 
   const handleFullscreenChange = async (fullscreen: boolean) => {
     try {
-      // Prevent rapid orientation changes
-      if (fullscreen === isFullscreen) {
-        console.log(`[DEBUG] Fullscreen state already ${fullscreen ? 'enabled' : 'disabled'}, ignoring change`);
-        return;
-      }
-      
       // Set state first for immediate UI response
       setIsFullscreen(fullscreen);
       
@@ -958,12 +956,11 @@ export default function WatchEpisode() {
           await NavigationBar.setVisibilityAsync('hidden');
         }
         
-        // Update player dimensions immediately - use screen dimensions
-        const screenWidth = Dimensions.get('screen').width;
-        const screenHeight = Dimensions.get('screen').height;
+        // Update player dimensions immediately
+        const { width, height } = Dimensions.get('window');
         setPlayerDimensions({
-          width: screenWidth,
-          height: screenHeight
+          width: Math.max(width, height), // Ensure we use the larger dimension as width
+          height: Math.min(width, height)
         });
       } else {
         // Exit fullscreen - portrait mode
@@ -1137,36 +1134,26 @@ export default function WatchEpisode() {
 
   // Update the dimension change listener
   useEffect(() => {
-    const dimensionsChangeHandler = ({ window, screen }: { window: { width: number; height: number }, screen: { width: number; height: number } }) => {
-      // Determine if this is a landscape orientation
-      const isLandscapeOrientation = window.width > window.height;
-      
-      // Only update dimensions if the orientation matches the fullscreen state
-      // This prevents unnecessary dimension changes during orientation transitions
-      if (isLandscapeOrientation === isFullscreen) {
-        if (isFullscreen) {
-          // In fullscreen/landscape mode - use screen dimensions to get full screen
-          setPlayerDimensions({
-            width: screen.width,
-            height: screen.height
-          });
-        } else {
-          // In portrait mode
-          setPlayerDimensions({
-            width: window.width,
-            height: window.width * (9/16)
-          });
-        }
+    const dimensionsChangeHandler = ({ window }: { window: { width: number; height: number } }) => {
+      if (isFullscreen) {
+        // In fullscreen/landscape mode
+        setPlayerDimensions({
+          width: Math.max(window.width, window.height), // Always use the larger dimension as width in fullscreen
+          height: Math.min(window.width, window.height)  // Always use the smaller dimension as height in fullscreen
+        });
+      } else {
+        // In portrait mode
+        setPlayerDimensions({
+          width: window.width,
+          height: window.width * (9/16)
+        });
       }
     };
 
     const subscription = Dimensions.addEventListener('change', dimensionsChangeHandler);
 
     // Force an immediate update when fullscreen state changes
-    dimensionsChangeHandler({ 
-      window: Dimensions.get('window'),
-      screen: Dimensions.get('screen')
-    });
+    dimensionsChangeHandler({ window: Dimensions.get('window') });
 
     return () => {
       subscription.remove();
@@ -1199,7 +1186,7 @@ export default function WatchEpisode() {
       try {
         // Don't change quality if it's already selected
         if (selectedQuality === quality) {
-          console.log(`[DEBUG] Quality already set to ${quality}, skipping change`);
+          console.log(`[DEBUG] Quality ${quality} already selected, skipping change`);
           return;
         }
         
@@ -1207,38 +1194,42 @@ export default function WatchEpisode() {
         const currentPos = currentTime;
         const wasPlaying = isPlaying;
         
-        console.log(`[DEBUG] Quality change: Changing from ${selectedQuality} to ${quality} at position ${currentPos}`);
+        console.log(`[DEBUG] Quality change: Saving position ${currentPos} and playback state ${wasPlaying}`);
         
-        // Pause video immediately to prevent issues
-        if (videoRef.current && isPlaying) {
-          await videoRef.current.pauseAsync();
-          setIsPlaying(false);
-        }
-        
-        // Set quality changing state
+        // Set quality changing state first
         setIsQualityChanging(true);
         setSavedPosition(currentPos);
         
-        // Update quality selection and video URL
+        // Pause video while changing quality to prevent issues
+        if (videoRef.current && wasPlaying) {
+          try {
+            await videoRef.current.pauseAsync();
+          } catch (error) {
+            console.error('[DEBUG] Error pausing video before quality change:', error);
+          }
+        }
+        
+        // Update quality selection immediately
         setSelectedQuality(quality);
+        
+        // Force a small delay to ensure state updates are processed
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Update video URL - this will trigger the VideoPlayer to reload
+        console.log(`[DEBUG] Quality change: Changing URL to ${selectedSource.url}`);
         setVideoUrl(selectedSource.url);
         setStreamingUrl(selectedSource.url);
         
-        // Set a shorter timeout to reset quality changing state if something goes wrong
+        // The VideoPlayer component will handle seeking to the saved position
+        // and restoring the playback state after the video loads
+        
+        // Set a timeout to reset quality changing state if something goes wrong
         setTimeout(() => {
           if (isQualityChanging) {
             console.log('[DEBUG] Quality change: Timeout reached, resetting quality changing state');
             setIsQualityChanging(false);
-            
-            // Restore playback if needed
-            if (wasPlaying && videoRef.current) {
-              videoRef.current.playAsync().catch(err => 
-                console.error('[DEBUG] Error resuming playback after timeout:', err)
-              );
-              setIsPlaying(true);
-            }
           }
-        }, 5000); // 5 second timeout (reduced from 10)
+        }, 5000); // Reduced from 10 seconds to 5 seconds
       } catch (error) {
         console.error('[DEBUG] Error during quality change:', error);
         setIsQualityChanging(false);
@@ -1360,77 +1351,28 @@ export default function WatchEpisode() {
   }, []);
 
   // Update the handleLoad function
-  const handleLoad = (status: AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
+  const handleLoad = (status: VideoProgress) => {
+    if (!status) return;
     
-    const duration = status.durationMillis ? status.durationMillis / 1000 : 0;
-    setDuration(duration);
-    setLoading(false);
+    // Set duration
+    const videoDuration = status.seekableDuration;
+    setDuration(videoDuration);
     
-    // Handle quality change
-    if (isQualityChanging && savedPosition > 0) {
-      if (videoRef.current) {
-        console.log(`[DEBUG] Quality change: seeking to ${savedPosition} seconds`);
-        setTimeout(async () => {
-          try {
-            // First pause to ensure seeking works properly
-            await videoRef.current?.pauseAsync();
-            
-            // Then seek to the position
-            await videoRef.current?.setPositionAsync(savedPosition * 1000);
-            
-            // Finally play if it was playing before
-            if (isPlaying) {
-              await videoRef.current?.playAsync();
-            }
-            
-            setIsQualityChanging(false);
-            console.log(`[DEBUG] Quality change complete - Position restored to ${savedPosition}`);
-          } catch (error) {
-            console.error('[DEBUG] Error setting position after quality change:', error);
-            setIsQualityChanging(false);
-          }
-        }, 500);
-      }
-      return;
-    }
+    console.log(`[DEBUG] VideoPlayer: Video loaded, duration: ${videoDuration}`);
     
-    // Handle initial load/resume position
+    // Handle initial position
     if (resumePosition > 0 && !isVideoReady) {
-      if (videoRef.current) {
-        console.log(`[DEBUG] Initial load: seeking to ${resumePosition} seconds`);
-        setTimeout(async () => {
-          try {
-            // First pause to ensure seeking works properly
-            await videoRef.current?.pauseAsync();
-            
-            // Then seek to the position
-            await videoRef.current?.setPositionAsync(resumePosition * 1000);
-            
-            // Finally play
-            await videoRef.current?.playAsync();
-            
-            setIsVideoReady(true);
-            console.log(`[DEBUG] Initial position restored to ${resumePosition}`);
-          } catch (error) {
-            console.error('[DEBUG] Error setting resume position:', error);
-            // Try one more time with a longer delay
-            setTimeout(async () => {
-              try {
-                if (videoRef.current) {
-                  await videoRef.current.setPositionAsync(resumePosition * 1000);
-                  await videoRef.current.playAsync();
-                  setIsVideoReady(true);
-                }
-              } catch (retryErr) {
-                console.error('[DEBUG] Error on retry:', retryErr);
-              }
-            }, 1000);
-          }
-        }, 500);
-      } else {
-        setIsPlaying(true);
-      }
+      console.log(`[DEBUG] VideoPlayer: Seeking to resumePosition: ${resumePosition}`);
+      // Use a timeout to ensure the video is ready
+      setTimeout(() => {
+        handleSeek(resumePosition);
+        setIsVideoReady(true);
+      }, 300);
+    } else if (isPlaying) {
+      // Ensure we're playing if we should be
+      videoRef.current?.play().catch((error: Error) => {
+        console.error('[DEBUG] VideoPlayer: Error playing after load:', error);
+      });
     }
   };
 
@@ -1602,11 +1544,16 @@ export default function WatchEpisode() {
                         key={q.quality}
                         style={[
                           styles.qualityButton,
-                          selectedQuality === q.quality && styles.selectedQuality
+                          selectedQuality === q.quality && styles.selectedQuality,
+                          isQualityChanging && selectedQuality === q.quality && styles.qualityChanging
                         ]}
                         onPress={() => handleQualityChange(q.quality)}
+                        disabled={isQualityChanging || selectedQuality === q.quality}
                       >
-                        <Text style={styles.qualityText}>{q.quality}</Text>
+                        <Text style={styles.qualityText}>
+                          {q.quality}
+                          {isQualityChanging && selectedQuality === q.quality && '...'}
+                        </Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -2087,5 +2034,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#1a1a1a',
+  },
+  qualityChanging: {
+    backgroundColor: '#f4511e55',
+    borderColor: '#f4511e',
   },
 }); 

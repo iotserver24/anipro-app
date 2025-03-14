@@ -10,7 +10,7 @@ import {
   Pressable,
   Platform
 } from 'react-native';
-import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { MaterialIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -29,7 +29,7 @@ interface VideoPlayerProps {
   onFullscreenChange?: (isFullscreen: boolean) => void;
   title?: string;
   onPositionChange?: (position: number) => void;
-  onLoad?: (status: AVPlaybackStatus) => void;
+  onLoad?: (status: any) => void;
   onQualityChange?: (position: number) => void;
   rate?: number;
   onPlaybackRateChange?: (rate: number) => void;
@@ -49,6 +49,50 @@ interface APIEpisode {
   isDubbed: boolean;
   url: string;
   isFiller: boolean;
+}
+
+// Add type definitions for video events
+interface VideoProgress {
+  currentTime: number;
+  playableDuration: number;
+  seekableDuration: number;
+}
+
+interface VideoError {
+  error: {
+    errorString?: string;
+    errorException?: string;
+    errorStackTrace?: string;
+    errorCode?: string;
+    error?: string;
+    code?: number;
+    localizedDescription?: string;
+    localizedFailureReason?: string;
+    localizedRecoverySuggestion?: string;
+    domain?: string;
+  };
+  target?: number;
+}
+
+interface VideoBuffer {
+  isBuffering: boolean;
+}
+
+// Update VideoPlayerStatus to use PlaybackStatus
+interface VideoPlayerStatus {
+  isBuffering: boolean;
+  isPlaying: boolean;
+  currentTime: number;
+  duration: number;
+  didJustFinish: boolean;
+}
+
+// Add VideoPlayerEvents interface
+interface VideoPlayerEvents {
+  statusUpdate: VideoPlayerStatus;
+  error: VideoError;
+  load: void;
+  unload: void;
 }
 
 const VideoPlayer = ({
@@ -71,7 +115,6 @@ const VideoPlayer = ({
   isQualityChanging: externalQualityChanging = false,
   savedQualityPosition = 0,
 }: VideoPlayerProps) => {
-  const videoRef = useRef<Video>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -94,8 +137,127 @@ const VideoPlayer = ({
   const initialPositionRef = useRef<number>(initialPosition);
   const sourceRef = useRef(source);
   const wasPlayingBeforeQualityChange = useRef(isPlaying);
-  const orientationChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isOrientationChangingRef = useRef(false);
+
+  // Create video player instance
+  const player = useVideoPlayer(source.uri, player => {
+    player.loop = false;
+    if (initialPosition > 0) {
+      player.currentTime = initialPosition;
+    }
+  });
+
+  // Handle video progress
+  useEffect(() => {
+    if (player) {
+      const interval = setInterval(() => {
+        if (player.currentTime !== undefined && player.duration !== undefined) {
+          setCurrentTime(player.currentTime);
+          setDuration(player.duration);
+          if (onProgress) {
+            onProgress(player.currentTime, player.duration);
+          }
+        }
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }
+  }, [player, onProgress]);
+
+  // Handle video end
+  useEffect(() => {
+    if (player && player.currentTime === player.duration && player.duration > 0) {
+      setIsPlaying(false);
+      if (onEnd) {
+        onEnd();
+      }
+    }
+  }, [player, onEnd]);
+
+  // Handle video load
+  useEffect(() => {
+    if (player && player.duration !== undefined && player.duration > 0) {
+      setDuration(player.duration);
+      if (onLoad) {
+        onLoad({
+          duration: player.duration,
+          currentTime: player.currentTime || 0,
+          isBuffering: false
+        });
+      }
+    }
+  }, [player, onLoad]);
+
+  // Handle buffering state
+  useEffect(() => {
+    if (player) {
+      const handleStatusUpdate = (status: VideoPlayerStatus) => {
+        if (status.isBuffering) {
+          setIsBuffering(true);
+          setShowBufferingIndicator(true);
+          if (bufferingTimeoutRef.current) {
+            clearTimeout(bufferingTimeoutRef.current);
+          }
+          bufferingTimeoutRef.current = setTimeout(() => {
+            setShowBufferingIndicator(false);
+          }, 1000);
+        } else {
+          setIsBuffering(false);
+          setShowBufferingIndicator(false);
+        }
+        
+        // Update playing state
+        setIsPlaying(status.isPlaying);
+        
+        // Handle end of video
+        if (status.didJustFinish && onEnd) {
+          onEnd();
+        }
+      };
+
+      // Use type assertion to fix the linter error
+      player.addListener('status' as keyof VideoPlayerEvents, handleStatusUpdate);
+
+      return () => {
+        player.removeListener('status' as keyof VideoPlayerEvents, handleStatusUpdate);
+      };
+    }
+  }, [player, onEnd]);
+
+  // Handle intro/outro skip
+  useEffect(() => {
+    if (player && currentTime !== undefined) {
+      if (intro && currentTime >= intro.start && currentTime <= intro.end) {
+        setShowSkipIntro(true);
+      } else {
+        setShowSkipIntro(false);
+      }
+
+      if (outro && currentTime >= outro.start && currentTime <= outro.end) {
+        setShowSkipOutro(true);
+      } else {
+        setShowSkipOutro(false);
+      }
+    }
+  }, [player, currentTime, intro, outro]);
+
+  // Handle skip intro/outro
+  const handleSkipIntro = () => {
+    if (player && intro) {
+      player.currentTime = intro.end;
+      if (onSkipIntro) {
+        onSkipIntro();
+      }
+    }
+  };
+
+  const handleSkipOutro = () => {
+    if (player && outro) {
+      player.currentTime = outro.end;
+      if (onSkipOutro) {
+        onSkipOutro();
+      }
+    }
+  };
 
   // Update when external quality changing state changes
   useEffect(() => {
@@ -109,56 +271,30 @@ const VideoPlayer = ({
 
   // Track source changes to detect quality changes
   useEffect(() => {
-    // If the source URI changed
     if (sourceRef.current.uri !== source.uri) {
       console.log(`[DEBUG] VideoPlayer: Source URI changed from ${sourceRef.current.uri} to ${source.uri}`);
       
-      // Update the source ref immediately
-      sourceRef.current = source;
-      
-      // If we're not already handling a quality change, treat this as a quality change
-      if (!isQualityChanging && currentTime > 0) {
+      if (!isQualityChanging) {
         console.log(`[DEBUG] VideoPlayer: Detected quality change, saving position: ${currentTime}`);
         wasPlayingBeforeQualityChange.current = isPlaying;
         setIsQualityChanging(true);
         setSavedPosition(currentTime);
       }
+      
+      sourceRef.current = source;
     }
-  }, [source.uri]);
+  }, [source, source.uri]);
 
   // Update initialPositionRef when initialPosition changes
   useEffect(() => {
     console.log(`[DEBUG] VideoPlayer: initialPosition changed to ${initialPosition}`);
     initialPositionRef.current = initialPosition;
     
-    // If we already have a video reference and the position changes, seek to it
-    if (videoRef.current && initialPosition > 0 && isReady) {
+    if (player && initialPosition > 0 && isReady) {
       console.log(`[DEBUG] VideoPlayer: Seeking to new initialPosition: ${initialPosition}`);
-      videoRef.current.setPositionAsync(initialPosition * 1000)
-        .catch(error => console.error('[DEBUG] VideoPlayer: Error seeking to new position:', error));
+      player.currentTime = initialPosition;
     }
   }, [initialPosition]);
-
-  // Add a useEffect to handle video loading and seeking
-  useEffect(() => {
-    if (videoRef.current && initialPositionRef.current > 0 && !isReady) {
-      const seekToInitialPosition = async () => {
-        try {
-          console.log(`[DEBUG] VideoPlayer: Attempting to seek to initial position: ${initialPositionRef.current}`);
-          await videoRef.current?.pauseAsync();
-          await videoRef.current?.setPositionAsync(initialPositionRef.current * 1000);
-          await videoRef.current?.playAsync();
-          setIsReady(true);
-          console.log('[DEBUG] VideoPlayer: Successfully seeked to initial position');
-        } catch (error) {
-          console.error('[DEBUG] VideoPlayer: Error seeking to initial position:', error);
-        }
-      };
-      
-      // Delay seeking to ensure video is loaded
-      setTimeout(seekToInitialPosition, 1000);
-    }
-  }, []);
 
   // Format time in MM:SS format
   const formatTime = (seconds: number) => {
@@ -168,807 +304,387 @@ const VideoPlayer = ({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Handle fullscreen toggle with debounce
+  // Handle fullscreen toggle
   const toggleFullscreen = async () => {
     try {
-      // Prevent rapid orientation changes
-      if (isOrientationChangingRef.current) {
-        console.log('[DEBUG] VideoPlayer: Orientation change in progress, ignoring request');
-        return;
-      }
-      
-      isOrientationChangingRef.current = true;
-      
       if (isFullscreen) {
-        // Set state first for immediate UI response
         setIsFullscreen(false);
         if (onFullscreenChange) {
           onFullscreenChange(false);
         }
         
-        // Exit fullscreen
         await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
         if (Platform.OS === 'android') {
           await NavigationBar.setVisibilityAsync('visible');
         }
         StatusBar.setHidden(false);
         
-        // Get current window dimensions in portrait mode
         const { width } = Dimensions.get('window');
         setDimensions({
           width: width,
           height: (width * 9) / 16
         });
       } else {
-        // Set state first for immediate UI response
         setIsFullscreen(true);
         if (onFullscreenChange) {
           onFullscreenChange(true);
         }
         
-        // Enter fullscreen
         await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
         if (Platform.OS === 'android') {
           await NavigationBar.setVisibilityAsync('hidden');
         }
         StatusBar.setHidden(true);
         
-        // Get screen dimensions for fullscreen mode
-        const { width, height } = Dimensions.get('screen');
+        const { width, height } = Dimensions.get('window');
         setDimensions({
-          width: width,
-          height: height
+          width: Math.max(width, height),
+          height: Math.min(width, height)
         });
       }
-      
-      // Add a delay before allowing another orientation change
-      if (orientationChangeTimeoutRef.current) {
-        clearTimeout(orientationChangeTimeoutRef.current);
-      }
-      
-      orientationChangeTimeoutRef.current = setTimeout(() => {
-        isOrientationChangingRef.current = false;
-        orientationChangeTimeoutRef.current = null;
-      }, 1000); // 1 second debounce
-      
     } catch (error) {
       console.error('Error toggling fullscreen:', error);
-      isOrientationChangingRef.current = false;
     }
   };
 
   // Handle play/pause toggle
-  const togglePlayPause = async () => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        await videoRef.current.pauseAsync();
-      } else {
-        await videoRef.current.playAsync();
-      }
-      setIsPlaying(!isPlaying);
+  const togglePlayPause = () => {
+    if (isPlaying) {
+      player.pause();
+    } else {
+      player.play();
     }
+    setIsPlaying(!isPlaying);
   };
 
   // Handle seeking
-  const handleSeek = async (value: number) => {
-    if (videoRef.current) {
-      setIsSeeking(true);
-      try {
-        // Set position without changing play state
-        await videoRef.current.setPositionAsync(value * 1000);
-        setCurrentTime(value);
-        
-        // Ensure we're playing if we were playing before
-        if (isPlaying) {
-          await videoRef.current.playAsync();
-        }
-      } catch (error) {
-        console.error('Error seeking:', error);
-      } finally {
-        setIsSeeking(false);
+  const handleSeek = (value: number) => {
+    if (player) {
+      player.currentTime = value;
+      setCurrentTime(value);
+      if (onPositionChange) {
+        onPositionChange(value);
       }
     }
   };
 
-  // Handle video status update
-  const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
-
-    if (status.isLoaded) {
-      const newPosition = status.positionMillis / 1000;
-      setCurrentTime(newPosition);
-      setDuration(status.durationMillis ? status.durationMillis / 1000 : 0);
-      
-      // Only show buffering indicator if we're actually buffering AND not playing
-      // This prevents showing the buffering indicator when the video is playing smoothly
-      const newIsBuffering = status.isBuffering && !status.isPlaying;
-      setIsBuffering(newIsBuffering);
-      
-      // Add a delay before showing the buffering indicator to prevent flashing
-      if (newIsBuffering) {
-        if (!bufferingTimeoutRef.current) {
-          bufferingTimeoutRef.current = setTimeout(() => {
-            setShowBufferingIndicator(true);
-            bufferingTimeoutRef.current = null;
-          }, 500); // Wait 500ms before showing the buffering indicator
-        }
-      } else {
-        if (bufferingTimeoutRef.current) {
-          clearTimeout(bufferingTimeoutRef.current);
-          bufferingTimeoutRef.current = null;
-        }
-        setShowBufferingIndicator(false);
-      }
-      
-      // Only update isPlaying if we're not buffering
-      // This prevents the player from pausing during buffering
-      if (!status.isBuffering) {
-        setIsPlaying(status.isPlaying);
-      }
-
-      // If we're buffering but should be playing, ensure we resume playback
-      if (status.isBuffering && !status.isPlaying && isPlaying && videoRef.current) {
-        videoRef.current.playAsync().catch(err => console.error('Error resuming playback:', err));
-      }
-
-      if (onProgress && !isSeeking) {
-        onProgress(
-          newPosition,
-          status.durationMillis ? status.durationMillis / 1000 : 0
-        );
-      }
-
-      // Notify parent of position changes
-      if (onPositionChange && !isSeeking) {
-        onPositionChange(newPosition);
-      }
-
-      if (status.didJustFinish && onEnd) {
-        onEnd();
-      }
-
-      // Handle intro/outro button visibility
-      if (intro && currentTime >= intro.start && currentTime < intro.end) {
-        setShowSkipIntro(true);
-      } else {
-        setShowSkipIntro(false);
-      }
-
-      if (outro && currentTime >= outro.start && currentTime < outro.end) {
-        setShowSkipOutro(true);
-      } else {
-        setShowSkipOutro(false);
-      }
-    }
-  };
-
-  // Update handleScreenTap to be more reliable
+  // Handle screen tap - improve the tap handler
   const handleScreenTap = () => {
-    if (showControls) {
-      // If controls are showing, hide them
-      setShowControls(false);
-      if (controlsTimeout) {
-        clearTimeout(controlsTimeout);
-      }
-    } else {
-      // If controls are hidden, show them and set auto-hide timer
-      setShowControls(true);
+    console.log(`[DEBUG] VideoPlayer: Screen tapped, current controls state: ${showControls}`);
+    
+    // Toggle controls visibility
+    const newControlsState = !showControls;
+    console.log(`[DEBUG] VideoPlayer: Setting controls visibility to ${newControlsState}`);
+    setShowControls(newControlsState);
+    
+    // Clear any existing timeout
+    if (controlsTimeout) {
+      clearTimeout(controlsTimeout);
+      setControlsTimeout(null);
+    }
+    
+    // Only set a new timeout if showing controls
+    if (newControlsState) {
       const timeout = setTimeout(() => {
+        console.log(`[DEBUG] VideoPlayer: Auto-hiding controls after timeout`);
         setShowControls(false);
-      }, 3000);
+      }, 5000); // Longer timeout for better usability
+      
       setControlsTimeout(timeout);
     }
   };
-
-  // Auto-hide controls
-  useEffect(() => {
-    if (showControls && isPlaying) {
-      const timeout = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-      setControlsTimeout(timeout);
-      
-      return () => {
-        if (timeout) clearTimeout(timeout);
-      };
-    }
-  }, [showControls, isPlaying]);
-
-  // Clean up
-  useEffect(() => {
-    return () => {
-      if (controlsTimeout) {
-        clearTimeout(controlsTimeout);
-      }
-      if (bufferingTimeoutRef.current) {
-        clearTimeout(bufferingTimeoutRef.current);
-      }
-      if (orientationChangeTimeoutRef.current) {
-        clearTimeout(orientationChangeTimeoutRef.current);
-      }
-      ScreenOrientation.unlockAsync();
-      StatusBar.setHidden(false);
-      if (Platform.OS === 'android') {
-        NavigationBar.setVisibilityAsync('visible');
-      }
-    };
-  }, []);
-
-  // Communicate fullscreen state
-  useEffect(() => {
-    if (onFullscreenChange) {
-      onFullscreenChange(isFullscreen);
-    }
-  }, [isFullscreen, onFullscreenChange]);
-
-  // Add handler for fullscreen updates with debounce
-  const handleFullscreenUpdate = async ({ fullscreenUpdate }: { fullscreenUpdate: number }) => {
-    try {
-      // Prevent rapid orientation changes
-      if (isOrientationChangingRef.current && fullscreenUpdate !== 3) { // Always allow exit fullscreen
-        console.log('[DEBUG] VideoPlayer: Orientation change in progress, ignoring update:', fullscreenUpdate);
-        return;
-      }
-      
-      isOrientationChangingRef.current = true;
-      
-      switch (fullscreenUpdate) {
-        case 0: // FULLSCREEN_UPDATE_PLAYER_WILL_PRESENT
-          setIsFullscreen(true);
-          if (Platform.OS === 'android') {
-            await NavigationBar.setVisibilityAsync('hidden');
-          }
-          break;
-        case 1: // FULLSCREEN_UPDATE_PLAYER_DID_PRESENT
-          break;
-        case 2: // FULLSCREEN_UPDATE_PLAYER_WILL_DISMISS
-          break;
-        case 3: // FULLSCREEN_UPDATE_PLAYER_DID_DISMISS
-          setIsFullscreen(false);
-          await Promise.all([
-            ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP),
-            Platform.OS === 'android' ? NavigationBar.setVisibilityAsync('visible') : Promise.resolve(),
-          ]);
-          break;
-      }
-      
-      // Add a delay before allowing another orientation change
-      if (orientationChangeTimeoutRef.current) {
-        clearTimeout(orientationChangeTimeoutRef.current);
-      }
-      
-      orientationChangeTimeoutRef.current = setTimeout(() => {
-        isOrientationChangingRef.current = false;
-        orientationChangeTimeoutRef.current = null;
-      }, 1000); // 1 second debounce
-      
-    } catch (error) {
-      console.error('Error handling fullscreen update:', error);
-      isOrientationChangingRef.current = false;
-    }
-  };
-
-  // Add skip functions
-  const skipForward = async () => {
-    if (videoRef.current) {
-      try {
-        // Always maintain the current playing state
-        const newPosition = Math.min(duration, currentTime + 5);
-        
-        // Set position without changing play state
-        await videoRef.current.setPositionAsync(newPosition * 1000);
-        setCurrentTime(newPosition);
-        
-        // Ensure we're playing if we were playing before
-        if (isPlaying) {
-          await videoRef.current.playAsync();
-        }
-      } catch (error) {
-        console.error('Error skipping forward:', error);
-      }
-    }
-  };
-
-  const skipBackward = async () => {
-    if (videoRef.current) {
-      try {
-        // Always maintain the current playing state
-        const newPosition = Math.max(0, currentTime - 5);
-        
-        // Set position without changing play state
-        await videoRef.current.setPositionAsync(newPosition * 1000);
-        setCurrentTime(newPosition);
-        
-        // Ensure we're playing if we were playing before
-        if (isPlaying) {
-          await videoRef.current.playAsync();
-        }
-      } catch (error) {
-        console.error('Error skipping backward:', error);
-      }
-    }
-  };
-
-  const handleLoad = async (status: AVPlaybackStatus) => {
-    try {
-      if (status.isLoaded) {
-        // Set duration first
-        const videoDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
-        setDuration(videoDuration);
-        
-        console.log(`[DEBUG] VideoPlayer: Video loaded, duration: ${videoDuration}`);
-        
-        // Handle quality change position - OPTIMIZED VERSION
-        if (isQualityChanging && savedPosition > 0) {
-          console.log(`[DEBUG] VideoPlayer: Quality change detected, seeking to saved position: ${savedPosition}`);
-          
-          // Immediately seek to the saved position without delays
-          if (videoRef.current) {
-            try {
-              // Set position immediately
-              await videoRef.current.setPositionAsync(savedPosition * 1000);
-              
-              // Restore previous playback state
-              if (wasPlayingBeforeQualityChange.current) {
-                await videoRef.current.playAsync();
-                setIsPlaying(true);
-              }
-              
-              setIsQualityChanging(false);
-              console.log('[DEBUG] VideoPlayer: Quality change position restored successfully');
-            } catch (error) {
-              console.error('[DEBUG] VideoPlayer: Error seeking after quality change:', error);
-              setIsQualityChanging(false);
-            }
-          }
-        }
-        // Handle initial position
-        else if (initialPositionRef.current > 0 && !isReady) {
-          if (videoRef.current) {
-            console.log(`[DEBUG] VideoPlayer: Initial load: seeking to ${initialPositionRef.current} seconds`);
-            try {
-              // Set position immediately
-              await videoRef.current.setPositionAsync(initialPositionRef.current * 1000);
-              
-              // Play if needed
-              if (isPlaying) {
-                await videoRef.current.playAsync();
-              }
-              
-              setIsReady(true);
-              console.log(`[DEBUG] VideoPlayer: Initial position restored to ${initialPositionRef.current}`);
-            } catch (error) {
-              console.error('[DEBUG] VideoPlayer: Error setting resume position:', error);
-              setIsReady(true); // Mark as ready anyway to prevent repeated attempts
-            }
-          } else {
-            setIsPlaying(true);
-            setIsReady(true);
-          }
-        }
-        
-        // Call parent's onLoad handler
-        if (onLoad) {
-          onLoad(status);
-        }
-      }
-    } catch (error) {
-      console.error('[DEBUG] VideoPlayer: Error in handleLoad:', error);
-      setIsQualityChanging(false);
-      setIsReady(true);
-    }
-  };
-
-  // Add this useEffect to handle rate changes
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.setRateAsync(rate, true);
-    }
-  }, [rate]);
-
-  // Add a listener for dimension changes
-  useEffect(() => {
-    const dimensionsChangeHandler = ({ window, screen }: { window: { width: number; height: number }, screen: { width: number; height: number } }) => {
-      // Determine if this is a landscape orientation
-      const isLandscapeOrientation = window.width > window.height;
-      
-      // Only update dimensions if the orientation matches the fullscreen state
-      // This prevents unnecessary dimension changes during orientation transitions
-      if (isLandscapeOrientation === isFullscreen) {
-        if (isFullscreen) {
-          // In fullscreen/landscape mode - use screen dimensions to get full screen
-          setDimensions({
-            width: screen.width,
-            height: screen.height
-          });
-        } else {
-          // In portrait mode
-          setDimensions({
-            width: window.width,
-            height: (window.width * 9) / 16
-          });
-        }
-      }
-    };
-
-    const subscription = Dimensions.addEventListener('change', dimensionsChangeHandler);
-
-    // Force an immediate update
-    dimensionsChangeHandler({ 
-      window: Dimensions.get('window'),
-      screen: Dimensions.get('screen')
-    });
-
-    return () => {
-      subscription.remove();
-    };
-  }, [isFullscreen]);
 
   return (
-    <View style={[
-      styles.container,
-      isFullscreen && styles.fullscreenContainer,
-      style,
-      { 
-        width: isFullscreen ? dimensions.width : '100%', 
-        height: dimensions.height,
-        backgroundColor: '#000'
-      }
-    ]}>
-      <Pressable style={[styles.videoWrapper, { backgroundColor: '#000' }]} onPress={handleScreenTap}>
-        <Video
-          ref={videoRef}
-          source={source.uri ? source : undefined}
-          style={[
-            styles.video, 
-            isFullscreen && { 
-              width: dimensions.width, 
-              height: dimensions.height,
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0
-            }
-          ]}
-          resizeMode={ResizeMode.CONTAIN}
-          shouldPlay={isPlaying}
-          onPlaybackStatusUpdate={onPlaybackStatusUpdate}
-          useNativeControls={false}
-          onFullscreenUpdate={handleFullscreenUpdate}
-          onLoad={handleLoad}
-          progressUpdateIntervalMillis={500}
-          positionMillis={isQualityChanging ? savedPosition * 1000 : undefined}
-          rate={rate}
-          isMuted={false}
+    <View style={[styles.container, style]}>
+      <TouchableOpacity
+        activeOpacity={1}
+        style={[styles.videoContainer, { width: dimensions.width, height: dimensions.height }]}
+        onPress={() => {
+          console.log('[DEBUG] VideoPlayer: TouchableOpacity pressed');
+          handleScreenTap();
+        }}
+      >
+        <VideoView
+          player={player}
+          style={[styles.video, { width: dimensions.width, height: dimensions.height }]}
+          allowsFullscreen
+          allowsPictureInPicture
+          nativeControls={false}
         />
         
-        {/* Only show buffering indicator when actually buffering and not playing smoothly */}
         {showBufferingIndicator && (
           <View style={styles.bufferingContainer}>
-            <ActivityIndicator size="large" color="#f4511e" />
+            <View style={styles.bufferingIndicator}>
+              <ActivityIndicator size="large" color="#f4511e" />
+              <Text style={styles.bufferingText}>Buffering...</Text>
+            </View>
           </View>
         )}
-        
-        {showControls && (
-          <View 
-            style={styles.controlsOverlay}
-            onTouchEnd={(e) => e.stopPropagation()}
+
+        {showControls ? (
+          <LinearGradient
+            colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.8)']}
+            style={styles.controlsGradient}
           >
-            {/* Top Bar */}
-            <LinearGradient
-              colors={['rgba(0,0,0,0.7)', 'transparent']}
-              style={styles.topBar}
-            >
-              <Text style={styles.titleText} numberOfLines={1}>
-                {title}
-              </Text>
-            </LinearGradient>
-
-            {/* Center Controls */}
-            <View style={styles.centerControls}>
-              <TouchableOpacity 
-                style={styles.skipBackwardButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  skipBackward();
-                }}
-              >
-                <MaterialIcons
-                  name="replay-5"
-                  size={28}
-                  color="white"
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.playPauseButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  togglePlayPause();
-                }}
-              >
-                <MaterialIcons
-                  name={isPlaying ? 'pause' : 'play-arrow'}
-                  size={32}
-                  color="white"
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.skipForwardButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  skipForward();
-                }}
-              >
-                <MaterialIcons
-                  name="forward-5"
-                  size={28}
-                  color="white"
-                />
-              </TouchableOpacity>
-            </View>
-
-            {/* Bottom Controls */}
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.7)']}
-              style={styles.bottomControls}
-            >
-              {/* Progress Bar */}
-              <View style={styles.progressContainer}>
-                <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={0}
-                  maximumValue={duration}
-                  value={currentTime}
-                  onSlidingStart={(value) => {
-                    setIsSeeking(true);
-                  }}
-                  onSlidingComplete={(value) => {
-                    handleSeek(value);
-                  }}
-                  minimumTrackTintColor="#2196F3"
-                  maximumTrackTintColor="rgba(255,255,255,0.3)"
-                  thumbTintColor="#2196F3"
-                />
-                <Text style={styles.timeText}>{formatTime(duration)}</Text>
-              </View>
-
-              {/* Bottom Row */}
-              <View style={styles.controlsRow}>
+            <View style={styles.controlsContainer}>
+              {/* Title bar at top */}
+              <View style={styles.topControls}>
+                <Text style={styles.title} numberOfLines={1}>{title}</Text>
                 <TouchableOpacity 
-                  style={styles.controlButton}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    togglePlayPause();
-                  }}
+                  onPress={toggleFullscreen}
+                  style={styles.iconButton}
                 >
                   <MaterialIcons
-                    name={isPlaying ? 'pause' : 'play-arrow'}
-                    size={20}
+                    name={isFullscreen ? "fullscreen-exit" : "fullscreen"}
+                    size={28}
                     color="white"
                   />
                 </TouchableOpacity>
+              </View>
+              
+              {/* Center play button */}
+              <View style={styles.centerControls}>
+                <TouchableOpacity 
+                  onPress={togglePlayPause}
+                  style={styles.playPauseButton}
+                >
+                  <MaterialIcons
+                    name={isPlaying ? "pause" : "play-arrow"}
+                    size={50}
+                    color="white"
+                  />
+                </TouchableOpacity>
+              </View>
 
-                <View style={styles.rightControls}>
-                  <TouchableOpacity 
-                    style={styles.controlButton}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      toggleFullscreen();
-                    }}
+              {/* Bottom controls */}
+              <View style={styles.bottomControls}>
+                {/* Progress bar and time */}
+                <View style={styles.progressContainer}>
+                  <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
+                  <Slider
+                    style={styles.slider}
+                    value={currentTime}
+                    minimumValue={0}
+                    maximumValue={duration || 0.01}
+                    onValueChange={handleSeek}
+                    minimumTrackTintColor="#f4511e"
+                    maximumTrackTintColor="rgba(255,255,255,0.3)"
+                    thumbTintColor="#fff"
+                  />
+                  <Text style={styles.timeText}>{formatTime(duration)}</Text>
+                </View>
+                
+                {/* Bottom control buttons */}
+                <View style={styles.controlButtonsRow}>
+                  {/* Play/pause button */}
+                  <TouchableOpacity
+                    onPress={togglePlayPause}
+                    style={styles.iconButton}
                   >
                     <MaterialIcons
-                      name={isFullscreen ? 'fullscreen-exit' : 'fullscreen'}
-                      size={20}
+                      name={isPlaying ? "pause" : "play-arrow"}
+                      size={32}
+                      color="white"
+                    />
+                  </TouchableOpacity>
+                  
+                  {/* Spacer */}
+                  <View style={{flex: 1}} />
+                  
+                  {/* Fullscreen button */}
+                  <TouchableOpacity
+                    onPress={toggleFullscreen}
+                    style={styles.iconButton}
+                  >
+                    <MaterialIcons
+                      name={isFullscreen ? "fullscreen-exit" : "fullscreen"}
+                      size={32}
                       color="white"
                     />
                   </TouchableOpacity>
                 </View>
               </View>
-            </LinearGradient>
-
-            {/* Skip Intro Button */}
-            {showSkipIntro && (
-              <TouchableOpacity 
-                style={styles.skipButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  if (videoRef.current && intro) {
-                    // Set position and ensure playback continues
-                    videoRef.current.setPositionAsync(intro.end * 1000)
-                      .then(() => {
-                        if (isPlaying) {
-                          return videoRef.current?.playAsync();
-                        }
-                      })
-                      .catch(err => console.error('Error skipping intro:', err));
-                  }
-                  if (onSkipIntro) {
-                    onSkipIntro();
-                  }
-                }}
-              >
-                <Text style={styles.skipButtonText}>Skip Intro</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* Skip Outro Button */}
-            {showSkipOutro && (
-              <TouchableOpacity 
-                style={styles.skipButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  if (videoRef.current && outro) {
-                    // Set position and ensure playback continues
-                    videoRef.current.setPositionAsync(outro.end * 1000)
-                      .then(() => {
-                        if (isPlaying) {
-                          return videoRef.current?.playAsync();
-                        }
-                      })
-                      .catch(err => console.error('Error skipping outro:', err));
-                  }
-                  if (onSkipOutro) {
-                    onSkipOutro();
-                  }
-                }}
-              >
-                <Text style={styles.skipButtonText}>Skip Outro</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+            </View>
+          </LinearGradient>
+        ) : (
+          <TouchableOpacity 
+            style={styles.tapForControlsContainer}
+            onPress={handleScreenTap}
+          >
+            <View style={styles.tapForControlsIndicator}>
+              <MaterialIcons name="touch-app" size={20} color="white" />
+              <Text style={styles.tapForControlsText}>Tap for controls</Text>
+            </View>
+          </TouchableOpacity>
         )}
-      </Pressable>
+
+        {showSkipIntro && (
+          <TouchableOpacity
+            style={styles.skipButton}
+            onPress={handleSkipIntro}
+          >
+            <MaterialIcons name="fast-forward" size={18} color="white" />
+            <Text style={styles.skipButtonText}>Skip Intro</Text>
+          </TouchableOpacity>
+        )}
+
+        {showSkipOutro && (
+          <TouchableOpacity
+            style={[styles.skipButton, {backgroundColor: 'rgba(0,0,0,0.7)'}]}
+            onPress={handleSkipOutro}
+          >
+            <MaterialIcons name="fast-forward" size={18} color="white" />
+            <Text style={styles.skipButtonText}>Skip Outro</Text>
+          </TouchableOpacity>
+        )}
+      </TouchableOpacity>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
     backgroundColor: '#000',
-    overflow: 'hidden',
   },
-  fullscreenContainer: {
+  videoContainer: {
+    position: 'relative',
+    backgroundColor: '#000',
+  },
+  video: {
+    backgroundColor: '#000',
+  },
+  bufferingContainer: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 999,
-    width: '100%',
-    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.4)',
   },
-  videoWrapper: {
-    flex: 1,
-    backgroundColor: '#000',
+  bufferingIndicator: {
+    padding: 20,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: 12,
+    alignItems: 'center',
   },
-  video: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
-  fullscreenVideo: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#000',
-  },
-  controlsOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-  },
-  topBar: {
-    paddingHorizontal: 12,
-    paddingTop: 32,
-    paddingBottom: 16,
-  },
-  titleText: {
+  bufferingText: {
     color: 'white',
-    fontSize: 18,
-    fontWeight: '700',
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 3,
+    marginTop: 10,
+    fontSize: 14,
+  },
+  controlsGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    padding: 16,
+    justifyContent: 'space-between',
+  },
+  controlsContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  topControls: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 8,
+    padding: 8,
+  },
+  bottomControls: {
+    width: '100%',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 8,
+    padding: 12,
   },
   centerControls: {
     flex: 1,
-    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 50,
-  },
-  playPauseButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  skipBackwardButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 20,
-  },
-  skipForwardButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 20,
-  },
-  bottomControls: {
-    padding: 12,
-    paddingTop: 16,
   },
   progressContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
-  },
-  timeText: {
-    color: 'white',
-    fontSize: 10,
-    fontWeight: '500',
-    width: 40,
-    textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
+    marginBottom: 12,
   },
   slider: {
     flex: 1,
-    marginHorizontal: 6,
-    height: 32,
+    marginHorizontal: 8,
+    height: 40,
   },
-  controlsRow: {
+  timeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  title: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+    flex: 1,
+    marginRight: 16,
+  },
+  controlButtonsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 8,
-  },
-  rightControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  controlButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginHorizontal: 3,
-  },
-  bufferingContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    pointerEvents: 'none',
+    marginTop: 4,
   },
   skipButton: {
     position: 'absolute',
-    right: 20,
-    bottom: 100,
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    top: 16,
+    right: 16,
+    backgroundColor: '#f4511e',
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderRadius: 4,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   skipButtonText: {
     color: 'white',
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    marginLeft: 4,
+  },
+  iconButton: {
+    padding: 8,
+    borderRadius: 24,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  playPauseButton: {
+    padding: 16,
+    borderRadius: 40,
+    backgroundColor: 'rgba(244,81,30,0.8)',
+  },
+  tapForControlsContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  tapForControlsIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 8,
+  },
+  tapForControlsText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginLeft: 8,
   },
 });
 

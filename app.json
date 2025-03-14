@@ -92,7 +92,8 @@
         {
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-video"
     ],
     "scheme": "anisurge",
     "fonts": [

@@ -81,8 +81,9 @@ export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
       name: item.name?.trim() || 'Unknown Anime',
       img: item.img?.trim() || FALLBACK_IMAGE,
       episodeNumber: item.episodeNumber || 1,
-      // Always use the provided progress value, even if it's less than the existing progress
-      progress: item.progress,
+      // Only use the provided progress if it's greater than 0, otherwise keep existing progress
+      progress: item.progress > 0 ? item.progress : 
+               (existingItemIndex !== -1 ? newHistory[existingItemIndex].progress : 0),
       duration: item.duration > 0 ? item.duration : 
                (existingItemIndex !== -1 ? newHistory[existingItemIndex].duration : 0),
       timestamp: item.timestamp || currentTime,
@@ -93,9 +94,23 @@ export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
 
     // If this episode already exists in history, update it
     if (existingItemIndex !== -1) {
-      // Always update with the current progress value
-      console.log(`[DEBUG] WatchHistoryStore: Updating progress from ${newHistory[existingItemIndex].progress} to ${validatedItem.progress}`);
-      newHistory[existingItemIndex] = validatedItem;
+      // Only update progress if the new progress is greater than 0
+      // and greater than the existing progress or we're within 10 seconds of the end
+      const shouldUpdateProgress = 
+        item.progress > 0 && (
+          item.progress > newHistory[existingItemIndex].progress || 
+          (item.duration > 0 && item.progress >= item.duration - 10)
+        );
+      
+      console.log(`[DEBUG] WatchHistoryStore: Should update progress: ${shouldUpdateProgress}`);
+      
+      if (shouldUpdateProgress) {
+        console.log(`[DEBUG] WatchHistoryStore: Updating progress from ${newHistory[existingItemIndex].progress} to ${validatedItem.progress}`);
+        newHistory[existingItemIndex] = validatedItem;
+      } else {
+        // Just update the lastWatched time
+        newHistory[existingItemIndex].lastWatched = currentTime;
+      }
     } else {
       // This is a new episode, add it to history
       console.log(`[DEBUG] WatchHistoryStore: Adding new episode to history with progress: ${validatedItem.progress}`);
@@ -120,7 +135,7 @@ export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
   },
 
   updateProgress: async (episodeId: string, progress: number) => {
-    if (progress < 0) {
+    if (progress <= 0) {
       logger.error('Invalid progress value:', progress);
       return;
     }
@@ -138,15 +153,26 @@ export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
     if (index !== -1) {
       const currentTime = Date.now();
       
-      // Always update the progress regardless of whether it's greater than the existing progress
-      // This ensures that if a user seeks backward, we save that position
-      console.log(`[DEBUG] WatchHistoryStore: Updating progress from ${newHistory[index].progress} to ${progress}`);
+      // Only update if the new progress is greater than the existing progress
+      // or if we're within 10 seconds of the end
+      const shouldUpdateProgress = 
+        progress > newHistory[index].progress || 
+        (newHistory[index].duration > 0 && progress >= newHistory[index].duration - 10);
       
-      newHistory[index] = {
-        ...newHistory[index],
-        progress,
-        lastWatched: currentTime
-      };
+      console.log(`[DEBUG] WatchHistoryStore: Should update progress: ${shouldUpdateProgress}, current: ${newHistory[index].progress}, new: ${progress}`);
+      
+      if (shouldUpdateProgress) {
+        console.log(`[DEBUG] WatchHistoryStore: Updating progress from ${newHistory[index].progress} to ${progress}`);
+        
+        newHistory[index] = {
+          ...newHistory[index],
+          progress,
+          lastWatched: currentTime
+        };
+      } else {
+        // Just update the lastWatched time
+        newHistory[index].lastWatched = currentTime;
+      }
 
       // Re-sort by lastWatched (most recent first)
       newHistory.sort((a, b) => b.lastWatched - a.lastWatched);
