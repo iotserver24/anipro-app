@@ -37,6 +37,8 @@ interface VideoPlayerProps {
   outro?: { start: number; end: number };
   onSkipIntro?: () => void;
   onSkipOutro?: () => void;
+  isQualityChanging?: boolean;
+  savedQualityPosition?: number;
 }
 
 interface APIEpisode {
@@ -66,6 +68,8 @@ const VideoPlayer = ({
   outro,
   onSkipIntro,
   onSkipOutro,
+  isQualityChanging: externalQualityChanging = false,
+  savedQualityPosition = 0,
 }: VideoPlayerProps) => {
   const videoRef = useRef<Video>(null);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -79,14 +83,82 @@ const VideoPlayer = ({
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
   const [isSeeking, setIsSeeking] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  const [isQualityChanging, setIsQualityChanging] = useState(false);
-  const [savedPosition, setSavedPosition] = useState(0);
+  const [isQualityChanging, setIsQualityChanging] = useState(externalQualityChanging);
+  const [savedPosition, setSavedPosition] = useState(savedQualityPosition);
   const [dimensions, setDimensions] = useState({
     width: Dimensions.get('window').width,
     height: (Dimensions.get('window').width * 9) / 16
   });
   const [showSkipIntro, setShowSkipIntro] = useState(false);
   const [showSkipOutro, setShowSkipOutro] = useState(false);
+  const initialPositionRef = useRef<number>(initialPosition);
+  const sourceRef = useRef(source);
+  const wasPlayingBeforeQualityChange = useRef(isPlaying);
+  const orientationChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isOrientationChangingRef = useRef(false);
+
+  // Update when external quality changing state changes
+  useEffect(() => {
+    console.log(`[DEBUG] VideoPlayer: External quality changing state changed to ${externalQualityChanging}`);
+    if (externalQualityChanging) {
+      wasPlayingBeforeQualityChange.current = isPlaying;
+      setIsQualityChanging(true);
+      setSavedPosition(savedQualityPosition);
+    }
+  }, [externalQualityChanging, savedQualityPosition]);
+
+  // Track source changes to detect quality changes
+  useEffect(() => {
+    // If the source URI changed
+    if (sourceRef.current.uri !== source.uri) {
+      console.log(`[DEBUG] VideoPlayer: Source URI changed from ${sourceRef.current.uri} to ${source.uri}`);
+      
+      // Update the source ref immediately
+      sourceRef.current = source;
+      
+      // If we're not already handling a quality change, treat this as a quality change
+      if (!isQualityChanging && currentTime > 0) {
+        console.log(`[DEBUG] VideoPlayer: Detected quality change, saving position: ${currentTime}`);
+        wasPlayingBeforeQualityChange.current = isPlaying;
+        setIsQualityChanging(true);
+        setSavedPosition(currentTime);
+      }
+    }
+  }, [source.uri]);
+
+  // Update initialPositionRef when initialPosition changes
+  useEffect(() => {
+    console.log(`[DEBUG] VideoPlayer: initialPosition changed to ${initialPosition}`);
+    initialPositionRef.current = initialPosition;
+    
+    // If we already have a video reference and the position changes, seek to it
+    if (videoRef.current && initialPosition > 0 && isReady) {
+      console.log(`[DEBUG] VideoPlayer: Seeking to new initialPosition: ${initialPosition}`);
+      videoRef.current.setPositionAsync(initialPosition * 1000)
+        .catch(error => console.error('[DEBUG] VideoPlayer: Error seeking to new position:', error));
+    }
+  }, [initialPosition]);
+
+  // Add a useEffect to handle video loading and seeking
+  useEffect(() => {
+    if (videoRef.current && initialPositionRef.current > 0 && !isReady) {
+      const seekToInitialPosition = async () => {
+        try {
+          console.log(`[DEBUG] VideoPlayer: Attempting to seek to initial position: ${initialPositionRef.current}`);
+          await videoRef.current?.pauseAsync();
+          await videoRef.current?.setPositionAsync(initialPositionRef.current * 1000);
+          await videoRef.current?.playAsync();
+          setIsReady(true);
+          console.log('[DEBUG] VideoPlayer: Successfully seeked to initial position');
+        } catch (error) {
+          console.error('[DEBUG] VideoPlayer: Error seeking to initial position:', error);
+        }
+      };
+      
+      // Delay seeking to ensure video is loaded
+      setTimeout(seekToInitialPosition, 1000);
+    }
+  }, []);
 
   // Format time in MM:SS format
   const formatTime = (seconds: number) => {
@@ -96,9 +168,17 @@ const VideoPlayer = ({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Handle fullscreen toggle
+  // Handle fullscreen toggle with debounce
   const toggleFullscreen = async () => {
     try {
+      // Prevent rapid orientation changes
+      if (isOrientationChangingRef.current) {
+        console.log('[DEBUG] VideoPlayer: Orientation change in progress, ignoring request');
+        return;
+      }
+      
+      isOrientationChangingRef.current = true;
+      
       if (isFullscreen) {
         // Set state first for immediate UI response
         setIsFullscreen(false);
@@ -133,15 +213,27 @@ const VideoPlayer = ({
         }
         StatusBar.setHidden(true);
         
-        // Get current window dimensions in landscape mode immediately
-        const { width, height } = Dimensions.get('window');
+        // Get screen dimensions for fullscreen mode
+        const { width, height } = Dimensions.get('screen');
         setDimensions({
-          width: Math.max(width, height), // Ensure we use the larger dimension as width
-          height: Math.min(width, height)
+          width: width,
+          height: height
         });
       }
+      
+      // Add a delay before allowing another orientation change
+      if (orientationChangeTimeoutRef.current) {
+        clearTimeout(orientationChangeTimeoutRef.current);
+      }
+      
+      orientationChangeTimeoutRef.current = setTimeout(() => {
+        isOrientationChangingRef.current = false;
+        orientationChangeTimeoutRef.current = null;
+      }, 1000); // 1 second debounce
+      
     } catch (error) {
       console.error('Error toggling fullscreen:', error);
+      isOrientationChangingRef.current = false;
     }
   };
 
@@ -291,6 +383,9 @@ const VideoPlayer = ({
       if (bufferingTimeoutRef.current) {
         clearTimeout(bufferingTimeoutRef.current);
       }
+      if (orientationChangeTimeoutRef.current) {
+        clearTimeout(orientationChangeTimeoutRef.current);
+      }
       ScreenOrientation.unlockAsync();
       StatusBar.setHidden(false);
       if (Platform.OS === 'android') {
@@ -306,9 +401,17 @@ const VideoPlayer = ({
     }
   }, [isFullscreen, onFullscreenChange]);
 
-  // Add handler for fullscreen updates
+  // Add handler for fullscreen updates with debounce
   const handleFullscreenUpdate = async ({ fullscreenUpdate }: { fullscreenUpdate: number }) => {
     try {
+      // Prevent rapid orientation changes
+      if (isOrientationChangingRef.current && fullscreenUpdate !== 3) { // Always allow exit fullscreen
+        console.log('[DEBUG] VideoPlayer: Orientation change in progress, ignoring update:', fullscreenUpdate);
+        return;
+      }
+      
+      isOrientationChangingRef.current = true;
+      
       switch (fullscreenUpdate) {
         case 0: // FULLSCREEN_UPDATE_PLAYER_WILL_PRESENT
           setIsFullscreen(true);
@@ -328,8 +431,20 @@ const VideoPlayer = ({
           ]);
           break;
       }
+      
+      // Add a delay before allowing another orientation change
+      if (orientationChangeTimeoutRef.current) {
+        clearTimeout(orientationChangeTimeoutRef.current);
+      }
+      
+      orientationChangeTimeoutRef.current = setTimeout(() => {
+        isOrientationChangingRef.current = false;
+        orientationChangeTimeoutRef.current = null;
+      }, 1000); // 1 second debounce
+      
     } catch (error) {
       console.error('Error handling fullscreen update:', error);
+      isOrientationChangingRef.current = false;
     }
   };
 
@@ -377,28 +492,59 @@ const VideoPlayer = ({
   const handleLoad = async (status: AVPlaybackStatus) => {
     try {
       if (status.isLoaded) {
-        // Handle initial position or quality change position
-        if ((initialPosition > 0 && !isReady) || isQualityChanging) {
-          const positionToSeek = isQualityChanging ? savedPosition : initialPosition;
+        // Set duration first
+        const videoDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
+        setDuration(videoDuration);
+        
+        console.log(`[DEBUG] VideoPlayer: Video loaded, duration: ${videoDuration}`);
+        
+        // Handle quality change position - OPTIMIZED VERSION
+        if (isQualityChanging && savedPosition > 0) {
+          console.log(`[DEBUG] VideoPlayer: Quality change detected, seeking to saved position: ${savedPosition}`);
           
-          // Add a small delay to ensure video is ready
-          await new Promise(resolve => setTimeout(resolve, 100));
-          
+          // Immediately seek to the saved position without delays
           if (videoRef.current) {
-            await videoRef.current.setPositionAsync(positionToSeek * 1000);
-            
-            // Always start playing when loaded
-            await videoRef.current.playAsync();
-            setIsPlaying(true);
-            
-            setIsReady(true);
-            if (isQualityChanging) {
+            try {
+              // Set position immediately
+              await videoRef.current.setPositionAsync(savedPosition * 1000);
+              
+              // Restore previous playback state
+              if (wasPlayingBeforeQualityChange.current) {
+                await videoRef.current.playAsync();
+                setIsPlaying(true);
+              }
+              
+              setIsQualityChanging(false);
+              console.log('[DEBUG] VideoPlayer: Quality change position restored successfully');
+            } catch (error) {
+              console.error('[DEBUG] VideoPlayer: Error seeking after quality change:', error);
               setIsQualityChanging(false);
             }
           }
-        } else if (isPlaying) {
-          // Ensure we're playing if we should be
-          await videoRef.current?.playAsync();
+        }
+        // Handle initial position
+        else if (initialPositionRef.current > 0 && !isReady) {
+          if (videoRef.current) {
+            console.log(`[DEBUG] VideoPlayer: Initial load: seeking to ${initialPositionRef.current} seconds`);
+            try {
+              // Set position immediately
+              await videoRef.current.setPositionAsync(initialPositionRef.current * 1000);
+              
+              // Play if needed
+              if (isPlaying) {
+                await videoRef.current.playAsync();
+              }
+              
+              setIsReady(true);
+              console.log(`[DEBUG] VideoPlayer: Initial position restored to ${initialPositionRef.current}`);
+            } catch (error) {
+              console.error('[DEBUG] VideoPlayer: Error setting resume position:', error);
+              setIsReady(true); // Mark as ready anyway to prevent repeated attempts
+            }
+          } else {
+            setIsPlaying(true);
+            setIsReady(true);
+          }
         }
         
         // Call parent's onLoad handler
@@ -407,8 +553,9 @@ const VideoPlayer = ({
         }
       }
     } catch (error) {
-      console.error('Error in handleLoad:', error);
+      console.error('[DEBUG] VideoPlayer: Error in handleLoad:', error);
       setIsQualityChanging(false);
+      setIsReady(true);
     }
   };
 
@@ -421,23 +568,36 @@ const VideoPlayer = ({
 
   // Add a listener for dimension changes
   useEffect(() => {
-    const dimensionsChangeHandler = ({ window }: { window: { width: number; height: number } }) => {
-      if (isFullscreen) {
-        // In fullscreen/landscape mode
-        setDimensions({
-          width: window.width,
-          height: window.height
-        });
-      } else {
-        // In portrait mode
-        setDimensions({
-          width: window.width,
-          height: (window.width * 9) / 16
-        });
+    const dimensionsChangeHandler = ({ window, screen }: { window: { width: number; height: number }, screen: { width: number; height: number } }) => {
+      // Determine if this is a landscape orientation
+      const isLandscapeOrientation = window.width > window.height;
+      
+      // Only update dimensions if the orientation matches the fullscreen state
+      // This prevents unnecessary dimension changes during orientation transitions
+      if (isLandscapeOrientation === isFullscreen) {
+        if (isFullscreen) {
+          // In fullscreen/landscape mode - use screen dimensions to get full screen
+          setDimensions({
+            width: screen.width,
+            height: screen.height
+          });
+        } else {
+          // In portrait mode
+          setDimensions({
+            width: window.width,
+            height: (window.width * 9) / 16
+          });
+        }
       }
     };
 
     const subscription = Dimensions.addEventListener('change', dimensionsChangeHandler);
+
+    // Force an immediate update
+    dimensionsChangeHandler({ 
+      window: Dimensions.get('window'),
+      screen: Dimensions.get('screen')
+    });
 
     return () => {
       subscription.remove();
@@ -455,13 +615,21 @@ const VideoPlayer = ({
         backgroundColor: '#000'
       }
     ]}>
-      <Pressable style={styles.videoWrapper} onPress={handleScreenTap}>
+      <Pressable style={[styles.videoWrapper, { backgroundColor: '#000' }]} onPress={handleScreenTap}>
         <Video
           ref={videoRef}
           source={source.uri ? source : undefined}
           style={[
             styles.video, 
-            isFullscreen && { width: dimensions.width, height: dimensions.height }
+            isFullscreen && { 
+              width: dimensions.width, 
+              height: dimensions.height,
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0
+            }
           ]}
           resizeMode={ResizeMode.CONTAIN}
           shouldPlay={isPlaying}
@@ -470,6 +638,9 @@ const VideoPlayer = ({
           onFullscreenUpdate={handleFullscreenUpdate}
           onLoad={handleLoad}
           progressUpdateIntervalMillis={500}
+          positionMillis={isQualityChanging ? savedPosition * 1000 : undefined}
+          rate={rate}
+          isMuted={false}
         />
         
         {/* Only show buffering indicator when actually buffering and not playing smoothly */}

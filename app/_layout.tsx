@@ -33,7 +33,24 @@ export default function RootLayout() {
 
   useEffect(() => {
     // Load watch history when app starts
-    initializeHistory();
+    console.log('[DEBUG] App: Initializing watch history store');
+    initializeHistory().then(() => {
+      console.log('[DEBUG] App: Watch history initialized successfully');
+    }).catch(error => {
+      console.error('[DEBUG] App: Error initializing watch history:', error);
+    });
+    
+    // Force a refresh of the history every time the app comes to the foreground
+    const refreshInterval = setInterval(() => {
+      console.log('[DEBUG] App: Refreshing watch history');
+      initializeHistory().catch(error => {
+        console.error('[DEBUG] App: Error refreshing watch history:', error);
+      });
+    }, 60000); // Refresh every minute
+    
+    return () => {
+      clearInterval(refreshInterval);
+    };
   }, []);
 
   useEffect(() => {

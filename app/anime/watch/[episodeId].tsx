@@ -48,7 +48,6 @@ type OnLoadData = {
   naturalSize: {
     width: number;
     height: number;
-    orientation: string;
   };
 };
 
@@ -98,6 +97,8 @@ type VideoPlayerProps = {
   outro?: { start: number; end: number };
   onSkipIntro?: () => void;
   onSkipOutro?: () => void;
+  isQualityChanging?: boolean;
+  savedQualityPosition?: number;
 };
 
 // Update video event types
@@ -565,8 +566,9 @@ const DownloadPopup = ({ visible, onClose, downloadUrl }: {
   );
 };
 
-export default function WatchAnime() {
-  const { episodeId, animeId, episodeNumber, title, category } = useLocalSearchParams();
+// Add the WatchEpisode component as a default export
+export default function WatchEpisode() {
+  const { episodeId, animeId, episodeNumber, title, category, resumeTime } = useLocalSearchParams();
   const categoryAsSubOrDub = (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub';
   const videoRef = useRef<VideoRef>(null);
   const [streamingUrl, setStreamingUrl] = useState<string | null>(null);
@@ -594,7 +596,9 @@ export default function WatchAnime() {
   const [lastSaveTime, setLastSaveTime] = useState(0);
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 3;
-  const [resumePosition, setResumePosition] = useState(0);
+  const [resumePosition, setResumePosition] = useState(
+    resumeTime ? parseFloat(resumeTime as string) : 0
+  );
   const [isVideoReady, setIsVideoReady] = useState(false);
   const [videoUrl, setVideoUrl] = useState<string | null>(() => {
     if (!videoData?.sources) return null;
@@ -627,24 +631,20 @@ export default function WatchAnime() {
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    if (savedProgress > 0) {
-      setResumePosition(savedProgress); // Keep in seconds
+    // If resumeTime is provided, use it directly and skip getting from history
+    if (resumeTime) {
+      const parsedTime = parseFloat(resumeTime as string);
+      console.log(`[DEBUG] Setting resume position from resumeTime param: ${parsedTime}`);
+      setResumePosition(parsedTime);
+      return;
     }
-  }, [savedProgress]);
-
-  useEffect(() => {
-    fetchEpisodeData();
-    if (animeId) {
-      fetchAnimeInfo();
-    }
-  }, [episodeId, animeId]);
-
-  useEffect(() => {
+    
     const getResumePosition = async () => {
       try {
         const history = await useWatchHistoryStore.getState().getHistory();
         const lastWatch = history.find(item => item.episodeId === episodeId);
-        if (lastWatch?.progress) {
+        if (lastWatch?.progress && lastWatch.progress > 0) {
+          console.log(`[DEBUG] Setting resume position from history: ${lastWatch.progress}`);
           setResumePosition(lastWatch.progress);
         }
       } catch (err) {
@@ -652,7 +652,22 @@ export default function WatchAnime() {
       }
     };
     getResumePosition();
-  }, [episodeId]);
+  }, [episodeId, resumeTime]);
+
+  useEffect(() => {
+    // Only use savedProgress if resumeTime wasn't provided
+    if (!resumeTime && savedProgress > 0) {
+      console.log(`[DEBUG] Setting resume position from savedProgress: ${savedProgress}`);
+      setResumePosition(savedProgress); // Keep in seconds
+    }
+  }, [savedProgress, resumeTime]);
+
+  useEffect(() => {
+    fetchEpisodeData();
+    if (animeId) {
+      fetchAnimeInfo();
+    }
+  }, [episodeId, animeId]);
 
   useEffect(() => {
     const setupOrientation = async () => {
@@ -796,10 +811,37 @@ export default function WatchAnime() {
   const handleVideoLoad = async () => {
     if (videoRef.current && resumePosition > 0 && !isVideoReady) {
       try {
+        console.log(`handleVideoLoad: seeking to ${resumePosition} seconds`);
+        // Add a delay to ensure the video is ready
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // First pause to ensure seeking works properly
+        await videoRef.current.pauseAsync();
+        
+        // Then seek to the position
         await videoRef.current.setPositionAsync(resumePosition * 1000);
+        
+        // Finally play
+        await videoRef.current.playAsync();
+        
         setIsVideoReady(true);
+        console.log('Video successfully seeked to resume position');
       } catch (err) {
         logger.error('Error seeking to position:', err);
+        // Try again with a longer delay if it failed
+        if (!isVideoReady) {
+          setTimeout(async () => {
+            try {
+              if (videoRef.current) {
+                await videoRef.current.setPositionAsync(resumePosition * 1000);
+                await videoRef.current.playAsync();
+                setIsVideoReady(true);
+              }
+            } catch (retryErr) {
+              logger.error('Error on retry seeking:', retryErr);
+            }
+          }, 1000);
+        }
       }
     }
   };
@@ -890,6 +932,12 @@ export default function WatchAnime() {
 
   const handleFullscreenChange = async (fullscreen: boolean) => {
     try {
+      // Prevent rapid orientation changes
+      if (fullscreen === isFullscreen) {
+        console.log(`[DEBUG] Fullscreen state already ${fullscreen ? 'enabled' : 'disabled'}, ignoring change`);
+        return;
+      }
+      
       // Set state first for immediate UI response
       setIsFullscreen(fullscreen);
       
@@ -910,11 +958,12 @@ export default function WatchAnime() {
           await NavigationBar.setVisibilityAsync('hidden');
         }
         
-        // Update player dimensions immediately
-        const { width, height } = Dimensions.get('window');
+        // Update player dimensions immediately - use screen dimensions
+        const screenWidth = Dimensions.get('screen').width;
+        const screenHeight = Dimensions.get('screen').height;
         setPlayerDimensions({
-          width: Math.max(width, height), // Ensure we use the larger dimension as width
-          height: Math.min(width, height)
+          width: screenWidth,
+          height: screenHeight
         });
       } else {
         // Exit fullscreen - portrait mode
@@ -943,7 +992,7 @@ export default function WatchAnime() {
       setCurrentTime(newTime);
       setDuration(newDuration);
       
-      // Save progress every 3 seconds
+      // Save progress every 3 seconds and only if we have valid progress
       const now = Date.now();
       if (now - lastSaveTime >= 3000 && animeInfo && newTime > 0) {
         setLastSaveTime(now);
@@ -1035,9 +1084,14 @@ export default function WatchAnime() {
     onLoad: (data: OnLoadData) => {
       setDuration(data.duration);
       setLoading(false);
+      console.log(`onLoad called, resumePosition: ${resumePosition}, isVideoReady: ${isVideoReady}`);
       if (resumePosition > 0 && !isVideoReady) {
-        handleSeek(resumePosition);
-        setIsVideoReady(true);
+        console.log(`Seeking to resumePosition: ${resumePosition}`);
+        // Use a timeout to ensure the video is ready
+        setTimeout(() => {
+          handleSeek(resumePosition);
+          setIsVideoReady(true);
+        }, 300);
       }
     },
     onPlayPause: togglePlayPause,
@@ -1063,7 +1117,9 @@ export default function WatchAnime() {
       if (videoRef.current && videoData?.outro) {
         videoRef.current.setPositionAsync(videoData.outro.end * 1000);
       }
-    }
+    },
+    isQualityChanging: isQualityChanging,
+    savedQualityPosition: savedPosition
   };
 
   // Add control visibility timeout
@@ -1081,26 +1137,36 @@ export default function WatchAnime() {
 
   // Update the dimension change listener
   useEffect(() => {
-    const dimensionsChangeHandler = ({ window }: { window: { width: number; height: number } }) => {
-      if (isFullscreen) {
-        // In fullscreen/landscape mode
-        setPlayerDimensions({
-          width: Math.max(window.width, window.height), // Always use the larger dimension as width in fullscreen
-          height: Math.min(window.width, window.height)  // Always use the smaller dimension as height in fullscreen
-        });
-      } else {
-        // In portrait mode
-        setPlayerDimensions({
-          width: window.width,
-          height: window.width * (9/16)
-        });
+    const dimensionsChangeHandler = ({ window, screen }: { window: { width: number; height: number }, screen: { width: number; height: number } }) => {
+      // Determine if this is a landscape orientation
+      const isLandscapeOrientation = window.width > window.height;
+      
+      // Only update dimensions if the orientation matches the fullscreen state
+      // This prevents unnecessary dimension changes during orientation transitions
+      if (isLandscapeOrientation === isFullscreen) {
+        if (isFullscreen) {
+          // In fullscreen/landscape mode - use screen dimensions to get full screen
+          setPlayerDimensions({
+            width: screen.width,
+            height: screen.height
+          });
+        } else {
+          // In portrait mode
+          setPlayerDimensions({
+            width: window.width,
+            height: window.width * (9/16)
+          });
+        }
       }
     };
 
     const subscription = Dimensions.addEventListener('change', dimensionsChangeHandler);
 
     // Force an immediate update when fullscreen state changes
-    dimensionsChangeHandler({ window: Dimensions.get('window') });
+    dimensionsChangeHandler({ 
+      window: Dimensions.get('window'),
+      screen: Dimensions.get('screen')
+    });
 
     return () => {
       subscription.remove();
@@ -1131,47 +1197,50 @@ export default function WatchAnime() {
     const selectedSource = qualities.find(q => q.quality === quality);
     if (selectedSource) {
       try {
-        // Save current position and playback state
+        // Don't change quality if it's already selected
+        if (selectedQuality === quality) {
+          console.log(`[DEBUG] Quality already set to ${quality}, skipping change`);
+          return;
+        }
+        
+        // Save current position and playback state before changing quality
         const currentPos = currentTime;
         const wasPlaying = isPlaying;
         
+        console.log(`[DEBUG] Quality change: Changing from ${selectedQuality} to ${quality} at position ${currentPos}`);
+        
+        // Pause video immediately to prevent issues
+        if (videoRef.current && isPlaying) {
+          await videoRef.current.pauseAsync();
+          setIsPlaying(false);
+        }
+        
+        // Set quality changing state
         setIsQualityChanging(true);
         setSavedPosition(currentPos);
         
-        // Update quality
+        // Update quality selection and video URL
         setSelectedQuality(quality);
         setVideoUrl(selectedSource.url);
         setStreamingUrl(selectedSource.url);
-
-        // Wait for video to load with new quality
-        const checkAndResume = async () => {
-          if (videoRef.current) {
-            try {
-              // Set position
-              await videoRef.current.setPositionAsync(currentPos * 1000);
-              
-              // Resume playback if it was playing
-              if (wasPlaying) {
-                await videoRef.current.playAsync();
-              }
-              
-              setIsQualityChanging(false);
-            } catch (error) {
-              console.error('Error resuming after quality change:', error);
-              setIsQualityChanging(false);
-            }
-          }
-        };
-
-        // Set a timeout to handle the case where onLoad doesn't fire
+        
+        // Set a shorter timeout to reset quality changing state if something goes wrong
         setTimeout(() => {
           if (isQualityChanging) {
-            checkAndResume();
+            console.log('[DEBUG] Quality change: Timeout reached, resetting quality changing state');
+            setIsQualityChanging(false);
+            
+            // Restore playback if needed
+            if (wasPlaying && videoRef.current) {
+              videoRef.current.playAsync().catch(err => 
+                console.error('[DEBUG] Error resuming playback after timeout:', err)
+              );
+              setIsPlaying(true);
+            }
           }
-        }, 1000);
-
+        }, 5000); // 5 second timeout (reduced from 10)
       } catch (error) {
-        console.error('Error during quality change:', error);
+        console.error('[DEBUG] Error during quality change:', error);
         setIsQualityChanging(false);
       }
     }
@@ -1301,16 +1370,27 @@ export default function WatchAnime() {
     // Handle quality change
     if (isQualityChanging && savedPosition > 0) {
       if (videoRef.current) {
+        console.log(`[DEBUG] Quality change: seeking to ${savedPosition} seconds`);
         setTimeout(async () => {
           try {
+            // First pause to ensure seeking works properly
+            await videoRef.current?.pauseAsync();
+            
+            // Then seek to the position
             await videoRef.current?.setPositionAsync(savedPosition * 1000);
-            await videoRef.current?.playAsync();
+            
+            // Finally play if it was playing before
+            if (isPlaying) {
+              await videoRef.current?.playAsync();
+            }
+            
             setIsQualityChanging(false);
+            console.log(`[DEBUG] Quality change complete - Position restored to ${savedPosition}`);
           } catch (error) {
-            console.error('Error setting position after quality change:', error);
+            console.error('[DEBUG] Error setting position after quality change:', error);
             setIsQualityChanging(false);
           }
-        }, 100);
+        }, 500);
       }
       return;
     }
@@ -1318,15 +1398,36 @@ export default function WatchAnime() {
     // Handle initial load/resume position
     if (resumePosition > 0 && !isVideoReady) {
       if (videoRef.current) {
+        console.log(`[DEBUG] Initial load: seeking to ${resumePosition} seconds`);
         setTimeout(async () => {
           try {
+            // First pause to ensure seeking works properly
+            await videoRef.current?.pauseAsync();
+            
+            // Then seek to the position
             await videoRef.current?.setPositionAsync(resumePosition * 1000);
+            
+            // Finally play
             await videoRef.current?.playAsync();
+            
             setIsVideoReady(true);
+            console.log(`[DEBUG] Initial position restored to ${resumePosition}`);
           } catch (error) {
-            console.error('Error setting resume position:', error);
+            console.error('[DEBUG] Error setting resume position:', error);
+            // Try one more time with a longer delay
+            setTimeout(async () => {
+              try {
+                if (videoRef.current) {
+                  await videoRef.current.setPositionAsync(resumePosition * 1000);
+                  await videoRef.current.playAsync();
+                  setIsVideoReady(true);
+                }
+              } catch (retryErr) {
+                console.error('[DEBUG] Error on retry:', retryErr);
+              }
+            }, 1000);
           }
-        }, 100);
+        }, 500);
       } else {
         setIsPlaying(true);
       }
@@ -1444,21 +1545,19 @@ export default function WatchAnime() {
             }}
             title={title as string}
             initialPosition={resumePosition}
-            rate={playbackSpeed}
-            onPlaybackRateChange={handlePlaybackSpeedChange}
-            onLoad={handleLoad}
             onProgress={(currentTime, duration) => {
               if (!isSeeking) {
                 setCurrentTime(currentTime);
                 setDuration(duration);
                 
                 // Save progress every 5 seconds
-                if (Math.floor(currentTime) % 5 === 0) {
-                  if (animeInfo?.info) {
+                if (Math.floor(currentTime) % 5 === 0 && currentTime > 0) {
+                  console.log(`[DEBUG] Saving progress: ${currentTime}/${duration}`);
+                  if (animeInfo?.info || animeInfo) {
                     addToHistory({
                       id: animeId as string,
-                      name: animeInfo.info.title || animeInfo.title || animeInfo.name || 'Unknown Anime',
-                      img: animeInfo.info.image || animeInfo.image || animeInfo.img || '',
+                      name: animeInfo.info?.title || animeInfo.title || animeInfo.name || 'Unknown Anime',
+                      img: animeInfo.info?.image || animeInfo.image || animeInfo.img || '',
                       episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
                       episodeNumber: Number(episodeNumber),
                       timestamp: Date.now(),
@@ -1479,6 +1578,8 @@ export default function WatchAnime() {
             }
             intro={videoData?.intro}
             outro={videoData?.outro}
+            isQualityChanging={isQualityChanging}
+            savedQualityPosition={savedPosition}
           />
           
           {!isFullscreen && (

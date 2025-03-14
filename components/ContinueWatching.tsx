@@ -14,13 +14,13 @@ import { useWatchHistoryStore } from '../store/watchHistoryStore';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { logger } from '../utils/logger';
 import { FALLBACK_IMAGE } from '../store/watchHistoryStore';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { formatDistanceToNow } from 'date-fns';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.35;
 
 export const ContinueWatching = () => {
-  const { history, clearHistory } = useWatchHistoryStore();
+  const { history, clearHistory, removeFromHistory } = useWatchHistoryStore();
 
   if (!history || history.length === 0) {
     return null;
@@ -32,21 +32,42 @@ export const ContinueWatching = () => {
     return Math.min(Math.max(Math.round(percentage), 0), 100); // Ensure between 0-100
   };
 
+  const formatLastWatched = (timestamp: number) => {
+    if (!timestamp) return '';
+    try {
+      return formatDistanceToNow(timestamp, { addSuffix: true });
+    } catch (error) {
+      logger.error('Error formatting timestamp:', error);
+      return '';
+    }
+  };
+
   const handlePress = (item: any) => {
     if (!item?.episodeId || !item?.id) {
       logger.error('Invalid item data:', item);
       return;
     }
 
-    router.push({
-      pathname: "/anime/watch/[episodeId]",
-      params: {
-        episodeId: item.episodeId,
-        animeId: item.id,
-        episodeNumber: item.episodeNumber || 1,
-        title: item.name || 'Unknown Anime'
-      }
-    });
+    // Only pass resumeTime if we have valid progress
+    const resumeTimeParam = item.progress && item.progress > 0 ? 
+      item.progress.toString() : undefined;
+    
+    console.log(`[DEBUG] ContinueWatching: Navigating to episode with resumeTime: ${resumeTimeParam}, progress: ${item.progress}`);
+    
+    // Force a small delay to ensure the navigation works properly
+    setTimeout(() => {
+      router.push({
+        pathname: "/anime/watch/[episodeId]",
+        params: {
+          episodeId: item.episodeId,
+          animeId: item.id,
+          episodeNumber: item.episodeNumber || 1,
+          title: item.name || 'Unknown Anime',
+          category: item.subOrDub || 'sub',
+          resumeTime: resumeTimeParam
+        }
+      });
+    }, 100);
   };
 
   const handleRemove = (item: any) => {
@@ -61,13 +82,7 @@ export const ContinueWatching = () => {
         {
           text: "Remove",
           onPress: () => {
-            const filteredHistory = history.filter(
-              (historyItem) => historyItem.id !== item.id
-            );
-            useWatchHistoryStore.setState({ history: filteredHistory });
-            // Save to AsyncStorage
-            AsyncStorage.setItem('anipro:watchHistory', JSON.stringify(filteredHistory))
-              .catch(error => logger.error('Error saving watch history:', error));
+            removeFromHistory(item.id);
           },
           style: "destructive"
         }
@@ -162,6 +177,9 @@ export const ContinueWatching = () => {
                   )}
                 </View>
               </View>
+              <Text style={styles.lastWatchedText}>
+                {formatLastWatched(item.lastWatched)}
+              </Text>
             </View>
           </TouchableOpacity>
         ))}
@@ -249,5 +267,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 4,
     zIndex: 2,
+  },
+  lastWatchedText: {
+    color: '#999',
+    fontSize: 10,
+    marginTop: 2,
   },
 }); 
