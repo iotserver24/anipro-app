@@ -1,11 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput, BackHandler } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput, BackHandler, Platform, Linking, Modal } from 'react-native';
 import { useLocalSearchParams, router, Stack, useNavigation } from 'expo-router';
-import Video, { 
-  OnLoadData, 
-  OnProgressData, 
-  OnBufferData
-} from 'react-native-video';
+import { Video, AVPlaybackStatus, ResizeMode } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
 import { useWatchHistoryStore } from '../../../store/watchHistoryStore';
@@ -15,6 +11,8 @@ import VideoPlayer from '../../../components/VideoPlayer';
 import { LinearGradient } from 'expo-linear-gradient';
 import { logger } from '../../../utils/logger';
 import { activateKeepAwake, deactivateKeepAwake } from 'expo-keep-awake';
+import * as NavigationBar from 'expo-navigation-bar';
+import { WebView } from 'react-native-webview';
 
 type StreamSource = {
   url: string;
@@ -23,8 +21,9 @@ type StreamSource = {
 };
 
 type Subtitle = {
+  title: string;
+  language: string;
   url: string;
-  lang: string;
 };
 
 type APIEpisode = {
@@ -37,8 +36,30 @@ type APIEpisode = {
   isFiller: boolean;
 };
 
+// Add these type definitions at the top of the file with other types
+type OnProgressData = {
+  currentTime: number;
+  playableDuration: number;
+  seekableDuration: number;
+};
+
+type OnLoadData = {
+  duration: number;
+  naturalSize: {
+    width: number;
+    height: number;
+    orientation: string;
+  };
+};
+
+type OnBufferData = {
+  isBuffering: boolean;
+};
+
 // Update VideoRef type
-type VideoRef = typeof Video;
+type VideoRef = Video & {
+  seek: (seconds: number) => void;
+};
 
 // Update VideoPlayerProps type
 type VideoPlayerProps = {
@@ -73,10 +94,22 @@ type VideoPlayerProps = {
   onFullscreen?: () => void;
   onFullscreenChange?: (isFullscreen: boolean) => void;
   onPlaybackRateChange?: (rate: number) => void;
+  intro?: { start: number; end: number };
+  outro?: { start: number; end: number };
+  onSkipIntro?: () => void;
+  onSkipOutro?: () => void;
 };
 
 // Update video event types
-type VideoProgress = OnProgressData;
+type VideoProgress = {
+  currentTime: number;
+  playableDuration: number;
+  seekableDuration: number;
+  isBuffering?: boolean;
+  isPlaying?: boolean;
+  paused?: boolean;
+};
+
 type LoadError = {
   error: string | {
     what: string;
@@ -106,7 +139,10 @@ type VideoResponse = {
   headers: {
     Referer: string;
   };
-  sources: VideoSource[];
+  sources: {
+    url: string;
+    isM3U8: boolean;
+  }[];
   subtitles: {
     kind: string;
     url: string;
@@ -119,6 +155,7 @@ type VideoResponse = {
     start: number;
     end: number;
   };
+  download?: string;
 };
 
 // Add types for video controls
@@ -156,14 +193,22 @@ const ControlsOverlay = ({
   };
 
   return showControls ? (
-    <View style={styles.controlsOverlay}>
+    <View style={{
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0,0,0,0.5)',
+      justifyContent: 'space-between',
+    }}>
       {/* Title bar */}
-      <View style={styles.titleBar}>
-        <Text style={styles.titleText}>{title}</Text>
+      <View style={{ padding: 16 }}>
+        <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>{title}</Text>
       </View>
 
       {/* Center play/pause button */}
-      <View style={styles.centerControls}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         {isBuffering ? (
           <ActivityIndicator size="large" color="#f4511e" />
         ) : (
@@ -178,13 +223,13 @@ const ControlsOverlay = ({
       </View>
 
       {/* Bottom controls */}
-      <View style={styles.bottomControls}>
-        <View style={styles.progressRow}>
-          <Text style={styles.timeText}>
+      <View style={{ padding: 16 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+          <Text style={{ color: 'white', marginRight: 16, fontSize: 14 }}>
             {formatTime(currentTime)}
           </Text>
           <Slider
-            style={styles.slider}
+            style={{ flex: 1, marginHorizontal: 8 }}
             value={currentTime}
             maximumValue={duration}
             minimumValue={0}
@@ -193,12 +238,12 @@ const ControlsOverlay = ({
             maximumTrackTintColor="rgba(255,255,255,0.5)"
             thumbTintColor="#f4511e"
           />
-          <Text style={styles.timeText}>
+          <Text style={{ color: 'white', marginRight: 16, fontSize: 14 }}>
             {formatTime(duration)}
           </Text>
         </View>
 
-        <View style={styles.controlsRow}>
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' }}>
           <TouchableOpacity onPress={onFullscreenPress}>
             <MaterialIcons
               name={isFullscreen ? "fullscreen-exit" : "fullscreen"}
@@ -221,27 +266,71 @@ const EpisodeItem = React.memo(({ episode, onPress, onLongPress, mode, isCurrent
 }) => (
   <TouchableOpacity
     style={[
-      styles.episodeCard,
-      episode.isFiller && styles.fillerEpisodeCard,
-      isCurrentEpisode && styles.currentEpisode
+      {
+        backgroundColor: '#1a1a1a',
+        borderRadius: 8,
+        overflow: 'hidden',
+        marginBottom: 8,
+      },
+      episode.isFiller && {
+        borderLeftWidth: 3,
+        borderLeftColor: '#f4511e',
+      },
+      isCurrentEpisode && {
+        backgroundColor: '#333',
+      }
     ]}
     onPress={onPress}
     onLongPress={onLongPress}
   >
-    <View style={styles.episodeContent}>
-      <View style={styles.episodeNumberContainer}>
-        <Text style={styles.episodeNumber}>{episode.number}</Text>
+    <View style={{
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: 12,
+    }}>
+      <View style={{
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#222',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+      }}>
+        <Text style={{
+          color: '#fff',
+          fontSize: 16,
+          fontWeight: '500',
+        }}>{episode.number}</Text>
       </View>
-      <View style={styles.episodeInfo}>
-        <Text style={styles.episodeTitle} numberOfLines={1}>
+      <View style={{
+        flex: 1,
+        marginRight: 12,
+      }}>
+        <Text style={{
+          color: '#999',
+          fontSize: 14,
+          marginTop: 4,
+        }} numberOfLines={1}>
           {episode.title}
         </Text>
-        <View style={styles.episodeBadges}>
+        <View style={{
+          flexDirection: 'row',
+          gap: 8,
+        }}>
           {mode === 'dub' && episode.isDubbed && (
-            <Text style={styles.dubBadge}>DUB</Text>
+            <Text style={{
+              color: '#4CAF50',
+              fontSize: 12,
+              fontWeight: '600',
+            }}>DUB</Text>
           )}
           {episode.isFiller && (
-            <Text style={styles.fillerBadge}>FILLER</Text>
+            <Text style={{
+              color: '#f4511e',
+              fontSize: 12,
+              fontWeight: '600',
+            }}>FILLER</Text>
           )}
         </View>
       </View>
@@ -330,9 +419,155 @@ const sortEpisodesByProximity = (episodes: APIEpisode[], currentEpisodeId: strin
   return [current, ...afterCurrent, ...beforeCurrent];
 };
 
+// Add this component after the VideoPlayer and before the speed controls
+const EpisodeControls = ({ 
+  currentEpisodeIndex, 
+  episodes, 
+  onPrevious, 
+  onNext, 
+  onDownload,
+  downloadUrl
+}: { 
+  currentEpisodeIndex: number; 
+  episodes: APIEpisode[];
+  onPrevious: () => void;
+  onNext: () => void;
+  onDownload: () => void;
+  downloadUrl: string | null;
+}) => {
+  const hasPrevious = currentEpisodeIndex > 0;
+  const hasNext = currentEpisodeIndex < episodes.length - 1;
+  const hasDownload = !!downloadUrl;
+
+  return (
+    <View style={{
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      paddingVertical: 8,
+      backgroundColor: '#1a1a1a',
+      marginBottom: 12,
+      borderRadius: 8,
+      gap: 24,
+    }}>
+      <TouchableOpacity 
+        style={{
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          backgroundColor: 'rgba(0,0,0,0.3)',
+          opacity: hasPrevious ? 1 : 0.5,
+        }}
+        onPress={onPrevious}
+        disabled={!hasPrevious}
+      >
+        <MaterialIcons name="skip-previous" size={22} color="white" />
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={{
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          backgroundColor: 'rgba(0,0,0,0.3)',
+          opacity: hasDownload ? 1 : 0.5,
+        }}
+        onPress={onDownload}
+        disabled={!hasDownload}
+      >
+        <MaterialIcons name="file-download" size={22} color="white" />
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={{
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          backgroundColor: 'rgba(0,0,0,0.3)',
+          opacity: hasNext ? 1 : 0.5,
+        }}
+        onPress={onNext}
+        disabled={!hasNext}
+      >
+        <MaterialIcons name="skip-next" size={22} color="white" />
+      </TouchableOpacity>
+    </View>
+  );
+};
+
+// Add a context provider to pass down video player state
+const VideoPlayerContext = React.createContext<{
+  currentEpisodeIndex: number;
+  episodes: APIEpisode[];
+  animeId: string;
+  animeInfo: any;
+  category: string;
+  videoData: any;
+  router: any;
+}>({
+  currentEpisodeIndex: 0,
+  episodes: [],
+  animeId: '',
+  animeInfo: null,
+  category: 'sub',
+  videoData: null,
+  router: null
+});
+
+const useVideoPlayerContext = () => React.useContext(VideoPlayerContext);
+
+// Add this component after your other component definitions
+const DownloadPopup = ({ visible, onClose, downloadUrl }: { 
+  visible: boolean; 
+  onClose: () => void; 
+  downloadUrl: string | null;
+}) => {
+  if (!downloadUrl) return null;
+  
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Download Episode</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <MaterialIcons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          
+          <WebView
+            source={{ uri: downloadUrl }}
+            style={styles.webView}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            startInLoadingState={true}
+            renderLoading={() => (
+              <View style={styles.loaderContainer}>
+                <ActivityIndicator size="large" color="#f4511e" />
+              </View>
+            )}
+            userAgent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 export default function WatchAnime() {
   const { episodeId, animeId, episodeNumber, title, category } = useLocalSearchParams();
-  const categoryAsMode = (category || 'sub') as 'sub' | 'dub';
+  const categoryAsSubOrDub = (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub';
   const videoRef = useRef<VideoRef>(null);
   const [streamingUrl, setStreamingUrl] = useState<string | null>(null);
   const [sources, setSources] = useState<StreamSource[]>([]);
@@ -388,6 +623,8 @@ export default function WatchAnime() {
   const episodeListRef = useRef<ScrollView>(null);
   const [isSeeking, setIsSeeking] = useState(false);
   const navigation = useNavigation();
+  const [showDownloadPopup, setShowDownloadPopup] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (savedProgress > 0) {
@@ -435,25 +672,6 @@ export default function WatchAnime() {
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(error => {
         console.error('Failed to reset orientation:', error);
       });
-    };
-  }, []);
-
-  useEffect(() => {
-    // Hide bottom tab bar when entering this screen
-    const parent = navigation.getParent();
-    if (parent) {
-      parent.setOptions({
-        tabBarStyle: { display: 'none' }
-      });
-    }
-
-    return () => {
-      // Show bottom tab bar when leaving this screen
-      if (parent) {
-        parent.setOptions({
-          tabBarStyle: { display: 'flex' }
-        });
-      }
     };
   }, []);
 
@@ -561,11 +779,12 @@ export default function WatchAnime() {
         progress: 0,
         duration: 0,
         lastWatched: now,
-        subOrDub: category || 'sub'
+        subOrDub: categoryAsSubOrDub
       });
 
       if (data.episodes) {
-        setEpisodes(data.episodes);
+        // Type cast to ensure compatibility
+        setEpisodes(data.episodes as APIEpisode[]);
         const index = data.episodes.findIndex(ep => ep.id === episodeId);
         setCurrentEpisodeIndex(index);
       }
@@ -577,7 +796,7 @@ export default function WatchAnime() {
   const handleVideoLoad = async () => {
     if (videoRef.current && resumePosition > 0 && !isVideoReady) {
       try {
-        videoRef.current.seek(resumePosition);
+        await videoRef.current.setPositionAsync(resumePosition * 1000);
         setIsVideoReady(true);
       } catch (err) {
         logger.error('Error seeking to position:', err);
@@ -621,7 +840,7 @@ export default function WatchAnime() {
           progress: newTime,
           duration: newDuration,
           lastWatched: now,
-          subOrDub: categoryAsMode
+          subOrDub: categoryAsSubOrDub
         });
       }
     }
@@ -634,7 +853,7 @@ export default function WatchAnime() {
 
   const onSliderValueChange = (value: number) => {
     if (videoRef.current) {
-      videoRef.current.seek(value);
+      videoRef.current.setPositionAsync(value * 1000);
     }
   };
 
@@ -669,53 +888,83 @@ export default function WatchAnime() {
     setError('Video playback failed. Please try refreshing the page.');
   };
 
-  const handleFullscreenToggle = async () => {
-    if (isFullscreen) {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-      setIsFullscreen(false);
-      StatusBar.setHidden(false);
+  const handleFullscreenChange = async (fullscreen: boolean) => {
+    try {
+      // Set state first for immediate UI response
+      setIsFullscreen(fullscreen);
       
-      // Show navigation header
+      // Update navigation options
       navigation.setOptions({
-        headerShown: true
+        headerShown: !fullscreen,
+        statusBarHidden: fullscreen
       });
-    } else {
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-      setIsFullscreen(true);
-      StatusBar.setHidden(true);
+
+      // Update status bar
+      StatusBar.setHidden(fullscreen);
       
-      // Hide navigation header
-      navigation.setOptions({
-        headerShown: false
-      });
+      // Handle orientation and navigation bar
+      if (fullscreen) {
+        // Enter fullscreen - landscape mode
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+        if (Platform.OS === 'android') {
+          await NavigationBar.setVisibilityAsync('hidden');
+        }
+        
+        // Update player dimensions immediately
+        const { width, height } = Dimensions.get('window');
+        setPlayerDimensions({
+          width: Math.max(width, height), // Ensure we use the larger dimension as width
+          height: Math.min(width, height)
+        });
+      } else {
+        // Exit fullscreen - portrait mode
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        if (Platform.OS === 'android') {
+          await NavigationBar.setVisibilityAsync('visible');
+        }
+        
+        // Update player dimensions
+        const { width } = Dimensions.get('window');
+        setPlayerDimensions({
+          width: width,
+          height: width * (9/16)
+        });
+      }
+    } catch (error) {
+      console.error('Error handling fullscreen change:', error);
     }
   };
 
-  const handleProgress = (data: OnProgressData) => {
-    if (!isSeeking) {
-      setCurrentTime(data.currentTime);
-      setDuration(data.seekableDuration);
+  const handleProgress = (data: VideoProgress) => {
+    if (!isSeeking && !isQualityChanging) {
+      const newTime = data.currentTime;
+      const newDuration = data.seekableDuration;
       
-      // Save progress every 5 seconds
-      if (Math.floor(data.currentTime) % 5 === 0) {
-        if (animeInfo?.info) {
-          addToHistory({
-            id: animeId as string,
-            name: animeInfo.info.title || animeInfo.title || animeInfo.name || 'Unknown Anime',
-            img: animeInfo.info.image || animeInfo.image || animeInfo.img || '',
-            episodeId: episodeId as string,
-            episodeNumber: Number(episodeNumber),
-            timestamp: Date.now(),
-            progress: data.currentTime,
-            duration: data.seekableDuration,
-            lastWatched: Date.now(),
-            subOrDub: category || 'sub'
-          });
-        }
+      setCurrentTime(newTime);
+      setDuration(newDuration);
+      
+      // Save progress every 3 seconds
+      const now = Date.now();
+      if (now - lastSaveTime >= 3000 && animeInfo && newTime > 0) {
+        setLastSaveTime(now);
+        
+        // Save progress
+        addToHistory({
+          id: animeId as string,
+          name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
+          img: animeInfo.image || animeInfo.info?.image || '',
+          episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
+          episodeNumber: Number(episodeNumber),
+          timestamp: now,
+          progress: newTime,
+          duration: newDuration,
+          lastWatched: now,
+          subOrDub: (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub'
+        });
       }
     }
 
-    // Handle intro/outro skipping
+    // Handle intro/outro skipping if available
     if (videoData?.intro && data.currentTime >= videoData.intro.start && data.currentTime <= videoData.intro.end) {
       handleSeek(videoData.intro.end);
     }
@@ -725,8 +974,12 @@ export default function WatchAnime() {
   useEffect(() => {
     const fetchVideoData = async () => {
       try {
-        const response = await animeAPI.getVideoSource(episodeId);
-        setVideoData(response);
+        const episodeIdString = typeof episodeId === 'string' ? episodeId : episodeId[0];
+        const response = await animeAPI.getVideoSource(episodeIdString);
+        setVideoData({
+          ...response,
+          subtitles: response.subtitles || []
+        });
       } catch (error) {
         logger.error('Error fetching video:', error);
       }
@@ -768,7 +1021,7 @@ export default function WatchAnime() {
   // Update video props
   const videoProps = {
     source: { 
-      uri: videoUrl || null,
+      uri: videoUrl || '',
       headers: videoHeaders || {}
     },
     rate: playbackSpeed,
@@ -789,7 +1042,7 @@ export default function WatchAnime() {
     },
     onPlayPause: togglePlayPause,
     onSeek: handleSeek,
-    onFullscreen: handleFullscreenToggle,
+    onFullscreen: handleFullscreenChange,
     onFullscreenChange: setIsFullscreen,
     onPlaybackRateChange: handlePlaybackSpeedChange,
     bufferConfig: {
@@ -798,7 +1051,19 @@ export default function WatchAnime() {
       bufferForPlaybackMs: 2500,
       bufferForPlaybackAfterRebufferMs: 5000
     },
-    progressUpdateInterval: 1000
+    progressUpdateInterval: 1000,
+    intro: videoData?.intro,
+    outro: videoData?.outro,
+    onSkipIntro: () => {
+      if (videoRef.current && videoData?.intro) {
+        videoRef.current.setPositionAsync(videoData.intro.end * 1000);
+      }
+    },
+    onSkipOutro: () => {
+      if (videoRef.current && videoData?.outro) {
+        videoRef.current.setPositionAsync(videoData.outro.end * 1000);
+      }
+    }
   };
 
   // Add control visibility timeout
@@ -814,64 +1079,31 @@ export default function WatchAnime() {
     };
   }, [showControls, isPlaying]);
 
-  // Update the fullscreen handlers
-  const enterFullscreen = async () => {
-    try {
-      // Lock to landscape orientation
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-      
-      // Update state
-      setIsFullscreen(true);
-      
-      // Update video dimensions
-      const { width, height } = Dimensions.get('window');
-      setPlayerDimensions({
-        width: height, // Swap width/height for landscape
-        height: width
-      });
-    } catch (error) {
-      logger.error('Failed to enter fullscreen:', error);
-    }
-  };
-
-  const exitFullscreen = async () => {
-    try {
-      // Lock to portrait orientation
-      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-      
-      // Update state
-      setIsFullscreen(false);
-      
-      // Reset video dimensions
-      const { width } = Dimensions.get('window');
-      setPlayerDimensions({
-        width: width,
-        height: width * (9/16)
-      });
-    } catch (error) {
-      logger.error('Failed to exit fullscreen:', error);
-    }
-  };
-
-  // Add dimension change listener
+  // Update the dimension change listener
   useEffect(() => {
-    const subscription = Dimensions.addEventListener('change', ({ window }) => {
-      const { width, height } = window;
+    const dimensionsChangeHandler = ({ window }: { window: { width: number; height: number } }) => {
       if (isFullscreen) {
+        // In fullscreen/landscape mode
         setPlayerDimensions({
-          width: height,
-          height: width
+          width: Math.max(window.width, window.height), // Always use the larger dimension as width in fullscreen
+          height: Math.min(window.width, window.height)  // Always use the smaller dimension as height in fullscreen
         });
       } else {
+        // In portrait mode
         setPlayerDimensions({
-          width: width,
-          height: width * (9/16)
+          width: window.width,
+          height: window.width * (9/16)
         });
       }
-    });
+    };
+
+    const subscription = Dimensions.addEventListener('change', dimensionsChangeHandler);
+
+    // Force an immediate update when fullscreen state changes
+    dimensionsChangeHandler({ window: Dimensions.get('window') });
 
     return () => {
-      subscription?.remove();
+      subscription.remove();
     };
   }, [isFullscreen]);
 
@@ -884,12 +1116,12 @@ export default function WatchAnime() {
     if (locationX < screenWidth / 2) {
       // Tap left side, rewind 5 seconds
       if (videoRef.current) {
-        videoRef.current.seek(Math.max(0, currentTime - 5));
+        videoRef.current.setPositionAsync(Math.max(0, currentTime - 5) * 1000);
       }
     } else {
       // Tap right side, skip forward 5 seconds
       if (videoRef.current) {
-        videoRef.current.seek(Math.min(duration, currentTime + 5));
+        videoRef.current.setPositionAsync(Math.min(duration, currentTime + 5) * 1000);
       }
     }
   };
@@ -899,29 +1131,47 @@ export default function WatchAnime() {
     const selectedSource = qualities.find(q => q.quality === quality);
     if (selectedSource) {
       try {
-        // Save current position and playback state before quality change
+        // Save current position and playback state
         const currentPos = currentTime;
         const wasPlaying = isPlaying;
         
         setIsQualityChanging(true);
         setSavedPosition(currentPos);
-        logger.info('Saving position before quality change:', currentPos);
-
+        
         // Update quality
         setSelectedQuality(quality);
         setVideoUrl(selectedSource.url);
         setStreamingUrl(selectedSource.url);
 
-        // Set a timeout to reset quality changing state if onLoad doesn't fire
+        // Wait for video to load with new quality
+        const checkAndResume = async () => {
+          if (videoRef.current) {
+            try {
+              // Set position
+              await videoRef.current.setPositionAsync(currentPos * 1000);
+              
+              // Resume playback if it was playing
+              if (wasPlaying) {
+                await videoRef.current.playAsync();
+              }
+              
+              setIsQualityChanging(false);
+            } catch (error) {
+              console.error('Error resuming after quality change:', error);
+              setIsQualityChanging(false);
+            }
+          }
+        };
+
+        // Set a timeout to handle the case where onLoad doesn't fire
         setTimeout(() => {
           if (isQualityChanging) {
-            setIsQualityChanging(false);
-            logger.warn('Quality change timeout reached');
+            checkAndResume();
           }
-        }, 10000);
+        }, 1000);
 
       } catch (error) {
-        logger.error('Error during quality change:', error);
+        console.error('Error during quality change:', error);
         setIsQualityChanging(false);
       }
     }
@@ -1001,13 +1251,6 @@ export default function WatchAnime() {
 
   // Update the navigation effect
   useEffect(() => {
-    const parent = navigation.getParent();
-    if (parent) {
-      parent.setOptions({
-        tabBarStyle: { display: 'none' }
-      });
-    }
-
     // Add navigation listener for cleanup
     const unsubscribe = navigation.addListener('beforeRemove', () => {
       // Cleanup when navigating away
@@ -1020,33 +1263,117 @@ export default function WatchAnime() {
       ScreenOrientation.lockAsync(
         ScreenOrientation.OrientationLock.PORTRAIT_UP
       ).catch(console.error);
-      
-      // Show tab bar
-      if (parent) {
-        parent.setOptions({
-          tabBarStyle: { 
-            display: 'flex',
-            backgroundColor: '#121212',
-            borderTopWidth: 0
-          }
-        });
-      }
     });
 
     return () => {
       unsubscribe();
-      // Additional cleanup
-      if (parent) {
-        parent.setOptions({
-          tabBarStyle: { 
-            display: 'flex',
-            backgroundColor: '#121212',
-            borderTopWidth: 0
-          }
-        });
-      }
     };
   }, [navigation]);
+
+  // Add cleanup effect for orientation
+  useEffect(() => {
+    const cleanup = async () => {
+      try {
+        // Reset to portrait when component unmounts
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        if (Platform.OS === 'android') {
+          await NavigationBar.setVisibilityAsync('visible');
+        }
+        StatusBar.setHidden(false);
+      } catch (error) {
+        console.error('Error in cleanup:', error);
+      }
+    };
+
+    return () => {
+      cleanup();
+    };
+  }, []);
+
+  // Update the handleLoad function
+  const handleLoad = (status: AVPlaybackStatus) => {
+    if (!status.isLoaded) return;
+    
+    const duration = status.durationMillis ? status.durationMillis / 1000 : 0;
+    setDuration(duration);
+    setLoading(false);
+    
+    // Handle quality change
+    if (isQualityChanging && savedPosition > 0) {
+      if (videoRef.current) {
+        setTimeout(async () => {
+          try {
+            await videoRef.current?.setPositionAsync(savedPosition * 1000);
+            await videoRef.current?.playAsync();
+            setIsQualityChanging(false);
+          } catch (error) {
+            console.error('Error setting position after quality change:', error);
+            setIsQualityChanging(false);
+          }
+        }, 100);
+      }
+      return;
+    }
+    
+    // Handle initial load/resume position
+    if (resumePosition > 0 && !isVideoReady) {
+      if (videoRef.current) {
+        setTimeout(async () => {
+          try {
+            await videoRef.current?.setPositionAsync(resumePosition * 1000);
+            await videoRef.current?.playAsync();
+            setIsVideoReady(true);
+          } catch (error) {
+            console.error('Error setting resume position:', error);
+          }
+        }, 100);
+      } else {
+        setIsPlaying(true);
+      }
+    }
+  };
+
+  // Handle download button press
+  const handleDownload = useCallback(() => {
+    if (videoData?.download) {
+      setDownloadUrl(videoData.download);
+      setShowDownloadPopup(true);
+    }
+  }, [videoData]);
+
+  // Handle previous episode navigation
+  const handlePreviousEpisode = useCallback(() => {
+    if (currentEpisodeIndex > 0) {
+      const prevEpisode = episodes[currentEpisodeIndex - 1];
+      router.push({
+        pathname: "/anime/watch/[episodeId]",
+        params: {
+          episodeId: prevEpisode.id,
+          animeId: animeId as string,
+          episodeNumber: prevEpisode.number,
+          title: prevEpisode.title || `Episode ${prevEpisode.number}`,
+          category: category
+        }
+      });
+    }
+  }, [currentEpisodeIndex, episodes, router, animeId, category]);
+
+  // Handle next episode navigation
+  const handleNextEpisode = useCallback(() => {
+    if (currentEpisodeIndex < episodes.length - 1) {
+      const nextEpisode = episodes[currentEpisodeIndex + 1];
+      router.push({
+        pathname: "/anime/watch/[episodeId]",
+        params: {
+          episodeId: nextEpisode.id,
+          animeId: animeId as string,
+          episodeNumber: nextEpisode.number,
+          title: nextEpisode.title || `Episode ${nextEpisode.number}`,
+          category: category
+        }
+      });
+    }
+  }, [currentEpisodeIndex, episodes, router, animeId, category]);
 
   if (loading) {
     return (
@@ -1081,7 +1408,6 @@ export default function WatchAnime() {
 
   return (
     <>
-      {/* Configure the header visibility */}
       <Stack.Screen 
         options={{
           headerShown: !isFullscreen,
@@ -1098,218 +1424,218 @@ export default function WatchAnime() {
         }} 
       />
 
-      <View style={[
-        styles.container,
-        isFullscreen && { marginTop: 0 } // Remove any top margin in fullscreen
-      ]}>
-        <VideoPlayer
-          source={{ 
-            uri: videoUrl || null,
-            headers: videoHeaders || {}
-          }}
-          title={title as string}
-          initialPosition={resumePosition}
-          rate={playbackSpeed}
-          onPlaybackRateChange={handlePlaybackSpeedChange}
-          onLoad={async (status) => {
-            try {
-              if (isQualityChanging && videoRef.current) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-                await videoRef.current.setPositionAsync(savedPosition * 1000);
-                setIsQualityChanging(false);
-                logger.info('Successfully seeked to position after quality change:', savedPosition);
+      <VideoPlayerContext.Provider value={{
+        currentEpisodeIndex,
+        episodes,
+        animeId: animeId as string,
+        animeInfo,
+        category: categoryAsSubOrDub,
+        videoData,
+        router
+      }}>
+        <View style={[
+          styles.container,
+          isFullscreen && styles.fullscreenContainer
+        ]}>
+          <VideoPlayer
+            source={{ 
+              uri: videoUrl || '',
+              headers: videoHeaders || {}
+            }}
+            title={title as string}
+            initialPosition={resumePosition}
+            rate={playbackSpeed}
+            onPlaybackRateChange={handlePlaybackSpeedChange}
+            onLoad={handleLoad}
+            onProgress={(currentTime, duration) => {
+              if (!isSeeking) {
+                setCurrentTime(currentTime);
+                setDuration(duration);
+                
+                // Save progress every 5 seconds
+                if (Math.floor(currentTime) % 5 === 0) {
+                  if (animeInfo?.info) {
+                    addToHistory({
+                      id: animeId as string,
+                      name: animeInfo.info.title || animeInfo.title || animeInfo.name || 'Unknown Anime',
+                      img: animeInfo.info.image || animeInfo.image || animeInfo.img || '',
+                      episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
+                      episodeNumber: Number(episodeNumber),
+                      timestamp: Date.now(),
+                      progress: currentTime,
+                      duration: duration,
+                      lastWatched: Date.now(),
+                      subOrDub: (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub'
+                    });
+                  }
+                }
               }
-              setIsBuffering(false);
-              setIsVideoReady(true);
-            } catch (error) {
-              logger.error('Error seeking after quality change:', error);
-              setIsQualityChanging(false);
+            }}
+            onEnd={onVideoEnd}
+            onFullscreenChange={handleFullscreenChange}
+            style={isFullscreen ? 
+              { width: playerDimensions.width, height: playerDimensions.height, backgroundColor: '#000' } : 
+              { width: '100%', aspectRatio: 16/9, backgroundColor: '#000' }
             }
-          }}
-          onError={(error) => {
-            logger.error('Video player error:', error);
-            setIsQualityChanging(false);
-          }}
-          onProgress={(currentTime, duration) => {
-            // Save progress every 5 seconds (currentTime is already in seconds)
-            if (Math.floor(currentTime) % 5 === 0) {
-              if (animeInfo?.info) {
-                addToHistory({
-                  id: animeId as string,
-                  name: animeInfo.info.title || animeInfo.title || animeInfo.name || 'Unknown Anime',
-                  img: animeInfo.info.image || animeInfo.image || animeInfo.img || '',
-                  episodeId: episodeId as string,
-                  episodeNumber: Number(episodeNumber),
-                  timestamp: Date.now(),
-                  progress: currentTime, // Store in seconds
-                  duration: duration,
-                  lastWatched: Date.now(),
-                  subOrDub: category || 'sub'
-                });
-              }
-            }
-          }}
-          onEnd={onVideoEnd}
-          style={isFullscreen ? styles.fullscreenVideo : {}}
-          onFullscreenChange={(fullscreen) => setIsFullscreen(fullscreen)}
-          bufferConfig={{
-            minBufferMs: 15000,
-            maxBufferMs: 50000,
-            bufferForPlaybackMs: 2500,
-            bufferForPlaybackAfterRebufferMs: 5000
-          }}
-          progressUpdateInterval={1000}
-          onUnload={() => {
-            setVideoUrl(null);
-            setStreamingUrl(null);
-            setIsVideoReady(false);
-          }}
-          onPlaybackStatusUpdate={(status) => {
-            if (!status.isPlaying) {
-              setPaused(true);
-            }
-          }}
-        />
-        
-        {!isFullscreen && (
-          <ScrollView style={styles.controls}>
-            {/* Quality Selection */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Quality</Text>
-              <View style={styles.qualityOptions}>
-                {qualities.map((q) => (
-                  <TouchableOpacity
-                    key={q.quality}
-                    style={[
-                      styles.qualityButton,
-                      selectedQuality === q.quality && styles.selectedQuality
-                    ]}
-                    onPress={() => handleQualityChange(q.quality)}
-                  >
-                    <Text style={styles.qualityText}>{q.quality}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
+            intro={videoData?.intro}
+            outro={videoData?.outro}
+          />
+          
+          {!isFullscreen && (
+            <>
+              <EpisodeControls
+                currentEpisodeIndex={currentEpisodeIndex}
+                episodes={episodes}
+                onPrevious={handlePreviousEpisode}
+                onNext={handleNextEpisode}
+                onDownload={handleDownload}
+                downloadUrl={videoData?.download || null}
+              />
+              <ScrollView style={styles.controls}>
+                {/* Quality Selection */}
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Quality</Text>
+                  <View style={styles.qualityOptions}>
+                    {qualities.map((q) => (
+                      <TouchableOpacity
+                        key={q.quality}
+                        style={[
+                          styles.qualityButton,
+                          selectedQuality === q.quality && styles.selectedQuality
+                        ]}
+                        onPress={() => handleQualityChange(q.quality)}
+                      >
+                        <Text style={styles.qualityText}>{q.quality}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
 
-            {/* Playback Speed */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Playback Speed</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(speed => (
-                  <TouchableOpacity
-                    key={speed}
-                    style={[
-                      styles.speedButton,
-                      playbackSpeed === speed && styles.selectedButton
-                    ]}
-                    onPress={() => handlePlaybackSpeedChange(speed)}
-                  >
-                    <Text style={[
-                      styles.speedText,
-                      playbackSpeed === speed && styles.selectedText
-                    ]}>
-                      {speed}x
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
+                {/* Playback Speed */}
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Playback Speed</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map(speed => (
+                      <TouchableOpacity
+                        key={speed}
+                        style={[
+                          styles.speedButton,
+                          playbackSpeed === speed && styles.selectedButton
+                        ]}
+                        onPress={() => handlePlaybackSpeedChange(speed)}
+                      >
+                        <Text style={[
+                          styles.speedText,
+                          playbackSpeed === speed && styles.selectedText
+                        ]}>
+                          {speed}x
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </View>
 
-            {/* Subtitles */}
-            {subtitles.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Subtitles</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <TouchableOpacity
-                    style={[
-                      styles.subtitleButton,
-                      !selectedSubtitle && styles.selectedButton
-                    ]}
-                    onPress={() => setSelectedSubtitle(null)}
-                  >
-                    <Text style={[
-                      styles.subtitleText,
-                      !selectedSubtitle && styles.selectedText
-                    ]}>
-                      Off
-                    </Text>
-                  </TouchableOpacity>
-                  {subtitles.map((sub, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={[
-                        styles.subtitleButton,
-                        selectedSubtitle?.language === sub.language && styles.selectedButton
-                      ]}
-                      onPress={() => setSelectedSubtitle(sub)}
-                    >
-                      <Text style={[
-                        styles.subtitleText,
-                        selectedSubtitle?.language === sub.language && styles.selectedText
-                      ]}>
-                        {sub.title}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
+                {/* Subtitles */}
+                {subtitles.length > 0 && (
+                  <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Subtitles</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      <TouchableOpacity
+                        style={[
+                          styles.subtitleButton,
+                          !selectedSubtitle && styles.selectedButton
+                        ]}
+                        onPress={() => setSelectedSubtitle(null)}
+                      >
+                        <Text style={[
+                          styles.subtitleText,
+                          !selectedSubtitle && styles.selectedText
+                        ]}>
+                          Off
+                        </Text>
+                      </TouchableOpacity>
+                      {subtitles.map((sub, index) => (
+                        <TouchableOpacity
+                          key={index}
+                          style={[
+                            styles.subtitleButton,
+                            selectedSubtitle?.language === sub.language && styles.selectedButton
+                          ]}
+                          onPress={() => setSelectedSubtitle(sub)}
+                        >
+                          <Text style={[
+                            styles.subtitleText,
+                            selectedSubtitle?.language === sub.language && styles.selectedText
+                          ]}>
+                            {sub.title}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
 
-            {/* Episodes */}
-            <View style={styles.episodeSection}>
-              <Text style={styles.sectionTitle}>Episodes</Text>
-              
-              {/* Search Bar */}
-              <View style={styles.searchContainer}>
-                <MaterialIcons name="search" size={24} color="#666" />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search episodes..."
-                  placeholderTextColor="#666"
-                  value={searchQuery}
-                  onChangeText={handleSearch}
-                />
-              </View>
-
-              {/* Episode List */}
-              <View style={styles.episodeListContainer}>
-                <ScrollView
-                  ref={episodeListRef}
-                  style={styles.episodeList}
-                  contentContainerStyle={styles.episodeListContent}
-                  showsVerticalScrollIndicator={true}
-                  nestedScrollEnabled={true}
-                >
-                  {filteredEpisodes.map((episode) => (
-                    <EpisodeItem
-                      key={episode.id}
-                      episode={episode}
-                      onPress={() => {
-                        router.push({
-                          pathname: "/anime/watch/[episodeId]",
-                          params: {
-                            episodeId: episode.id,
-                            animeId: animeId,
-                            episodeNumber: episode.number,
-                            title: animeInfo?.info?.title || 'Unknown Anime',
-                            category: category
-                          }
-                        });
-                      }}
-                      onLongPress={() => {
-                        // Implement long press action
-                      }}
-                      mode={categoryAsMode}
-                      isCurrentEpisode={episode.id === episodeId}
+                {/* Episodes */}
+                <View style={styles.episodeSection}>
+                  <Text style={styles.sectionTitle}>Episodes</Text>
+                  
+                  {/* Search Bar */}
+                  <View style={styles.searchContainer}>
+                    <MaterialIcons name="search" size={24} color="#666" />
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="Search episodes..."
+                      placeholderTextColor="#666"
+                      value={searchQuery}
+                      onChangeText={handleSearch}
                     />
-                  ))}
-                </ScrollView>
-              </View>
-            </View>
-          </ScrollView>
-        )}
-      </View>
+                  </View>
+
+                  {/* Episode List */}
+                  <View style={styles.episodeListContainer}>
+                    <ScrollView
+                      ref={episodeListRef}
+                      style={styles.episodeList}
+                      contentContainerStyle={styles.episodeListContent}
+                      showsVerticalScrollIndicator={true}
+                      nestedScrollEnabled={true}
+                    >
+                      {filteredEpisodes.map((episode) => (
+                        <EpisodeItem
+                          key={episode.id}
+                          episode={episode}
+                          onPress={() => {
+                            router.push({
+                              pathname: "/anime/watch/[episodeId]",
+                              params: {
+                                episodeId: episode.id,
+                                animeId: animeId,
+                                episodeNumber: episode.number,
+                                title: episode.title || `Episode ${episode.number}`,
+                                category: category
+                              }
+                            });
+                          }}
+                          onLongPress={() => {
+                            // Implement long press action
+                          }}
+                          mode={categoryAsSubOrDub}
+                          isCurrentEpisode={episode.id === episodeId}
+                        />
+                      ))}
+                    </ScrollView>
+                  </View>
+                </View>
+              </ScrollView>
+            </>
+          )}
+        </View>
+      </VideoPlayerContext.Provider>
+      <DownloadPopup
+        visible={showDownloadPopup}
+        onClose={() => setShowDownloadPopup(false)}
+        downloadUrl={downloadUrl}
+      />
     </>
   );
 }
@@ -1321,19 +1647,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
-  videoContainer: {
-    backgroundColor: '#000',
-  },
   fullscreenContainer: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
+    backgroundColor: '#000',
     zIndex: 999,
+    width: '100%',
+    height: '100%',
   },
-  videoWrapper: {
-    flex: 1,
+  video: {
+    width: '100%',
+    aspectRatio: 16 / 9,
+  },
+  fullscreenVideo: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
     backgroundColor: '#000',
   },
   controlsContainer: {
@@ -1389,13 +1725,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  video: {
-    flex: 1,
-  },
-  fullscreenVideo: {
-    width: '100%',
-    height: '100%',
   },
   loadingContainer: {
     flex: 1,
@@ -1462,6 +1791,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1a1a',
     borderRadius: 8,
     padding: 8,
+  },
+  episodeListScroll: {  // Rename to avoid duplicate
+    flex: 1,
+  },
+  currentEpisodeItem: {  // Rename to avoid duplicate
+    backgroundColor: '#333',
   },
   episodeItem: {
     flexDirection: 'row',
@@ -1570,10 +1905,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   
-  episodeList: {
-    flex: 1,
-  },
-  
   episodeListContent: {
     paddingVertical: 8,
   },
@@ -1586,9 +1917,6 @@ const styles = StyleSheet.create({
   fillerEpisodeCard: {
     borderLeftWidth: 3,
     borderLeftColor: '#f4511e',
-  },
-  currentEpisode: {
-    backgroundColor: '#333',
   },
   episodeContent: {
     flexDirection: 'row',
@@ -1617,5 +1945,46 @@ const styles = StyleSheet.create({
     color: '#4CAF50', 
     fontSize: 12,
     fontWeight: '600',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: '90%',
+    height: '80%',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#222',
+  },
+  modalTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  webView: {
+    flex: 1,
+  },
+  loaderContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
   },
 }); 

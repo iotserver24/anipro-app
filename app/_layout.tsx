@@ -1,4 +1,4 @@
-import { Stack, router } from 'expo-router';
+import { Stack, router, usePathname } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
@@ -93,6 +93,8 @@ export default function RootLayout() {
   }, []);
 
   const [isVideoFullscreen, setIsVideoFullscreen] = useState(false);
+  const pathname = usePathname();
+  const isWatchPage = pathname?.includes('/anime/watch/');
 
   useEffect(() => {
     const subscription = ScreenOrientation.addOrientationChangeListener((event) => {
@@ -124,7 +126,7 @@ export default function RootLayout() {
             },
             contentStyle: {
               backgroundColor: '#121212',
-              paddingBottom: isVideoFullscreen ? 0 : 60,
+              paddingBottom: isVideoFullscreen || isWatchPage ? 0 : 60,
             },
             animation: 'fade',
             animationDuration: 200,
@@ -186,7 +188,7 @@ export default function RootLayout() {
             }}
           />
         </Stack>
-        {!isVideoFullscreen && <BottomTabBar />}
+        {!isVideoFullscreen && !isWatchPage && <BottomTabBar />}
       </View>
     </ThemeProvider>
   );
