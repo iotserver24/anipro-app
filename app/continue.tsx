@@ -5,30 +5,31 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import BottomNav from '../components/BottomNav';
 import { useWatchHistoryStore, WatchHistoryItem } from '../store/watchHistoryStore';
+import { formatDistanceToNow } from 'date-fns';
 
 export default function ContinueWatching() {
-  const { history, initializeStore, removeFromHistory } = useWatchHistoryStore();
+  const { history, initializeHistory, removeFromHistory } = useWatchHistoryStore();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const init = async () => {
-      try {
-        await initializeStore();
-      } catch (err) {
-        setError('Failed to load watch history');
-        console.error('Error loading watch history:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    init();
+    console.log('[DEBUG] ContinuePage: Initializing watch history');
+    setLoading(true);
+    initializeHistory().then(() => {
+      console.log('[DEBUG] ContinuePage: Watch history initialized with', history.length, 'items');
+      setLoading(false);
+    }).catch(error => {
+      console.error('[DEBUG] ContinuePage: Error initializing watch history:', error);
+      setError('Failed to load watch history');
+      setLoading(false);
+    });
   }, []);
 
   if (loading) {
     return (
-      <View style={styles.container}>
+      <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#f4511e" />
+        <Text style={styles.loadingText}>Loading watch history...</Text>
       </View>
     );
   }
@@ -47,17 +48,12 @@ export default function ContinueWatching() {
     );
   }
 
-  if (!history.length) {
+  if (!history || history.length === 0) {
     return (
-      <View style={styles.container}>
+      <View style={styles.emptyContainer}>
+        <MaterialIcons name="history" size={64} color="#666" />
         <Text style={styles.emptyText}>No watch history yet</Text>
-        <TouchableOpacity 
-          style={styles.browseButton}
-          onPress={() => router.push('/')}
-        >
-          <Text style={styles.browseButtonText}>Browse Anime</Text>
-        </TouchableOpacity>
-        <BottomNav />
+        <Text style={styles.emptySubtext}>Start watching anime to see your history here</Text>
       </View>
     );
   }
@@ -77,17 +73,43 @@ export default function ContinueWatching() {
     );
   };
 
-  const renderWatchItem = ({ item }: { item: WatchHistoryItem }) => (
-    <TouchableOpacity
-      style={styles.watchCard}
-      onPress={() => router.push({
+  const formatLastWatched = (timestamp: number) => {
+    if (!timestamp) return '';
+    try {
+      return formatDistanceToNow(timestamp, { addSuffix: true });
+    } catch (error) {
+      console.error('Error formatting timestamp:', error);
+      return '';
+    }
+  };
+
+  const handlePress = (item: WatchHistoryItem) => {
+    // Only pass resumeTime if we have valid progress
+    const resumeTimeParam = item.progress && item.progress > 0 ? 
+      item.progress.toString() : undefined;
+    
+    console.log(`[DEBUG] ContinuePage: Navigating to episode with resumeTime: ${resumeTimeParam}, progress: ${item.progress}`);
+    
+    // Force a small delay to ensure the navigation works properly
+    setTimeout(() => {
+      router.push({
         pathname: "/anime/watch/[episodeId]",
-        params: { 
+        params: {
           episodeId: item.episodeId,
           animeId: item.id,
           episodeNumber: item.episodeNumber,
+          title: item.name,
+          category: item.subOrDub,
+          resumeTime: resumeTimeParam
         }
-      })}
+      });
+    }, 100);
+  };
+
+  const renderWatchItem = ({ item }: { item: WatchHistoryItem }) => (
+    <TouchableOpacity
+      style={styles.watchCard}
+      onPress={() => handlePress(item)}
     >
       <Image source={{ uri: item.img }} style={styles.animeImage} />
       <LinearGradient
@@ -97,6 +119,7 @@ export default function ContinueWatching() {
         <View style={styles.contentContainer}>
           <Text style={styles.animeName} numberOfLines={2}>{item.name}</Text>
           <Text style={styles.episodeInfo}>Episode {item.episodeNumber}</Text>
+          <Text style={styles.lastWatchedText}>{formatLastWatched(item.lastWatched)}</Text>
           <View style={styles.progressBarContainer}>
             <View 
               style={[
@@ -180,6 +203,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.8,
   },
+  lastWatchedText: {
+    color: '#fff',
+    fontSize: 12,
+    opacity: 0.6,
+    marginTop: 2,
+  },
   progressBarContainer: {
     height: 3,
     backgroundColor: 'rgba(255,255,255,0.2)',
@@ -209,6 +238,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 16,
   },
+  emptySubtext: {
+    color: '#666',
+    fontSize: 14,
+    marginTop: 8,
+  },
   browseButton: {
     marginTop: 16,
     paddingHorizontal: 20,
@@ -227,5 +261,16 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 16,
     textAlign: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#121212',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#fff',
+    fontSize: 16,
+    marginTop: 16,
   },
 }); 

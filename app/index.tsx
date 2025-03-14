@@ -12,6 +12,7 @@ import { animeAPI } from '../services/api';
 import { AnimeResult } from '../services/api';
 import { ContinueWatching } from '../components/ContinueWatching';
 import { logger } from '../utils/logger';
+import { useWatchHistoryStore } from '../store/watchHistoryStore';
 
 const { width } = Dimensions.get('window');
 const ITEM_WIDTH = width * 0.9;
@@ -81,6 +82,7 @@ export default function Home() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { isBookmarked, addAnime, removeAnime, initializeStore } = useMyListStore();
+  const { initializeHistory } = useWatchHistoryStore();
 
   const fetchAnime = async (bypassCache: boolean = false) => {
     try {
@@ -182,6 +184,9 @@ export default function Home() {
   };
 
   useEffect(() => {
+    // Initialize watch history
+    initializeHistory();
+    
     // Initial fetch
     fetchAnime(false);
 
