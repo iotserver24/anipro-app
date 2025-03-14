@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Share, Image, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Share, Image, Alert, Platform, ImageBackground } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -7,6 +7,8 @@ import { APP_CONFIG, getAppVersion, getAppVersionCode } from '../constants/appCo
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
 import { useMyListStore } from '../store/myListStore';
+import * as FileSystem from 'expo-file-system';
+import { Asset } from 'expo-asset';
 
 interface UpdateInfo {
   latestVersion: string;
@@ -27,15 +29,38 @@ export default function AboutScreen() {
   const appVersion = getAppVersion();
   const [checking, setChecking] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
+  const [imageReady, setImageReady] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState({
-    watchedEpisodes: 0,
     watchedAnime: 0,
     totalWatchTime: 0,
+    minutesStreamed: 0,
     bookmarkedAnime: 0
   });
   
   const { history } = useWatchHistoryStore();
   const { myList } = useMyListStore();
+
+  // Preload the background image
+  useEffect(() => {
+    const preloadImage = async () => {
+      try {
+        setIsLoading(true);
+        // Preload the image using Expo's Asset system
+        const asset = Asset.fromModule(require('../assets/final.jpg'));
+        await asset.downloadAsync();
+        setImageReady(true);
+      } catch (error) {
+        console.error('Error preloading image:', error);
+        // If preloading fails, still mark as ready to avoid blocking UI
+        setImageReady(true);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    preloadImage();
+  }, []);
 
   useEffect(() => {
     // Calculate statistics from real user data
@@ -51,9 +76,9 @@ export default function AboutScreen() {
       
       // Set real statistics based on user's actual data
       setStats({
-        watchedEpisodes: history.length, // Total number of episodes in watch history
         watchedAnime: uniqueAnime.size, // Number of unique anime watched
         totalWatchTime: totalMinutes, // Total watch time in minutes
+        minutesStreamed: totalMinutes, // Minutes streamed from continue watching
         bookmarkedAnime: myList.length // Number of bookmarked anime
       });
     };
@@ -185,6 +210,11 @@ export default function AboutScreen() {
     Alert.alert('Coming Soon', 'Downloads management will be available in a future update.');
   };
 
+  const showThemeOptions = () => {
+    // This would show theme options in a future update
+    Alert.alert('Coming Soon', 'Theme customization will be available in a future update.');
+  };
+
   return (
     <>
       <Stack.Screen
@@ -198,18 +228,39 @@ export default function AboutScreen() {
       />
       <ScrollView style={styles.container}>
         {/* App Header */}
-        <LinearGradient
-          colors={[APP_CONFIG.PRIMARY_COLOR, APP_CONFIG.SECONDARY_COLOR]}
-          style={styles.header}
-        >
-          <Image
-            source={require('../assets/icon.png')}
-            style={styles.appIcon}
-            resizeMode="contain"
-          />
-          <Text style={styles.appName}>{APP_CONFIG.APP_NAME}</Text>
-          <Text style={styles.appVersion}>Version {appVersion}</Text>
-        </LinearGradient>
+        {isLoading ? (
+          <LinearGradient
+            colors={[APP_CONFIG.PRIMARY_COLOR, APP_CONFIG.SECONDARY_COLOR]}
+            style={styles.header}
+          >
+            <View style={styles.headerContent}>
+              <Image
+                source={require('../assets/icon.png')}
+                style={styles.appIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.appName}>{APP_CONFIG.APP_NAME}</Text>
+              <Text style={styles.appVersion}>Version {appVersion}</Text>
+            </View>
+          </LinearGradient>
+        ) : (
+          <ImageBackground
+            source={require('../assets/final.jpg')}
+            style={styles.header}
+            blurRadius={5}
+            defaultSource={require('../assets/icon.png')}
+          >
+            <View style={styles.headerContent}>
+              <Image
+                source={require('../assets/icon.png')}
+                style={styles.appIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.appName}>{APP_CONFIG.APP_NAME}</Text>
+              <Text style={styles.appVersion}>Version {appVersion}</Text>
+            </View>
+          </ImageBackground>
+        )}
 
         {/* App Information */}
         <View style={styles.section}>
@@ -230,9 +281,9 @@ export default function AboutScreen() {
           <View style={styles.infoCard}>
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <MaterialIcons name="movie" size={24} color="#f4511e" />
-                <Text style={styles.statValue}>{stats.watchedEpisodes}</Text>
-                <Text style={styles.statLabel}>Episodes</Text>
+                <MaterialIcons name="timer" size={24} color="#f4511e" />
+                <Text style={styles.statValue}>{stats.minutesStreamed}</Text>
+                <Text style={styles.statLabel}>Minutes Streamed</Text>
               </View>
               
               <View style={styles.statItem}>
@@ -303,11 +354,11 @@ export default function AboutScreen() {
               />
             </TouchableOpacity>
             <SectionDivider />
-            <TouchableOpacity>
+            <TouchableOpacity onPress={showThemeOptions}>
               <InfoRow 
                 icon="brightness-6" 
                 label="App Theme" 
-                value="Dark" 
+                value="Coming Soon" 
                 isLink 
               />
             </TouchableOpacity>
@@ -371,11 +422,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
   header: {
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    overflow: 'hidden',
+  },
+  headerContent: {
     alignItems: 'center',
     paddingVertical: 30,
     paddingHorizontal: 20,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)', // Semi-transparent overlay
   },
   appIcon: {
     width: 80,

@@ -1,0 +1,228 @@
+# AniSurge Deep Linking Implementation Guide for Android
+
+## Overview
+
+This document outlines how to implement deep linking between the app.animeverse.cc website (built with Nuxt) and the AniSurge Android app. The website serves as a landing page for shared content from the app, and deep linking allows users to be redirected from the website to the specific content within the app.
+
+## Share URL Structure
+
+Based on the app's code, there are two types of share URLs:
+
+1. **Anime Share**: `https://app.animeverse.cc/share/{animeId}`
+2. **Episode Share**: `https://app.animeverse.cc/share/{animeId}/{episodeNumber}`
+
+## Deep Linking Components
+
+### 1. Android App Configuration
+
+#### 1.1 AndroidManifest.xml Configuration
+
+The Android app needs to declare intent filters in the AndroidManifest.xml to handle deep links:
+
+```xml
+<activity
+    android:name=".MainActivity"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+    </intent-filter>
+    
+    <!-- Deep Link Intent Filter -->
+    <intent-filter android:autoVerify="true">
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        
+        <!-- URI scheme for deep linking -->
+        <data
+            android:scheme="https"
+            android:host="app.animeverse.cc"
+            android:pathPrefix="/share" />
+    </intent-filter>
+</activity>
+```
+
+#### 1.2 Deep Link Handling in the App
+
+The app needs to extract parameters from the incoming intent and navigate to the appropriate screen:
+
+- For anime shares: Navigate to the anime details screen with the animeId
+- For episode shares: Navigate to the episode watch screen with episodeId, animeId, and other required parameters
+
+### 2. Website Implementation (Nuxt.js)
+
+#### 2.1 Page Structure
+
+Create the following pages in your Nuxt.js project:
+
+- `/share/[animeId].vue` - For handling anime shares
+- `/share/[animeId]/[episodeNumber].vue` - For handling episode shares
+
+#### 2.2 Deep Link Integration
+
+Each page should:
+1. Fetch the relevant data based on URL parameters
+2. Display appropriate content
+3. Include deep linking mechanism to open the app
+
+#### 2.3 Android Intent URL Format
+
+For Android deep linking, use the following format:
+
+```
+intent://app.animeverse.cc/share/{params}#Intent;scheme=https;package=com.anisurge.app;S.browser_fallback_url=https://app.animeverse.cc/share/{params};end
+```
+
+Where:
+- `package=com.anisurge.app` should be replaced with your actual package name
+- `{params}` is either `{animeId}` or `{animeId}/{episodeNumber}`
+- `S.browser_fallback_url` is the fallback URL if the app isn't installed
+
+## Implementation Details
+
+### 1. Data Requirements
+
+#### For Anime Share Page:
+- Anime ID (from URL)
+- Anime title
+- Anime image
+- Description
+- Episode count (sub/dub)
+
+#### For Episode Share Page:
+- Anime ID (from URL)
+- Episode number (from URL)
+- Anime title
+- Episode title
+- Audio type (sub/dub)
+- Filler status
+
+### 2. Deep Link Button Implementation
+
+Create a component that:
+1. Detects if the user is on Android
+2. Constructs the appropriate intent URL
+3. Provides a fallback to Google Play Store if the app isn't installed
+
+### 3. Metadata for Better Sharing
+
+Include proper Open Graph and Twitter Card metadata for better sharing experience:
+
+```html
+<meta property="og:title" content="[Anime/Episode Title]">
+<meta property="og:description" content="[Description]">
+<meta property="og:image" content="[Image URL]">
+<meta property="og:url" content="https://app.animeverse.cc/share/[params]">
+```
+
+## Technical Implementation Guide
+
+### 1. Detecting Android Devices
+
+Use the user agent to detect if the visitor is using an Android device:
+
+```javascript
+const isAndroid = () => {
+  return /Android/i.test(navigator.userAgent);
+};
+```
+
+### 2. Creating the Intent URL
+
+For Android, construct the intent URL based on the content type:
+
+```javascript
+const createIntentUrl = (animeId, episodeNumber = null) => {
+  const packageName = 'com.anisurge.app'; // Replace with your actual package name
+  const path = episodeNumber 
+    ? `/share/${animeId}/${episodeNumber}` 
+    : `/share/${animeId}`;
+  const fallbackUrl = `https://app.animeverse.cc${path}`;
+  
+  return `intent://app.animeverse.cc${path}#Intent;scheme=https;package=${packageName};S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
+};
+```
+
+### 3. Handling Navigation
+
+When the user clicks the "Open in App" button:
+
+```javascript
+const openInApp = (animeId, episodeNumber = null) => {
+  if (isAndroid()) {
+    const intentUrl = createIntentUrl(animeId, episodeNumber);
+    window.location.href = intentUrl;
+  } else {
+    // Handle other platforms or show download prompt
+    window.location.href = 'https://play.google.com/store/apps/details?id=com.anisurge.app';
+  }
+};
+```
+
+### 4. Fallback Mechanism
+
+If the app isn't installed, the user should be redirected to:
+1. Google Play Store (if you specify a market:// URL)
+2. Your fallback URL (as specified in S.browser_fallback_url)
+
+## Testing Deep Links
+
+### 1. ADB Testing
+
+Test deep links using ADB with the following command:
+
+```
+adb shell am start -a android.intent.action.VIEW -d "https://app.animeverse.cc/share/ANIME_ID/EPISODE_NUMBER" com.anisurge.app
+```
+
+### 2. Browser Testing
+
+Test by opening the website on an Android device and clicking the "Open in App" button.
+
+## Additional Considerations
+
+### 1. Digital Asset Links
+
+For app links to work properly (without the disambiguation dialog), set up Digital Asset Links:
+
+1. Create an `assetlinks.json` file and place it at `https://app.animeverse.cc/.well-known/assetlinks.json`
+2. The file should contain:
+
+```json
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.anisurge.app",
+    "sha256_cert_fingerprints": ["SHA256_FINGERPRINT_OF_YOUR_APP_SIGNING_KEY"]
+  }
+}]
+```
+
+### 2. App Not Installed Experience
+
+Design a compelling experience for users who don't have the app installed:
+- Show screenshots of the app
+- Highlight key features
+- Provide clear download buttons
+
+## Integration with Existing Share Functionality
+
+The app currently implements sharing in `app/anime/[id].tsx` with two methods:
+
+1. `handleShare()` - Shares anime details with URL format: `https://app.animeverse.cc/share/${id}`
+2. `handleEpisodeShare(episode)` - Shares episode with URL format: `https://app.animeverse.cc/share/${id}/${episode.number}`
+
+The website needs to handle both these URL formats and provide deep linking back to the appropriate screens in the app.
+
+## Summary
+
+This implementation will create a seamless experience where:
+1. Users can share anime/episodes from the app
+2. Recipients open the shared link in a browser
+3. The website displays relevant information about the shared content
+4. Users can click to open the specific content directly in the app
+5. If the app isn't installed, they're directed to download it
+
+By following this guide, you'll create an effective deep linking system between your Nuxt.js website and Android app for the AniSurge sharing functionality. 
