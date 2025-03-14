@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, Dimensions, Animated, ActivityIndicator, AppState } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, Dimensions, Animated, ActivityIndicator, AppState, Alert, Linking, Platform, Share } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -13,6 +13,8 @@ import { AnimeResult } from '../services/api';
 import { ContinueWatching } from '../components/ContinueWatching';
 import { logger } from '../utils/logger';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
+import Constants from 'expo-constants';
+import { APP_CONFIG, getAppVersion, getAppVersionCode } from '../constants/appConfig';
 
 const { width } = Dimensions.get('window');
 const ITEM_WIDTH = width * 0.9;
@@ -69,6 +71,55 @@ const mapToAnimeItem = (item: any): AnimeItem => ({
   }
 });
 
+interface UpdateInfo {
+  latestVersion: string;
+  minVersion: string;
+  versionCode: number;
+  changelog: string[];
+  downloadUrls: {
+    universal: string;
+    arm64: string;
+    x86_64: string;
+    x86: string;
+  };
+  releaseDate: string;
+  isForced: boolean;
+}
+
+const countUser = async () => {
+  try {
+    const response = await fetch('https://app.animeverse.cc/api/count', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        deviceInfo: {
+          brand: Platform.OS,
+          model: Platform.Version.toString(),
+          systemVersion: Platform.Version.toString(),
+          isTablet: Platform.isPad,
+          architecture: Platform.OS === 'android' ? 'arm64' : 'universal'
+        }
+      })
+    });
+    const data = await response.json();
+    logger.info('User counted:', data);
+  } catch (error) {
+    logger.error('Error counting user:', error);
+  }
+};
+
+const shareApp = async () => {
+  try {
+    await Share.share({
+      message: `Check out ${APP_CONFIG.APP_NAME}, the best anime streaming app! Download now: ${APP_CONFIG.WEBSITE_URL}`,
+    });
+  } catch (error) {
+    console.error('Error sharing app:', error);
+  }
+};
+
 export default function Home() {
   const [recentAnime, setRecentAnime] = useState<AnimeItem[]>([]);
   const [trendingAnime, setTrendingAnime] = useState<AnimeItem[]>([]);
@@ -83,6 +134,8 @@ export default function Home() {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { isBookmarked, addAnime, removeAnime, initializeStore } = useMyListStore();
   const { initializeHistory } = useWatchHistoryStore();
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [showUpdateBanner, setShowUpdateBanner] = useState(false);
 
   const fetchAnime = async (bypassCache: boolean = false) => {
     try {
@@ -183,6 +236,77 @@ export default function Home() {
     }
   };
 
+  const checkForUpdates = async () => {
+    try {
+      const response = await fetch(`${APP_CONFIG.API_BASE_URL}/updates`);
+      const updateData: UpdateInfo = await response.json();
+      
+      const currentVersion = getAppVersion();
+      const currentVersionCode = getAppVersionCode();
+      
+      if (updateData.versionCode > currentVersionCode || 
+          updateData.latestVersion > currentVersion) {
+        setUpdateInfo(updateData);
+        
+        // If it's a forced update, show the dialog immediately
+        if (updateData.isForced) {
+          Alert.alert(
+            'Update Required',
+            `A new version (${updateData.latestVersion}) is available!\n\nWhat's New:\n${updateData.changelog.map(change => `• ${change}`).join('\n')}`,
+            [
+              {
+                text: 'Update Now',
+                onPress: () => {
+                  const downloadUrl = updateData.downloadUrls.universal;
+                  Linking.openURL(downloadUrl);
+                }
+              }
+            ],
+            { 
+              cancelable: false // Make it unskippable
+            }
+          );
+        } else {
+          // For non-forced updates, show the banner
+          setShowUpdateBanner(true);
+        }
+      }
+    } catch (error) {
+      logger.error('Error checking for updates:', error);
+    }
+  };
+
+  const handleUpdate = () => {
+    if (!updateInfo) return;
+    
+    const buttons = [
+      {
+        text: 'Update Now',
+        onPress: () => {
+          const downloadUrl = updateInfo.downloadUrls.universal;
+          Linking.openURL(downloadUrl);
+        }
+      }
+    ];
+
+    // Only add "Later" button if it's not a forced update
+    if (!updateInfo.isForced) {
+      buttons.push({
+        text: 'Later',
+        style: 'cancel'
+      });
+    }
+
+    Alert.alert(
+      'Update Required',
+      `A new version (${updateInfo.latestVersion}) is available!\n\nWhat's New:\n${updateInfo.changelog.map(change => `• ${change}`).join('\n')}`,
+      buttons,
+      { 
+        cancelable: false // Make it unskippable
+      }
+    );
+  };
+
   useEffect(() => {
     // Initialize watch history
     initializeHistory();
@@ -190,10 +314,15 @@ export default function Home() {
     // Initial fetch
     fetchAnime(false);
 
+    // Count user on app start
+    countUser();
+
     // Setup app state subscription
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
         fetchAnime(false);
+        // Count user when app comes to foreground
+        countUser();
       }
     });
 
@@ -207,6 +336,22 @@ export default function Home() {
 
   useEffect(() => {
     initializeStore();
+  }, []);
+
+  useEffect(() => {
+    // Check for updates on app start
+    checkForUpdates();
+    
+    // Check for updates when app comes to foreground
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (nextAppState === 'active') {
+        checkForUpdates();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   const onRefresh = () => {
@@ -341,6 +486,18 @@ export default function Home() {
 
   return (
     <View style={styles.container}>
+      {showUpdateBanner && updateInfo && (
+        <TouchableOpacity 
+          style={styles.updateBanner}
+          onPress={handleUpdate}
+        >
+          <MaterialIcons name="system-update" size={24} color="#fff" />
+          <Text style={styles.updateText}>
+            Update Available: Version {updateInfo.latestVersion}
+          </Text>
+          <MaterialIcons name="arrow-forward" size={24} color="#fff" />
+        </TouchableOpacity>
+      )}
       <ScrollView
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f4511e" />
@@ -556,5 +713,18 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     padding: 20,
+  },
+  updateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f4511e',
+    padding: 12,
+    gap: 8,
+  },
+  updateText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 }); 

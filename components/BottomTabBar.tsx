@@ -30,6 +30,12 @@ export default function BottomTabBar() {
       icon: 'bookmark',
       IconComponent: MaterialIcons
     },
+    {
+      name: 'About',
+      path: '/about',
+      icon: 'info',
+      IconComponent: MaterialIcons
+    }
     // {
     //   name: 'Continue',
     //   path: '/continue',

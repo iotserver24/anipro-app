@@ -26,6 +26,19 @@ export const ContinueWatching = () => {
     return null;
   }
 
+  // Group history items by anime ID and get the most recent episode for each
+  const groupedHistory = history.reduce((acc, item) => {
+    if (!acc[item.id] || item.lastWatched > acc[item.id].lastWatched) {
+      acc[item.id] = item;
+    }
+    return acc;
+  }, {} as Record<string, typeof history[0]>);
+
+  // Convert grouped history to array and sort by last watched time
+  const uniqueHistory = Object.values(groupedHistory)
+    .sort((a, b) => b.lastWatched - a.lastWatched)
+    .slice(0, 5);
+
   const formatProgress = (progress: number, duration: number) => {
     if (!progress || !duration) return 0;
     const percentage = (progress / duration) * 100;
@@ -107,7 +120,7 @@ export const ContinueWatching = () => {
         </TouchableOpacity>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        {history.slice(0, 5).map((item, index) => (
+        {uniqueHistory.map((item, index) => (
           <TouchableOpacity
             key={`${item.episodeId}-${index}`}
             style={styles.card}

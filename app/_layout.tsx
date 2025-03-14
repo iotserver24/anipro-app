@@ -204,6 +204,14 @@ export default function RootLayout() {
               animation: 'slide_from_right',
             }}
           />
+          <Stack.Screen
+            name="about"
+            options={{
+              title: 'About',
+              headerShown: true,
+              animation: 'slide_from_right',
+            }}
+          />
         </Stack>
         {!isVideoFullscreen && !isWatchPage && <BottomTabBar />}
       </View>

@@ -671,6 +671,18 @@ export default function WatchEpisode() {
     if (animeId) {
       fetchAnimeInfo();
     }
+
+    // Count anime episode when page loads
+    try {
+      fetch('https://app.animeverse.cc/api/anime-count', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+    } catch (err) {
+      console.error('Error updating anime count:', err);
+    }
   }, [episodeId, animeId]);
 
   useEffect(() => {
@@ -738,6 +750,14 @@ export default function WatchEpisode() {
       
       if (!sources || !sources.sources || sources.sources.length === 0) {
         throw new Error('No streaming sources available');
+      }
+
+      // Set the full video data from the API response
+      setVideoData(sources);
+      
+      // Set download URL if available
+      if (sources.download) {
+        setDownloadUrl(sources.download);
       }
 
       // Get the m3u8 URL
@@ -850,61 +870,39 @@ export default function WatchEpisode() {
     }
   };
 
-  const handlePlaybackStatusUpdate = (data: VideoProgress) => {
-    const newTime = data.currentTime;
-    const newDuration = data.seekableDuration;
-    
-    setCurrentTime(newTime);
-    setDuration(newDuration);
-    
-    // Only show buffering if we're actually waiting for data and playing
-    if (data.isBuffering && isPlaying && data.playableDuration - newTime < 2) {
-      setIsBuffering(true);
-    } else {
-      setIsBuffering(false);
-    }
-    
-    setIsPlaying(data.isPlaying);
-
-    // Handle video load completion
-    if (!isVideoReady && newDuration > 0) {
-      handleVideoLoad();
-    }
-    
-    // Save progress every 5 seconds while playing
-    const now = Date.now();
-    if (now - lastSaveTime >= 5000) {
-      setLastSaveTime(now);
-      if (animeInfo && newDuration > 0) {
+  const handleProgress = (data: VideoProgress) => {
+    if (!isSeeking && !isQualityChanging) {
+      const newTime = data.currentTime;
+      const newDuration = data.seekableDuration;
+      
+      setCurrentTime(newTime);
+      setDuration(newDuration);
+      
+      // Save progress every 3 seconds and only if we have valid progress
+      const now = Date.now();
+      if (now - lastSaveTime >= 3000 && animeInfo && newTime > 0) {
+        setLastSaveTime(now);
+        
+        // Save progress
         addToHistory({
           id: animeId as string,
-          name: animeInfo.title || 'Unknown Anime',
-          img: animeInfo.image || '',
-          episodeId: episodeId as string,
+          name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
+          img: animeInfo.image || animeInfo.info?.image || '',
+          episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
           episodeNumber: Number(episodeNumber),
           timestamp: now,
           progress: newTime,
           duration: newDuration,
           lastWatched: now,
-          subOrDub: categoryAsSubOrDub
+          subOrDub: (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub'
         });
       }
     }
-    
-    // Auto play next episode when current one ends
-    if (data.didJustFinish) {
-      onVideoEnd();
-    }
-  };
 
-  const onSliderValueChange = (value: number) => {
-    if (videoRef.current) {
-      videoRef.current.setPositionAsync(value * 1000);
+    // Handle intro/outro skipping if available
+    if (videoData?.intro && data.currentTime >= videoData.intro.start && data.currentTime <= videoData.intro.end) {
+      handleSeek(videoData.intro.end);
     }
-  };
-
-  const togglePlayPause = () => {
-    setIsPlaying(!isPlaying);
   };
 
   const onVideoEnd = () => {
@@ -921,6 +919,16 @@ export default function WatchEpisode() {
         }
       });
     }
+  };
+
+  const onSliderValueChange = (value: number) => {
+    if (videoRef.current) {
+      videoRef.current.setPositionAsync(value * 1000);
+    }
+  };
+
+  const togglePlayPause = () => {
+    setIsPlaying(!isPlaying);
   };
 
   const handlePlaybackSpeedChange = (speed: number) => {
@@ -981,67 +989,6 @@ export default function WatchEpisode() {
     }
   };
 
-  const handleProgress = (data: VideoProgress) => {
-    if (!isSeeking && !isQualityChanging) {
-      const newTime = data.currentTime;
-      const newDuration = data.seekableDuration;
-      
-      setCurrentTime(newTime);
-      setDuration(newDuration);
-      
-      // Save progress every 3 seconds and only if we have valid progress
-      const now = Date.now();
-      if (now - lastSaveTime >= 3000 && animeInfo && newTime > 0) {
-        setLastSaveTime(now);
-        
-        // Save progress
-        addToHistory({
-          id: animeId as string,
-          name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
-          img: animeInfo.image || animeInfo.info?.image || '',
-          episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
-          episodeNumber: Number(episodeNumber),
-          timestamp: now,
-          progress: newTime,
-          duration: newDuration,
-          lastWatched: now,
-          subOrDub: (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub'
-        });
-      }
-    }
-
-    // Handle intro/outro skipping if available
-    if (videoData?.intro && data.currentTime >= videoData.intro.start && data.currentTime <= videoData.intro.end) {
-      handleSeek(videoData.intro.end);
-    }
-  };
-
-  // Fetch video data
-  useEffect(() => {
-    const fetchVideoData = async () => {
-      try {
-        const episodeIdString = typeof episodeId === 'string' ? episodeId : episodeId[0];
-        const response = await animeAPI.getVideoSource(episodeIdString);
-        setVideoData({
-          ...response,
-          subtitles: response.subtitles || []
-        });
-      } catch (error) {
-        logger.error('Error fetching video:', error);
-      }
-    };
-    
-    fetchVideoData();
-  }, [episodeId]);
-
-  // Update useEffect to set videoUrl when videoData changes
-  useEffect(() => {
-    if (videoData?.sources && videoData.sources.length > 0) {
-      setVideoUrl(videoData.sources[0].url);
-    }
-  }, [videoData]);
-
-  // Video control handlers
   const handleSeek = async (value: number) => {
     if (videoRef.current) {
       const wasPlaying = isPlaying;
