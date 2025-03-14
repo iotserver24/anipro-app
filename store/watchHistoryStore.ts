@@ -61,18 +61,6 @@ export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
     console.log(`[DEBUG] WatchHistoryStore: Adding to history - episodeId: ${item.episodeId}, progress: ${item.progress}, duration: ${item.duration}`);
 
     const currentHistory = get().history;
-    // Find if this exact episode already exists in history
-    const existingItemIndex = currentHistory.findIndex(
-      (historyItem) => historyItem.episodeId === item.episodeId
-    );
-
-    console.log(`[DEBUG] WatchHistoryStore: Existing item index: ${existingItemIndex}`);
-    if (existingItemIndex !== -1) {
-      console.log(`[DEBUG] WatchHistoryStore: Existing progress: ${currentHistory[existingItemIndex].progress}`);
-    }
-
-    // Create a copy of the current history
-    const newHistory = [...currentHistory];
     const currentTime = Date.now();
     
     // Prepare the validated item with all required fields
@@ -81,57 +69,28 @@ export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
       name: item.name?.trim() || 'Unknown Anime',
       img: item.img?.trim() || FALLBACK_IMAGE,
       episodeNumber: item.episodeNumber || 1,
-      // Only use the provided progress if it's greater than 0, otherwise keep existing progress
-      progress: item.progress > 0 ? item.progress : 
-               (existingItemIndex !== -1 ? newHistory[existingItemIndex].progress : 0),
-      duration: item.duration > 0 ? item.duration : 
-               (existingItemIndex !== -1 ? newHistory[existingItemIndex].duration : 0),
+      progress: item.progress > 0 ? item.progress : 0,
+      duration: item.duration > 0 ? item.duration : 0,
       timestamp: item.timestamp || currentTime,
       lastWatched: currentTime // Always update lastWatched to current time
     };
 
     console.log(`[DEBUG] WatchHistoryStore: Validated progress: ${validatedItem.progress}`);
 
-    // If this episode already exists in history, update it
-    if (existingItemIndex !== -1) {
-      // Only update progress if the new progress is greater than 0
-      // and greater than the existing progress or we're within 10 seconds of the end
-      const shouldUpdateProgress = 
-        item.progress > 0 && (
-          item.progress > newHistory[existingItemIndex].progress || 
-          (item.duration > 0 && item.progress >= item.duration - 10)
-        );
-      
-      console.log(`[DEBUG] WatchHistoryStore: Should update progress: ${shouldUpdateProgress}`);
-      
-      if (shouldUpdateProgress) {
-        console.log(`[DEBUG] WatchHistoryStore: Updating progress from ${newHistory[existingItemIndex].progress} to ${validatedItem.progress}`);
-        newHistory[existingItemIndex] = validatedItem;
-      } else {
-        // Just update the lastWatched time
-        newHistory[existingItemIndex].lastWatched = currentTime;
-      }
-    } else {
-      // This is a new episode, add it to history
-      console.log(`[DEBUG] WatchHistoryStore: Adding new episode to history with progress: ${validatedItem.progress}`);
-      newHistory.push(validatedItem);
-    }
+    // Create new history array with the new item
+    const newHistory = [...currentHistory, validatedItem];
 
     // Sort by lastWatched (most recent first)
     newHistory.sort((a, b) => b.lastWatched - a.lastWatched);
-    
-    // Limit history to 20 items
-    const limitedHistory = newHistory.slice(0, 20);
-    
-    // Save to storage
-    const success = await setItem(STORAGE_KEY, limitedHistory);
-    if (success) {
-      console.log(`[DEBUG] WatchHistoryStore: Saved ${limitedHistory.length} history items to storage`);
-    } else {
-      console.error('[DEBUG] WatchHistoryStore: Failed to save history to storage');
-    }
 
-    set({ history: limitedHistory });
+    // Save to storage
+    try {
+      await setItem(STORAGE_KEY, newHistory);
+      set({ history: newHistory });
+      console.log(`[DEBUG] WatchHistoryStore: Saved ${newHistory.length} history items to storage`);
+    } catch (error) {
+      logger.error('Error saving watch history:', error);
+    }
   },
 
   updateProgress: async (episodeId: string, progress: number) => {

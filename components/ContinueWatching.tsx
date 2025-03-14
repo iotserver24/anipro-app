@@ -20,7 +20,7 @@ const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.35;
 
 export const ContinueWatching = () => {
-  const { history, clearHistory, removeFromHistory } = useWatchHistoryStore();
+  const { history, removeFromHistory } = useWatchHistoryStore();
 
   if (!history || history.length === 0) {
     return null;
@@ -98,33 +98,16 @@ export const ContinueWatching = () => {
     <View style={styles.container}>
       <View style={styles.headerContainer}>
         <Text style={styles.title}>Continue Watching</Text>
-        {history.length > 0 && (
-          <TouchableOpacity 
-            onPress={() => {
-              Alert.alert(
-                "Clear History",
-                "Are you sure you want to clear your watch history?",
-                [
-                  {
-                    text: "Cancel",
-                    style: "cancel"
-                  },
-                  {
-                    text: "Clear",
-                    onPress: clearHistory,
-                    style: "destructive"
-                  }
-                ]
-              );
-            }}
-            style={styles.clearButton}
-          >
-            <Text style={styles.clearButtonText}>Clear All</Text>
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity
+          style={styles.seeMoreButton}
+          onPress={() => router.push('/history')}
+        >
+          <Text style={styles.seeMoreText}>See More</Text>
+          <MaterialIcons name="chevron-right" size={24} color="#f4511e" />
+        </TouchableOpacity>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        {history.map((item, index) => (
+        {history.slice(0, 5).map((item, index) => (
           <TouchableOpacity
             key={`${item.episodeId}-${index}`}
             style={styles.card}
@@ -252,13 +235,6 @@ const styles = StyleSheet.create({
     paddingRight: 10,
     marginBottom: 10,
   },
-  clearButton: {
-    padding: 8,
-  },
-  clearButtonText: {
-    color: '#f4511e',
-    fontSize: 14,
-  },
   removeButton: {
     position: 'absolute',
     top: 8,
@@ -272,5 +248,14 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 10,
     marginTop: 2,
+  },
+  seeMoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  seeMoreText: {
+    color: '#f4511e',
+    fontSize: 16,
+    marginRight: 4,
   },
 }); 
