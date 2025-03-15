@@ -633,6 +633,12 @@ export default function WatchEpisode() {
   const navigation = useNavigation();
   const [showDownloadPopup, setShowDownloadPopup] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  // Add a ref to track navigation state
+  const isNavigating = useRef(false);
+  // Add a ref to track the last progress update to throttle history updates
+  const lastProgressUpdateRef = useRef<number>(0);
+  // Add a ref to track the last progress value to avoid duplicate updates
+  const lastProgressValueRef = useRef<number>(0);
 
   useEffect(() => {
     // If resumeTime is provided, use it directly and skip getting from history
@@ -738,11 +744,48 @@ export default function WatchEpisode() {
     }
   };
 
-  const fetchEpisodeData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
+  // Add a function to determine if we should use the resume position
+  const shouldUseResumePosition = (resumePos: number, duration: number): boolean => {
+    // If resume position is very close to the end (within 10 seconds of the end), don't use it
+    if (duration > 0 && resumePos > 0 && duration - resumePos < 10) {
+      console.log(`[DEBUG] Ignoring resume position ${resumePos} because it's too close to the end of ${duration}`);
+      return false;
+    }
+    // If resume position is greater than duration, don't use it
+    if (duration > 0 && resumePos > duration) {
+      console.log(`[DEBUG] Ignoring resume position ${resumePos} because it's greater than duration ${duration}`);
+      return false;
+    }
+    // If resume position is very small (less than 10 seconds), don't use it for auto-navigation
+    if (resumePos < 10 && isNavigating.current) {
+      console.log(`[DEBUG] Ignoring small resume position ${resumePos} after navigation`);
+      return false;
+    }
+    return true;
+  };
 
+  // Modify the fetchEpisodeData function to reset resume position when needed
+  const fetchEpisodeData = async () => {
+    setLoading(true);
+    setError(null);
+    setRetryCount(0);
+    
+    try {
+      // Reset video state
+      setStreamingUrl(null);
+      setSources([]);
+      setSubtitles([]);
+      setIsBuffering(false);
+      setIsPlaying(true);
+      
+      // Reset resume position if we just navigated from another episode
+      if (isNavigating.current) {
+        console.log(`[DEBUG] Resetting resume position after navigation`);
+        setResumePosition(0);
+        isNavigating.current = false;
+      }
+      
+      // Rest of the function remains the same
       const sources = await animeAPI.getEpisodeSources(
         episodeId as string, 
         category === 'dub'
@@ -870,7 +913,8 @@ export default function WatchEpisode() {
     }
   };
 
-  const handleProgress = (data: VideoProgress) => {
+  // Optimize the handleProgress function to prevent excessive updates
+  const handleProgress = useCallback((data: VideoProgress) => {
     if (!isSeeking && !isQualityChanging) {
       const newTime = data.currentTime;
       const newDuration = data.seekableDuration;
@@ -878,10 +922,19 @@ export default function WatchEpisode() {
       setCurrentTime(newTime);
       setDuration(newDuration);
       
-      // Save progress every 3 seconds and only if we have valid progress
+      // Throttle progress updates to reduce UI load
       const now = Date.now();
-      if (now - lastSaveTime >= 3000 && animeInfo && newTime > 0) {
+      // Only save progress every 3 seconds AND if progress has changed by at least 1 second
+      if (now - lastProgressUpdateRef.current >= 3000 && 
+          animeInfo && 
+          newTime > 0 && 
+          Math.abs(newTime - lastProgressValueRef.current) > 1) {
+        
+        lastProgressUpdateRef.current = now;
+        lastProgressValueRef.current = newTime;
         setLastSaveTime(now);
+        
+        console.log(`[DEBUG] Saving progress: ${newTime}/${newDuration}`);
         
         // Save progress
         addToHistory({
@@ -903,10 +956,24 @@ export default function WatchEpisode() {
     if (videoData?.intro && data.currentTime >= videoData.intro.start && data.currentTime <= videoData.intro.end) {
       handleSeek(videoData.intro.end);
     }
-  };
+  }, [isSeeking, isQualityChanging, animeInfo, animeId, episodeId, episodeNumber, category, videoData, handleSeek]);
+
+  // Add a useEffect to initialize the progress refs
+  useEffect(() => {
+    lastProgressUpdateRef.current = 0;
+    lastProgressValueRef.current = 0;
+  }, [episodeId]);
 
   const onVideoEnd = () => {
+    // Add a check to prevent auto-shifting if we're already navigating
+    if (isNavigating.current) {
+      console.log(`[DEBUG] Already navigating, ignoring onVideoEnd`);
+      return;
+    }
+    
     if (currentEpisodeIndex < episodes.length - 1) {
+      console.log(`[DEBUG] Video ended, navigating to next episode`);
+      isNavigating.current = true;
       const nextEpisode = episodes[currentEpisodeIndex + 1];
       router.push({
         pathname: "/anime/watch/[episodeId]",
@@ -915,7 +982,8 @@ export default function WatchEpisode() {
           animeId: animeId as string,
           episodeNumber: nextEpisode.number,
           title: nextEpisode.title,
-          category: category
+          category: category,
+          resumeTime: "0" // Force start from beginning
         }
       });
     }
@@ -1297,43 +1365,12 @@ export default function WatchEpisode() {
     };
   }, []);
 
-  // Update the handleLoad function
-  const handleLoad = (status: VideoProgress) => {
-    if (!status) return;
-    
-    // Set duration
-    const videoDuration = status.seekableDuration;
-    setDuration(videoDuration);
-    
-    console.log(`[DEBUG] VideoPlayer: Video loaded, duration: ${videoDuration}`);
-    
-    // Handle initial position
-    if (resumePosition > 0 && !isVideoReady) {
-      console.log(`[DEBUG] VideoPlayer: Seeking to resumePosition: ${resumePosition}`);
-      // Use a timeout to ensure the video is ready
-      setTimeout(() => {
-        handleSeek(resumePosition);
-        setIsVideoReady(true);
-      }, 300);
-    } else if (isPlaying) {
-      // Ensure we're playing if we should be
-      videoRef.current?.play().catch((error: Error) => {
-        console.error('[DEBUG] VideoPlayer: Error playing after load:', error);
-      });
-    }
-  };
-
-  // Handle download button press
-  const handleDownload = useCallback(() => {
-    if (videoData?.download) {
-      setDownloadUrl(videoData.download);
-      setShowDownloadPopup(true);
-    }
-  }, [videoData]);
-
   // Handle previous episode navigation
   const handlePreviousEpisode = useCallback(() => {
+    if (isNavigating.current) return;
+    
     if (currentEpisodeIndex > 0) {
+      isNavigating.current = true;
       const prevEpisode = episodes[currentEpisodeIndex - 1];
       router.push({
         pathname: "/anime/watch/[episodeId]",
@@ -1350,7 +1387,10 @@ export default function WatchEpisode() {
 
   // Handle next episode navigation
   const handleNextEpisode = useCallback(() => {
+    if (isNavigating.current) return;
+    
     if (currentEpisodeIndex < episodes.length - 1) {
+      isNavigating.current = true;
       const nextEpisode = episodes[currentEpisodeIndex + 1];
       router.push({
         pathname: "/anime/watch/[episodeId]",
@@ -1364,6 +1404,50 @@ export default function WatchEpisode() {
       });
     }
   }, [currentEpisodeIndex, episodes, router, animeId, category]);
+
+  // Reset navigation state when component mounts or episodeId changes
+  useEffect(() => {
+    isNavigating.current = false;
+  }, [episodeId]);
+
+  // Modify the handleLoad function to check if we should use the resume position
+  const handleLoad = (status: VideoProgress) => {
+    if (!status) return;
+    
+    // Set duration
+    const videoDuration = status.seekableDuration;
+    setDuration(videoDuration);
+    
+    console.log(`[DEBUG] VideoPlayer: Video loaded, duration: ${videoDuration}`);
+    
+    // Only use resume position if it makes sense
+    if (resumePosition > 0 && !isVideoReady && shouldUseResumePosition(resumePosition, videoDuration)) {
+      console.log(`[DEBUG] VideoPlayer: Seeking to resumePosition: ${resumePosition}`);
+      // Use a timeout to ensure the video is ready
+      setTimeout(() => {
+        handleSeek(resumePosition);
+        setIsVideoReady(true);
+      }, 300);
+    } else if (isPlaying) {
+      // Start from beginning
+      if (resumePosition > 0 && !shouldUseResumePosition(resumePosition, videoDuration)) {
+        console.log(`[DEBUG] VideoPlayer: Starting from beginning instead of resume position`);
+        handleSeek(0);
+      }
+      // Ensure we're playing if we should be
+      videoRef.current?.play().catch((error: Error) => {
+        console.error('[DEBUG] VideoPlayer: Error playing after load:', error);
+      });
+    }
+  };
+
+  // Handle download button press
+  const handleDownload = useCallback(() => {
+    if (videoData?.download) {
+      setDownloadUrl(videoData.download);
+      setShowDownloadPopup(true);
+    }
+  }, [videoData]);
 
   if (loading) {
     return (

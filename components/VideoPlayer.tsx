@@ -96,8 +96,16 @@ const VideoPlayer = ({
   const wasPlayingBeforeQualityChange = useRef(isPlaying);
   const orientationChangeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isOrientationChangingRef = useRef(false);
+  const lastUpdateTimeRef = useRef<number>(0);
+  const currentPositionRef = useRef<number>(0);
+  const isInSeekOperationRef = useRef<boolean>(false);
+  const isInPlayPauseOperationRef = useRef<boolean>(false);
+  const lastSeekTimeRef = useRef<number>(0);
+  const isAtEndRef = useRef<boolean>(false);
+  const lastPositionRef = useRef<number>(0);
+  const isBufferingRef = useRef<boolean>(false);
+  const isHandlingBufferingRef = useRef<boolean>(false);
 
-  // Update when external quality changing state changes
   useEffect(() => {
     console.log(`[DEBUG] VideoPlayer: External quality changing state changed to ${externalQualityChanging}`);
     if (externalQualityChanging) {
@@ -107,16 +115,12 @@ const VideoPlayer = ({
     }
   }, [externalQualityChanging, savedQualityPosition]);
 
-  // Track source changes to detect quality changes
   useEffect(() => {
-    // If the source URI changed
     if (sourceRef.current.uri !== source.uri) {
       console.log(`[DEBUG] VideoPlayer: Source URI changed from ${sourceRef.current.uri} to ${source.uri}`);
       
-      // Update the source ref immediately
       sourceRef.current = source;
       
-      // If we're not already handling a quality change, treat this as a quality change
       if (!isQualityChanging && currentTime > 0) {
         console.log(`[DEBUG] VideoPlayer: Detected quality change, saving position: ${currentTime}`);
         wasPlayingBeforeQualityChange.current = isPlaying;
@@ -126,12 +130,10 @@ const VideoPlayer = ({
     }
   }, [source.uri]);
 
-  // Update initialPositionRef when initialPosition changes
   useEffect(() => {
     console.log(`[DEBUG] VideoPlayer: initialPosition changed to ${initialPosition}`);
     initialPositionRef.current = initialPosition;
     
-    // If we already have a video reference and the position changes, seek to it
     if (videoRef.current && initialPosition > 0 && isReady) {
       console.log(`[DEBUG] VideoPlayer: Seeking to new initialPosition: ${initialPosition}`);
       videoRef.current.setPositionAsync(initialPosition * 1000)
@@ -139,15 +141,24 @@ const VideoPlayer = ({
     }
   }, [initialPosition]);
 
-  // Add a useEffect to handle video loading and seeking
   useEffect(() => {
     if (videoRef.current && initialPositionRef.current > 0 && !isReady) {
       const seekToInitialPosition = async () => {
         try {
           console.log(`[DEBUG] VideoPlayer: Attempting to seek to initial position: ${initialPositionRef.current}`);
+          
           await videoRef.current?.pauseAsync();
+          
+          await new Promise(resolve => setTimeout(resolve, 500));
+          
           await videoRef.current?.setPositionAsync(initialPositionRef.current * 1000);
-          await videoRef.current?.playAsync();
+          
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          if (isPlaying) {
+            await videoRef.current?.playAsync();
+          }
+          
           setIsReady(true);
           console.log('[DEBUG] VideoPlayer: Successfully seeked to initial position');
         } catch (error) {
@@ -155,12 +166,10 @@ const VideoPlayer = ({
         }
       };
       
-      // Delay seeking to ensure video is loaded
       setTimeout(seekToInitialPosition, 1000);
     }
   }, []);
 
-  // Format time in MM:SS format
   const formatTime = (seconds: number) => {
     if (isNaN(seconds) || seconds === Infinity) return '00:00';
     const mins = Math.floor(seconds / 60);
@@ -168,10 +177,8 @@ const VideoPlayer = ({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Handle fullscreen toggle with debounce
   const toggleFullscreen = async () => {
     try {
-      // Prevent rapid orientation changes
       if (isOrientationChangingRef.current) {
         console.log('[DEBUG] VideoPlayer: Orientation change in progress, ignoring request');
         return;
@@ -180,40 +187,34 @@ const VideoPlayer = ({
       isOrientationChangingRef.current = true;
       
       if (isFullscreen) {
-        // Set state first for immediate UI response
         setIsFullscreen(false);
         if (onFullscreenChange) {
           onFullscreenChange(false);
         }
         
-        // Exit fullscreen
         await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
         if (Platform.OS === 'android') {
           await NavigationBar.setVisibilityAsync('visible');
         }
         StatusBar.setHidden(false);
         
-        // Get current window dimensions in portrait mode
         const { width } = Dimensions.get('window');
         setDimensions({
           width: width,
           height: (width * 9) / 16
         });
       } else {
-        // Set state first for immediate UI response
         setIsFullscreen(true);
         if (onFullscreenChange) {
           onFullscreenChange(true);
         }
         
-        // Enter fullscreen
         await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
         if (Platform.OS === 'android') {
           await NavigationBar.setVisibilityAsync('hidden');
         }
         StatusBar.setHidden(true);
         
-        // Get screen dimensions for fullscreen mode
         const { width, height } = Dimensions.get('screen');
         setDimensions({
           width: width,
@@ -221,7 +222,6 @@ const VideoPlayer = ({
         });
       }
       
-      // Add a delay before allowing another orientation change
       if (orientationChangeTimeoutRef.current) {
         clearTimeout(orientationChangeTimeoutRef.current);
       }
@@ -229,7 +229,7 @@ const VideoPlayer = ({
       orientationChangeTimeoutRef.current = setTimeout(() => {
         isOrientationChangingRef.current = false;
         orientationChangeTimeoutRef.current = null;
-      }, 1000); // 1 second debounce
+      }, 1000);
       
     } catch (error) {
       console.error('Error toggling fullscreen:', error);
@@ -237,89 +237,180 @@ const VideoPlayer = ({
     }
   };
 
-  // Handle play/pause toggle
   const togglePlayPause = async () => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        await videoRef.current.pauseAsync();
-      } else {
-        await videoRef.current.playAsync();
-      }
-      setIsPlaying(!isPlaying);
+    if (isInPlayPauseOperationRef.current) {
+      console.log('[DEBUG] VideoPlayer: Play/pause operation in progress, ignoring request');
+      return;
     }
-  };
-
-  // Handle seeking
-  const handleSeek = async (value: number) => {
-    if (videoRef.current) {
-      setIsSeeking(true);
-      try {
-        // Set position without changing play state
-        await videoRef.current.setPositionAsync(value * 1000);
-        setCurrentTime(value);
-        
-        // Ensure we're playing if we were playing before
+    
+    isInPlayPauseOperationRef.current = true;
+    
+    try {
+      if (videoRef.current) {
         if (isPlaying) {
+          await videoRef.current.pauseAsync();
+        } else {
           await videoRef.current.playAsync();
         }
-      } catch (error) {
-        console.error('Error seeking:', error);
-      } finally {
-        setIsSeeking(false);
+        setIsPlaying(!isPlaying);
       }
+    } catch (error) {
+      console.error('Error toggling play/pause:', error);
+    } finally {
+      setTimeout(() => {
+        isInPlayPauseOperationRef.current = false;
+      }, 300);
     }
   };
 
-  // Handle video status update
+  const handleSeek = async (value: number) => {
+    if (isInSeekOperationRef.current) {
+      console.log('[DEBUG] VideoPlayer: Seek operation in progress, ignoring request');
+      return;
+    }
+    
+    const now = Date.now();
+    if (now - lastSeekTimeRef.current < 300) {
+      console.log('[DEBUG] VideoPlayer: Seeking too frequently, ignoring request');
+      return;
+    }
+    
+    lastSeekTimeRef.current = now;
+    isInSeekOperationRef.current = true;
+    setIsSeeking(true);
+    
+    try {
+      if (videoRef.current) {
+        const wasPlaying = isPlaying;
+        if (wasPlaying) {
+          await videoRef.current.pauseAsync();
+        }
+        
+        const validPosition = Math.max(0, Math.min(value, duration));
+        if (validPosition !== value) {
+          console.log(`[DEBUG] VideoPlayer: Adjusted seek position from ${value} to ${validPosition}`);
+        }
+        
+        await videoRef.current.setPositionAsync(validPosition * 1000);
+        setCurrentTime(validPosition);
+        currentPositionRef.current = validPosition;
+        lastPositionRef.current = validPosition;
+        
+        if (wasPlaying) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+          await videoRef.current.playAsync();
+        }
+      }
+    } catch (error) {
+      console.error('Error seeking:', error);
+    } finally {
+      setIsSeeking(false);
+      setTimeout(() => {
+        isInSeekOperationRef.current = false;
+      }, 300);
+    }
+  };
+
   const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
     if (!status.isLoaded) return;
 
+    const now = Date.now();
+    if (now - lastUpdateTimeRef.current < 250 && !status.didJustFinish) {
+      return;
+    }
+    
+    lastUpdateTimeRef.current = now;
+
     if (status.isLoaded) {
       const newPosition = status.positionMillis / 1000;
-      setCurrentTime(newPosition);
-      setDuration(status.durationMillis ? status.durationMillis / 1000 : 0);
+      currentPositionRef.current = newPosition;
       
-      // Only show buffering indicator if we're actually buffering AND not playing
-      // This prevents showing the buffering indicator when the video is playing smoothly
-      const newIsBuffering = status.isBuffering && !status.isPlaying;
-      setIsBuffering(newIsBuffering);
-      
-      // Add a delay before showing the buffering indicator to prevent flashing
-      if (newIsBuffering) {
-        if (!bufferingTimeoutRef.current) {
-          bufferingTimeoutRef.current = setTimeout(() => {
-            setShowBufferingIndicator(true);
-            bufferingTimeoutRef.current = null;
-          }, 500); // Wait 500ms before showing the buffering indicator
+      if (!isSeeking && !isQualityChanging && lastPositionRef.current > 0) {
+        const positionDiff = newPosition - lastPositionRef.current;
+        
+        if (positionDiff < -5 && Math.abs(positionDiff) > 5 && !isInSeekOperationRef.current) {
+          console.log(`[DEBUG] VideoPlayer: Detected unexpected backward jump from ${lastPositionRef.current} to ${newPosition}`);
+          
+          if (lastPositionRef.current > duration * 0.9 && !isAtEndRef.current) {
+            console.log(`[DEBUG] VideoPlayer: Preventing loop, continuing playback`);
+          }
         }
-      } else {
-        if (bufferingTimeoutRef.current) {
-          clearTimeout(bufferingTimeoutRef.current);
-          bufferingTimeoutRef.current = null;
-        }
-        setShowBufferingIndicator(false);
       }
       
-      // Only update isPlaying if we're not buffering
-      // This prevents the player from pausing during buffering
-      if (!status.isBuffering) {
+      lastPositionRef.current = newPosition;
+      
+      if (duration > 0 && newPosition > duration - 3) {
+        isAtEndRef.current = true;
+      }
+      
+      if (!isSeeking && !isQualityChanging && Math.abs(currentTime - newPosition) > 0.5) {
+        setCurrentTime(newPosition);
+      }
+      
+      if (status.durationMillis && Math.abs((status.durationMillis / 1000) - duration) > 1) {
+        setDuration(status.durationMillis / 1000);
+      }
+      
+      const newIsBuffering = status.isBuffering && !status.isPlaying;
+      if (isBufferingRef.current !== newIsBuffering) {
+        isBufferingRef.current = newIsBuffering;
+        
+        if (newIsBuffering) {
+          if (!isHandlingBufferingRef.current) {
+            isHandlingBufferingRef.current = true;
+            
+            if (bufferingTimeoutRef.current) {
+              clearTimeout(bufferingTimeoutRef.current);
+            }
+            
+            bufferingTimeoutRef.current = setTimeout(() => {
+              setIsBuffering(true);
+              setShowBufferingIndicator(true);
+              bufferingTimeoutRef.current = null;
+              
+              setTimeout(() => {
+                isHandlingBufferingRef.current = false;
+              }, 500);
+            }, 300);
+          }
+        } else {
+          if (bufferingTimeoutRef.current) {
+            clearTimeout(bufferingTimeoutRef.current);
+            bufferingTimeoutRef.current = null;
+          }
+          
+          setIsBuffering(false);
+          setShowBufferingIndicator(false);
+          isHandlingBufferingRef.current = false;
+        }
+      }
+      
+      if (!status.isBuffering && !isSeeking && !isQualityChanging && isPlaying !== status.isPlaying) {
         setIsPlaying(status.isPlaying);
       }
 
-      // If we're buffering but should be playing, ensure we resume playback
-      if (status.isBuffering && !status.isPlaying && isPlaying && videoRef.current) {
-        videoRef.current.playAsync().catch(err => console.error('Error resuming playback:', err));
+      if (status.isBuffering && !status.isPlaying && isPlaying && videoRef.current && !isSeeking && !isQualityChanging) {
+        if (!isInPlayPauseOperationRef.current) {
+          isInPlayPauseOperationRef.current = true;
+          
+          videoRef.current.playAsync()
+            .catch(err => console.error('Error resuming playback:', err))
+            .finally(() => {
+              setTimeout(() => {
+                isInPlayPauseOperationRef.current = false;
+              }, 300);
+            });
+        }
       }
 
-      if (onProgress && !isSeeking) {
+      if (onProgress && !isSeeking && !isQualityChanging) {
         onProgress(
           newPosition,
           status.durationMillis ? status.durationMillis / 1000 : 0
         );
       }
 
-      // Notify parent of position changes
-      if (onPositionChange && !isSeeking) {
+      if (onPositionChange && !isSeeking && !isQualityChanging) {
         onPositionChange(newPosition);
       }
 
@@ -327,31 +418,25 @@ const VideoPlayer = ({
         onEnd();
       }
 
-      // Handle intro/outro button visibility
-      if (intro && currentTime >= intro.start && currentTime < intro.end) {
-        setShowSkipIntro(true);
-      } else {
-        setShowSkipIntro(false);
+      const shouldShowSkipIntro = intro && newPosition >= intro.start && newPosition < intro.end;
+      if (shouldShowSkipIntro !== showSkipIntro) {
+        setShowSkipIntro(shouldShowSkipIntro);
       }
 
-      if (outro && currentTime >= outro.start && currentTime < outro.end) {
-        setShowSkipOutro(true);
-      } else {
-        setShowSkipOutro(false);
+      const shouldShowSkipOutro = outro && newPosition >= outro.start && newPosition < outro.end;
+      if (shouldShowSkipOutro !== showSkipOutro) {
+        setShowSkipOutro(shouldShowSkipOutro);
       }
     }
   };
 
-  // Update handleScreenTap to be more reliable
   const handleScreenTap = () => {
     if (showControls) {
-      // If controls are showing, hide them
       setShowControls(false);
       if (controlsTimeout) {
         clearTimeout(controlsTimeout);
       }
     } else {
-      // If controls are hidden, show them and set auto-hide timer
       setShowControls(true);
       const timeout = setTimeout(() => {
         setShowControls(false);
@@ -360,7 +445,6 @@ const VideoPlayer = ({
     }
   };
 
-  // Auto-hide controls
   useEffect(() => {
     if (showControls && isPlaying) {
       const timeout = setTimeout(() => {
@@ -374,7 +458,6 @@ const VideoPlayer = ({
     }
   }, [showControls, isPlaying]);
 
-  // Clean up
   useEffect(() => {
     return () => {
       if (controlsTimeout) {
@@ -394,18 +477,15 @@ const VideoPlayer = ({
     };
   }, []);
 
-  // Communicate fullscreen state
   useEffect(() => {
     if (onFullscreenChange) {
       onFullscreenChange(isFullscreen);
     }
   }, [isFullscreen, onFullscreenChange]);
 
-  // Add handler for fullscreen updates with debounce
   const handleFullscreenUpdate = async ({ fullscreenUpdate }: { fullscreenUpdate: number }) => {
     try {
-      // Prevent rapid orientation changes
-      if (isOrientationChangingRef.current && fullscreenUpdate !== 3) { // Always allow exit fullscreen
+      if (isOrientationChangingRef.current && fullscreenUpdate !== 3) {
         console.log('[DEBUG] VideoPlayer: Orientation change in progress, ignoring update:', fullscreenUpdate);
         return;
       }
@@ -413,17 +493,17 @@ const VideoPlayer = ({
       isOrientationChangingRef.current = true;
       
       switch (fullscreenUpdate) {
-        case 0: // FULLSCREEN_UPDATE_PLAYER_WILL_PRESENT
+        case 0:
           setIsFullscreen(true);
           if (Platform.OS === 'android') {
             await NavigationBar.setVisibilityAsync('hidden');
           }
           break;
-        case 1: // FULLSCREEN_UPDATE_PLAYER_DID_PRESENT
+        case 1:
           break;
-        case 2: // FULLSCREEN_UPDATE_PLAYER_WILL_DISMISS
+        case 2:
           break;
-        case 3: // FULLSCREEN_UPDATE_PLAYER_DID_DISMISS
+        case 3:
           setIsFullscreen(false);
           await Promise.all([
             ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP),
@@ -432,7 +512,6 @@ const VideoPlayer = ({
           break;
       }
       
-      // Add a delay before allowing another orientation change
       if (orientationChangeTimeoutRef.current) {
         clearTimeout(orientationChangeTimeoutRef.current);
       }
@@ -440,7 +519,7 @@ const VideoPlayer = ({
       orientationChangeTimeoutRef.current = setTimeout(() => {
         isOrientationChangingRef.current = false;
         orientationChangeTimeoutRef.current = null;
-      }, 1000); // 1 second debounce
+      }, 1000);
       
     } catch (error) {
       console.error('Error handling fullscreen update:', error);
@@ -448,18 +527,14 @@ const VideoPlayer = ({
     }
   };
 
-  // Add skip functions
   const skipForward = async () => {
     if (videoRef.current) {
       try {
-        // Always maintain the current playing state
         const newPosition = Math.min(duration, currentTime + 5);
         
-        // Set position without changing play state
         await videoRef.current.setPositionAsync(newPosition * 1000);
         setCurrentTime(newPosition);
         
-        // Ensure we're playing if we were playing before
         if (isPlaying) {
           await videoRef.current.playAsync();
         }
@@ -472,14 +547,11 @@ const VideoPlayer = ({
   const skipBackward = async () => {
     if (videoRef.current) {
       try {
-        // Always maintain the current playing state
         const newPosition = Math.max(0, currentTime - 5);
         
-        // Set position without changing play state
         await videoRef.current.setPositionAsync(newPosition * 1000);
         setCurrentTime(newPosition);
         
-        // Ensure we're playing if we were playing before
         if (isPlaying) {
           await videoRef.current.playAsync();
         }
@@ -492,23 +564,31 @@ const VideoPlayer = ({
   const handleLoad = async (status: AVPlaybackStatus) => {
     try {
       if (status.isLoaded) {
-        // Set duration first
         const videoDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
         setDuration(videoDuration);
         
         console.log(`[DEBUG] VideoPlayer: Video loaded, duration: ${videoDuration}`);
         
-        // Handle quality change position - OPTIMIZED VERSION
+        isAtEndRef.current = false;
+        
         if (isQualityChanging && savedPosition > 0) {
           console.log(`[DEBUG] VideoPlayer: Quality change detected, seeking to saved position: ${savedPosition}`);
           
-          // Immediately seek to the saved position without delays
           if (videoRef.current) {
             try {
-              // Set position immediately
-              await videoRef.current.setPositionAsync(savedPosition * 1000);
+              if (savedPosition > videoDuration - 10) {
+                console.log(`[DEBUG] VideoPlayer: Saved position ${savedPosition} is too close to the end, starting from beginning`);
+                await videoRef.current.pauseAsync();
+                await new Promise(resolve => setTimeout(resolve, 100));
+                await videoRef.current.setPositionAsync(0);
+              } else {
+                await videoRef.current.pauseAsync();
+                await new Promise(resolve => setTimeout(resolve, 100));
+                await videoRef.current.setPositionAsync(savedPosition * 1000);
+              }
               
-              // Restore previous playback state
+              await new Promise(resolve => setTimeout(resolve, 100));
+              
               if (wasPlayingBeforeQualityChange.current) {
                 await videoRef.current.playAsync();
                 setIsPlaying(true);
@@ -522,15 +602,23 @@ const VideoPlayer = ({
             }
           }
         }
-        // Handle initial position
         else if (initialPositionRef.current > 0 && !isReady) {
           if (videoRef.current) {
             console.log(`[DEBUG] VideoPlayer: Initial load: seeking to ${initialPositionRef.current} seconds`);
             try {
-              // Set position immediately
-              await videoRef.current.setPositionAsync(initialPositionRef.current * 1000);
+              if (initialPositionRef.current > videoDuration - 10) {
+                console.log(`[DEBUG] VideoPlayer: Initial position ${initialPositionRef.current} is too close to the end, starting from beginning`);
+                await videoRef.current.pauseAsync();
+                await new Promise(resolve => setTimeout(resolve, 200));
+                await videoRef.current.setPositionAsync(0);
+              } else {
+                await videoRef.current.pauseAsync();
+                await new Promise(resolve => setTimeout(resolve, 200));
+                await videoRef.current.setPositionAsync(initialPositionRef.current * 1000);
+              }
               
-              // Play if needed
+              await new Promise(resolve => setTimeout(resolve, 100));
+              
               if (isPlaying) {
                 await videoRef.current.playAsync();
               }
@@ -539,7 +627,7 @@ const VideoPlayer = ({
               console.log(`[DEBUG] VideoPlayer: Initial position restored to ${initialPositionRef.current}`);
             } catch (error) {
               console.error('[DEBUG] VideoPlayer: Error setting resume position:', error);
-              setIsReady(true); // Mark as ready anyway to prevent repeated attempts
+              setIsReady(true);
             }
           } else {
             setIsPlaying(true);
@@ -547,7 +635,6 @@ const VideoPlayer = ({
           }
         }
         
-        // Call parent's onLoad handler
         if (onLoad) {
           onLoad(status);
         }
@@ -559,30 +646,23 @@ const VideoPlayer = ({
     }
   };
 
-  // Add this useEffect to handle rate changes
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.setRateAsync(rate, true);
     }
   }, [rate]);
 
-  // Add a listener for dimension changes
   useEffect(() => {
     const dimensionsChangeHandler = ({ window, screen }: { window: { width: number; height: number }, screen: { width: number; height: number } }) => {
-      // Determine if this is a landscape orientation
       const isLandscapeOrientation = window.width > window.height;
       
-      // Only update dimensions if the orientation matches the fullscreen state
-      // This prevents unnecessary dimension changes during orientation transitions
       if (isLandscapeOrientation === isFullscreen) {
         if (isFullscreen) {
-          // In fullscreen/landscape mode - use screen dimensions to get full screen
           setDimensions({
             width: screen.width,
             height: screen.height
           });
         } else {
-          // In portrait mode
           setDimensions({
             width: window.width,
             height: (window.width * 9) / 16
@@ -593,7 +673,6 @@ const VideoPlayer = ({
 
     const subscription = Dimensions.addEventListener('change', dimensionsChangeHandler);
 
-    // Force an immediate update
     dimensionsChangeHandler({ 
       window: Dimensions.get('window'),
       screen: Dimensions.get('screen')
@@ -643,7 +722,6 @@ const VideoPlayer = ({
           isMuted={false}
         />
         
-        {/* Only show buffering indicator when actually buffering and not playing smoothly */}
         {showBufferingIndicator && (
           <View style={styles.bufferingContainer}>
             <ActivityIndicator size="large" color="#f4511e" />
@@ -655,7 +733,6 @@ const VideoPlayer = ({
             style={styles.controlsOverlay}
             onTouchEnd={(e) => e.stopPropagation()}
           >
-            {/* Top Bar */}
             <LinearGradient
               colors={['rgba(0,0,0,0.7)', 'transparent']}
               style={styles.topBar}
@@ -665,7 +742,6 @@ const VideoPlayer = ({
               </Text>
             </LinearGradient>
 
-            {/* Center Controls */}
             <View style={styles.centerControls}>
               <TouchableOpacity 
                 style={styles.skipBackwardButton}
@@ -710,12 +786,10 @@ const VideoPlayer = ({
               </TouchableOpacity>
             </View>
 
-            {/* Bottom Controls */}
             <LinearGradient
               colors={['transparent', 'rgba(0,0,0,0.7)']}
               style={styles.bottomControls}
             >
-              {/* Progress Bar */}
               <View style={styles.progressContainer}>
                 <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
                 <Slider
@@ -736,7 +810,6 @@ const VideoPlayer = ({
                 <Text style={styles.timeText}>{formatTime(duration)}</Text>
               </View>
 
-              {/* Bottom Row */}
               <View style={styles.controlsRow}>
                 <TouchableOpacity 
                   style={styles.controlButton}
@@ -770,14 +843,12 @@ const VideoPlayer = ({
               </View>
             </LinearGradient>
 
-            {/* Skip Intro Button */}
             {showSkipIntro && (
               <TouchableOpacity 
                 style={styles.skipButton}
                 onPress={(e) => {
                   e.stopPropagation();
                   if (videoRef.current && intro) {
-                    // Set position and ensure playback continues
                     videoRef.current.setPositionAsync(intro.end * 1000)
                       .then(() => {
                         if (isPlaying) {
@@ -795,14 +866,12 @@ const VideoPlayer = ({
               </TouchableOpacity>
             )}
 
-            {/* Skip Outro Button */}
             {showSkipOutro && (
               <TouchableOpacity 
                 style={styles.skipButton}
                 onPress={(e) => {
                   e.stopPropagation();
                   if (videoRef.current && outro) {
-                    // Set position and ensure playback continues
                     videoRef.current.setPositionAsync(outro.end * 1000)
                       .then(() => {
                         if (isPlaying) {
