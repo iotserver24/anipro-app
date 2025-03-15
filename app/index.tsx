@@ -15,6 +15,9 @@ import { logger } from '../utils/logger';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
 import Constants from 'expo-constants';
 import { APP_CONFIG, getAppVersion, getAppVersionCode } from '../constants/appConfig';
+import UpdateModal from '../components/UpdateModal';
+import * as Device from 'expo-device';
+import { getArchitectureSpecificDownloadUrl } from '../utils/deviceUtils';
 
 const { width } = Dimensions.get('window');
 const ITEM_WIDTH = width * 0.9;
@@ -71,19 +74,30 @@ const mapToAnimeItem = (item: any): AnimeItem => ({
   }
 });
 
+interface ChangelogItem {
+  type: 'text' | 'image' | 'video' | 'url';
+  content: string;
+  title?: string;
+  description?: string;
+  format?: 'bold' | 'italic' | 'normal';
+}
+
 interface UpdateInfo {
   latestVersion: string;
   minVersion: string;
   versionCode: number;
-  changelog: string[];
+  changelog: ChangelogItem[];
   downloadUrls: {
     universal: string;
-    arm64: string;
+    'arm64-v8a': string;
     x86_64: string;
     x86: string;
   };
   releaseDate: string;
   isForced: boolean;
+  showUpdate: boolean;
+  aboutUpdate?: string;
+  currentAppVersion?: string;
 }
 
 const countUser = async () => {
@@ -136,6 +150,7 @@ export default function Home() {
   const { initializeHistory } = useWatchHistoryStore();
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [showUpdateBanner, setShowUpdateBanner] = useState(false);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
 
   const fetchAnime = async (bypassCache: boolean = false) => {
     try {
@@ -239,36 +254,61 @@ export default function Home() {
   const checkForUpdates = async () => {
     try {
       const response = await fetch(`${APP_CONFIG.API_BASE_URL}/updates`);
+      
+      // Check if the response is ok
+      if (!response.ok) {
+        throw new Error(`Failed to check for updates: ${response.status}`);
+      }
+      
       const updateData: UpdateInfo = await response.json();
+      
+      // Validate the required fields
+      if (!updateData || !updateData.latestVersion || !updateData.downloadUrls || !updateData.downloadUrls.universal) {
+        logger.error('Invalid update data received:', updateData);
+        return;
+      }
+      
+      // Handle legacy format (string[] instead of ChangelogItem[])
+      if (updateData.changelog && Array.isArray(updateData.changelog) && 
+          updateData.changelog.length > 0 && typeof updateData.changelog[0] === 'string') {
+        updateData.changelog = (updateData.changelog as unknown as string[]).map(item => ({
+          type: 'text',
+          content: item,
+          format: 'normal'
+        }));
+      }
+      
+      // Ensure aboutUpdate exists
+      if (updateData.aboutUpdate === undefined) {
+        updateData.aboutUpdate = '';
+      }
+      
+      // Set currentAppVersion to our actual app version (overriding any server value)
+      // This ensures we're displaying the correct current version in the UI
+      updateData.currentAppVersion = getAppVersion();
+      
+      // Ensure isForced exists
+      if (updateData.isForced === undefined) {
+        updateData.isForced = false;
+      }
       
       const currentVersion = getAppVersion();
       const currentVersionCode = getAppVersionCode();
       
+      // Compare our actual app version with the server's latest version
       if (updateData.versionCode > currentVersionCode || 
           updateData.latestVersion > currentVersion) {
         setUpdateInfo(updateData);
         
-        // If it's a forced update, show the dialog immediately
-        if (updateData.isForced) {
-          Alert.alert(
-            'Update Required',
-            `A new version (${updateData.latestVersion}) is available!\n\nWhat's New:\n${updateData.changelog.map(change => `• ${change}`).join('\n')}`,
-            [
-              {
-                text: 'Update Now',
-                onPress: () => {
-                  const downloadUrl = updateData.downloadUrls.universal;
-                  Linking.openURL(downloadUrl);
-                }
-              }
-            ],
-            { 
-              cancelable: false // Make it unskippable
-            }
-          );
-        } else {
-          // For non-forced updates, show the banner
-          setShowUpdateBanner(true);
+        // Only show update notifications if showUpdate flag is true
+        if (updateData.showUpdate === undefined || updateData.showUpdate) {
+          // If it's a forced update, show the modal immediately
+          if (updateData.isForced) {
+            setShowUpdateModal(true);
+          } else {
+            // For non-forced updates, show the banner
+            setShowUpdateBanner(true);
+          }
         }
       }
     } catch (error) {
@@ -279,32 +319,9 @@ export default function Home() {
   const handleUpdate = () => {
     if (!updateInfo) return;
     
-    const buttons = [
-      {
-        text: 'Update Now',
-        onPress: () => {
-          const downloadUrl = updateInfo.downloadUrls.universal;
-          Linking.openURL(downloadUrl);
-        }
-      }
-    ];
-
-    // Only add "Later" button if it's not a forced update
-    if (!updateInfo.isForced) {
-      buttons.push({
-        text: 'Later',
-        style: 'cancel'
-      });
-    }
-
-    Alert.alert(
-      'Update Required',
-      `A new version (${updateInfo.latestVersion}) is available!\n\nWhat's New:\n${updateInfo.changelog.map(change => `• ${change}`).join('\n')}`,
-      buttons,
-      { 
-        cancelable: false // Make it unskippable
-      }
-    );
+    // The URL opening is now handled in the UpdateModal component
+    // This function is called after the URL is opened
+    logger.info('Update initiated for version:', updateInfo.latestVersion);
   };
 
   useEffect(() => {
@@ -489,7 +506,7 @@ export default function Home() {
       {showUpdateBanner && updateInfo && (
         <TouchableOpacity 
           style={styles.updateBanner}
-          onPress={handleUpdate}
+          onPress={() => setShowUpdateModal(true)}
         >
           <MaterialIcons name="system-update" size={24} color="#fff" />
           <Text style={styles.updateText}>
@@ -498,6 +515,18 @@ export default function Home() {
           <MaterialIcons name="arrow-forward" size={24} color="#fff" />
         </TouchableOpacity>
       )}
+      
+      {/* Update Modal */}
+      {updateInfo && (
+        <UpdateModal 
+          visible={showUpdateModal}
+          updateInfo={updateInfo}
+          onClose={() => setShowUpdateModal(false)}
+          onUpdate={handleUpdate}
+          simulatedArch={null}
+        />
+      )}
+      
       <ScrollView
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f4511e" />

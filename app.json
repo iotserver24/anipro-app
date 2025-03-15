@@ -2,7 +2,7 @@
   "expo": {
     "name": "AniSurge",
     "slug": "anisurge",
-    "version": "1.0.0",
+    "version": "2.9.7",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -61,7 +61,7 @@
         "xxhdpi": "./assets/splash.png",
         "xxxhdpi": "./assets/splash.png"
       },
-      "versionCode": 1
+      "versionCode": 6
     },
     "web": {
       "favicon": "./assets/favicon.png"

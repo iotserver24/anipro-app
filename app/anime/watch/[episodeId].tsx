@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput, BackHandler, Platform, Linking, Modal } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput, BackHandler, Platform, Linking, Modal, Alert } from 'react-native';
 import { useLocalSearchParams, router, Stack, useNavigation } from 'expo-router';
 import Video from 'react-native-video';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -431,6 +431,7 @@ const EpisodeControls = ({
   onPrevious, 
   onNext, 
   onDownload,
+  onExternalPlayer,
   downloadUrl
 }: { 
   currentEpisodeIndex: number; 
@@ -438,6 +439,7 @@ const EpisodeControls = ({
   onPrevious: () => void;
   onNext: () => void;
   onDownload: () => void;
+  onExternalPlayer: () => void;
   downloadUrl: string | null;
 }) => {
   const hasPrevious = currentEpisodeIndex > 0;
@@ -485,6 +487,20 @@ const EpisodeControls = ({
         disabled={!hasDownload}
       >
         <MaterialIcons name="file-download" size={22} color="white" />
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={{
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 36,
+          height: 36,
+          borderRadius: 18,
+          backgroundColor: 'rgba(0,0,0,0.3)',
+        }}
+        onPress={onExternalPlayer}
+      >
+        <MaterialIcons name="open-in-new" size={22} color="white" />
       </TouchableOpacity>
       
       <TouchableOpacity 
@@ -1449,6 +1465,15 @@ export default function WatchEpisode() {
     }
   }, [videoData]);
 
+  // Handle external player button press
+  const handleExternalPlayer = useCallback(() => {
+    Alert.alert(
+      "External Player",
+      "Coming Soon! This feature will allow you to open videos in your favorite external player.",
+      [{ text: "OK", onPress: () => console.log("External player alert closed") }]
+    );
+  }, []);
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -1563,6 +1588,7 @@ export default function WatchEpisode() {
                 onPrevious={handlePreviousEpisode}
                 onNext={handleNextEpisode}
                 onDownload={handleDownload}
+                onExternalPlayer={handleExternalPlayer}
                 downloadUrl={videoData?.download || null}
               />
               <ScrollView style={styles.controls}>

@@ -10,76 +10,94 @@ import { useMyListStore } from '../store/myListStore';
 import * as FileSystem from 'expo-file-system';
 import { Asset } from 'expo-asset';
 import * as Device from 'expo-device';
+import { getArchitectureSpecificDownloadUrl, getDeviceArchitectureUrlKey } from '../utils/deviceUtils';
+import UpdateModal from '../components/UpdateModal';
+import { logger } from '../utils/logger';
 
 interface UpdateInfo {
   latestVersion: string;
   minVersion: string;
   versionCode: number;
-  changelog: string[];
+  changelog: string[] | ChangelogItem[];
   downloadUrls: {
     universal: string;
-    arm64: string;
+    'arm64-v8a': string;
     x86_64: string;
     x86: string;
   };
   releaseDate: string;
   isForced: boolean;
+  showUpdate?: boolean;
+  aboutUpdate?: string;
+  currentAppVersion?: string;
 }
 
 export default function AboutScreen() {
   const appVersion = getAppVersion();
-  const [checking, setChecking] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
   const [imageReady, setImageReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [deviceInfo, setDeviceInfo] = useState({
     deviceArchitecture: '',
+    detectedUrlKey: ''
   });
   const [stats, setStats] = useState({
     watchedAnime: 0,
     bookmarkedAnime: 0
   });
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
+  const [simulatedArchitecture, setSimulatedArchitecture] = useState<string | null>(null);
   
   const { history } = useWatchHistoryStore();
   const { myList } = useMyListStore();
 
-  // Get device and app architecture information
+  // Move the getArchitectureInfo function outside the useEffect
+  const getArchitectureInfo = async () => {
+    try {
+      // Get device architecture
+      const deviceArch = Device.supportedCpuArchitectures;
+      const primaryArch = deviceArch && deviceArch.length > 0 ? deviceArch[0] : 'unknown';
+      
+      // Get the URL key that would be used for downloads
+      const urlKey = getDeviceArchitectureUrlKey(simulatedArchitecture);
+      
+      // Format architecture for display
+      const formatArchitecture = (arch: string) => {
+        switch(arch.toLowerCase()) {
+          case 'arm64':
+            return 'ARM64 (64-bit)';
+          case 'arm64-v8a':
+            return 'ARM64-v8a (64-bit)';
+          case 'arm':
+            return 'ARM (32-bit)';
+          case 'x86_64':
+            return 'x86_64 (64-bit Intel/AMD)';
+          case 'x86':
+            return 'x86 (32-bit Intel/AMD)';
+          default:
+            return arch;
+        }
+      };
+      
+      setDeviceInfo({
+        deviceArchitecture: formatArchitecture(primaryArch),
+        detectedUrlKey: urlKey
+      });
+    } catch (error) {
+      console.error('Error getting architecture info:', error);
+      setDeviceInfo({
+        deviceArchitecture: 'unknown',
+        detectedUrlKey: 'universal'
+      });
+    }
+  };
+
+  // Update the useEffect to call the function
   useEffect(() => {
-    const getArchitectureInfo = async () => {
-      try {
-        // Get device architecture
-        const deviceArch = Device.supportedCpuArchitectures;
-        const primaryArch = deviceArch && deviceArch.length > 0 ? deviceArch[0] : 'unknown';
-        
-        // Format architecture for display
-        const formatArchitecture = (arch: string) => {
-          switch(arch.toLowerCase()) {
-            case 'arm64':
-              return 'ARM64 (64-bit)';
-            case 'arm':
-              return 'ARM (32-bit)';
-            case 'x86_64':
-              return 'x86_64 (64-bit Intel/AMD)';
-            case 'x86':
-              return 'x86 (32-bit Intel/AMD)';
-            default:
-              return arch;
-          }
-        };
-        
-        setDeviceInfo({
-          deviceArchitecture: formatArchitecture(primaryArch),
-        });
-      } catch (error) {
-        console.error('Error getting architecture info:', error);
-        setDeviceInfo({
-          deviceArchitecture: 'unknown',
-        });
-      }
-    };
-    
     getArchitectureInfo();
-  }, []);
+  }, [simulatedArchitecture]);
 
   // Preload the background image
   useEffect(() => {
@@ -144,54 +162,78 @@ export default function AboutScreen() {
     openLink(`mailto:${APP_CONFIG.SUPPORT_EMAIL}?subject=${subject}&body=${body}`);
   };
 
+  /**
+   * Checks for updates manually - now only used for debugging purposes
+   * since updates are automatically checked in the background.
+   */
   const checkForUpdates = async () => {
     try {
-      setChecking(true);
-      const response = await fetch(`${APP_CONFIG.API_BASE_URL}/updates`);
-      const updateData: UpdateInfo = await response.json();
+      const response = await fetch(`${APP_CONFIG.API_URL}/api/updates/latest`);
+      if (!response.ok) {
+        throw new Error(`Failed to check for updates: ${response.status}`);
+      }
+      
+      const data: UpdateInfo = await response.json();
+      logger.debug('Update check response:', data);
+      
+      // Validate the required fields
+      if (!data || !data.latestVersion || !data.downloadUrls || !data.downloadUrls.universal) {
+        logger.error('Invalid update data received:', data);
+        Alert.alert('Update Check Failed', 'Received invalid update data from server.');
+        return;
+      }
+      
+      // Ensure required fields exist
+      if (data.isForced === undefined) {
+        data.isForced = false;
+      }
+      
+      if (data.changelog === undefined) {
+        data.changelog = [];
+      }
+      
+      // Handle legacy format (string[] instead of ChangelogItem[])
+      if (data.changelog && Array.isArray(data.changelog) && 
+          data.changelog.length > 0 && typeof data.changelog[0] === 'string') {
+        data.changelog = (data.changelog as unknown as string[]).map(item => ({
+          type: 'text',
+          content: item,
+          format: 'normal'
+        }));
+      }
+      
+      // Set currentAppVersion to our actual app version (overriding any server value)
+      // This ensures we're displaying the correct current version in the UI
+      data.currentAppVersion = getAppVersion();
       
       const currentVersion = getAppVersion();
       const currentVersionCode = getAppVersionCode();
       
-      if (updateData.versionCode > currentVersionCode || 
-          updateData.latestVersion > currentVersion) {
+      // Compare our actual app version with the server's latest version
+      if (data.versionCode > currentVersionCode) {
+        logger.info('New version available:', data.latestVersion);
         
-        // Show update dialog
-        Alert.alert(
-          'Update Available',
-          `A new version (${updateData.latestVersion}) is available!\n\nWhat's New:\n${updateData.changelog.map(change => `• ${change}`).join('\n')}`,
-          [
-            {
-              text: 'Update Now',
-              onPress: () => {
-                const downloadUrl = updateData.downloadUrls.universal;
-                Linking.openURL(downloadUrl);
-              }
-            },
-            {
-              text: 'Later',
-              style: 'cancel'
-            }
-          ]
-        );
+        // Store update info
+        setUpdateInfo(data);
+        
+        // Show update modal
+        setShowUpdateModal(true);
       } else {
-        // No updates available
-        Alert.alert(
-          'No Updates Available',
-          `You're using the latest version (${currentVersion}).`,
-          [{ text: 'OK' }]
-        );
+        logger.info('App is up to date');
+        Alert.alert('Up to Date', 'You are using the latest version of the app.');
       }
     } catch (error) {
-      console.error('Error checking for updates:', error);
-      Alert.alert(
-        'Error',
-        'Failed to check for updates. Please try again later.',
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setChecking(false);
+      logger.error('Error checking for updates:', error);
+      Alert.alert('Update Check Failed', 'Failed to check for updates. Please try again later.');
     }
+  };
+  
+  const handleUpdate = () => {
+    if (!updateInfo) return;
+    
+    // The URL opening is now handled in the UpdateModal component
+    // This function is called after the URL is opened
+    logger.info('Update initiated for version:', updateInfo.latestVersion);
   };
 
   const navigateToHistory = () => {
@@ -240,6 +282,92 @@ export default function AboutScreen() {
     Alert.alert('Coming Soon', 'Theme customization will be available in a future update.');
   };
 
+  const handleDebugCheckForUpdates = async () => {
+    setIsCheckingForUpdates(true);
+    try {
+      await checkForUpdates();
+    } catch (error) {
+      logger.error('Error checking for updates:', error);
+      Alert.alert('Update Check Failed', 'Failed to check for updates. Please try again later.');
+    } finally {
+      setIsCheckingForUpdates(false);
+    }
+  };
+
+  const simulateArchitecture = async (architecture: string | null) => {
+    setSimulatedArchitecture(architecture);
+    // Force refresh device info
+    await getArchitectureInfo();
+    // If we have update info, refresh the debug section
+    if (updateInfo) {
+      setUpdateInfo({...updateInfo});
+    }
+  };
+
+  const showTestUpdateModal = () => {
+    if (updateInfo) {
+      setShowUpdateModal(true);
+    } else {
+      Alert.alert(
+        'No Update Info', 
+        'Please check for updates first to load update information.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const refreshArchitectureInfo = async () => {
+    // Force refresh device info
+    await getArchitectureInfo();
+    Alert.alert('Refreshed', 'Architecture information has been refreshed.');
+  };
+
+  const testArchitectureSpecificDownloadUrl = async () => {
+    if (!updateInfo) {
+      Alert.alert('No Update Info', 'Please check for updates first to load update information.');
+      return;
+    }
+    
+    try {
+      const downloadUrl = getArchitectureSpecificDownloadUrl(
+        updateInfo.downloadUrls,
+        simulatedArchitecture
+      );
+      
+      Alert.alert(
+        'Download URL',
+        `The selected download URL is:\n\n${downloadUrl}\n\nWould you like to open it?`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Open URL',
+            onPress: () => Linking.openURL(downloadUrl)
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error getting download URL:', error);
+      Alert.alert('Error', 'Failed to get download URL.');
+    }
+  };
+
+  const showVersionDetails = () => {
+    Alert.alert(
+      'Version Information',
+      `App version is defined in constants/appConfig.ts:\n\n` +
+      `APP_CONFIG.VERSION = "${APP_CONFIG.VERSION}"\n\n` +
+      `The getAppVersion() function returns this value:\n\n` +
+      `export const getAppVersion = (): string => {\n` +
+      `  return APP_CONFIG.VERSION;\n` +
+      `};\n\n` +
+      `This is the actual version used throughout the app.`,
+      [{ text: 'OK' }]
+    );
+  };
+
   return (
     <>
       <Stack.Screen
@@ -251,6 +379,18 @@ export default function AboutScreen() {
           headerTintColor: '#fff',
         }}
       />
+      
+      {/* Update Modal */}
+      {updateInfo && (
+        <UpdateModal 
+          visible={showUpdateModal}
+          updateInfo={updateInfo}
+          onClose={() => setShowUpdateModal(false)}
+          onUpdate={handleUpdate}
+          simulatedArch={simulatedArchitecture}
+        />
+      )}
+      
       <ScrollView style={styles.container}>
         {/* App Header */}
         {isLoading ? (
@@ -297,6 +437,36 @@ export default function AboutScreen() {
             <Text style={styles.aboutText}>
               With a vast library of content, {APP_CONFIG.APP_NAME} provides a seamless viewing experience with high-quality streams and a user-friendly interface.
             </Text>
+          </View>
+        </View>
+
+        {/* Version Information */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Version Information</Text>
+          <View style={styles.infoCard}>
+            <TouchableOpacity onPress={showVersionDetails}>
+              <InfoRow 
+                icon="info" 
+                label="App Version" 
+                value={appVersion} 
+                isLink
+              />
+            </TouchableOpacity>
+            <SectionDivider />
+            <TouchableOpacity onPress={showVersionDetails}>
+              <InfoRow 
+                icon="code" 
+                label="Version Source" 
+                value="constants/appConfig.ts" 
+                isLink
+              />
+            </TouchableOpacity>
+            <SectionDivider />
+            <InfoRow 
+              icon="tag" 
+              label="Version Code" 
+              value={getAppVersionCode().toString()} 
+            />
           </View>
         </View>
 
@@ -353,6 +523,12 @@ export default function AboutScreen() {
               label="Device Architecture" 
               value={deviceInfo.deviceArchitecture} 
             />
+            <SectionDivider />
+            <InfoRow 
+              icon="system-update" 
+              label="Update Package Type" 
+              value={deviceInfo.detectedUrlKey} 
+            />
           </View>
         </View>
 
@@ -375,15 +551,6 @@ export default function AboutScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>App</Text>
           <View style={styles.infoCard}>
-            <TouchableOpacity onPress={checkForUpdates} disabled={checking}>
-              <InfoRow 
-                icon="system-update" 
-                label="Check for Updates" 
-                value={checking ? "Checking..." : "Check"} 
-                isLink 
-              />
-            </TouchableOpacity>
-            <SectionDivider />
             <TouchableOpacity onPress={showThemeOptions}>
               <InfoRow 
                 icon="brightness-6" 
@@ -415,6 +582,48 @@ export default function AboutScreen() {
           </View>
         </View>
 
+        {/* Debug Section */}
+        {__DEV__ && updateInfo && (
+          <>
+            <SectionDivider />
+            <DebugSection 
+              updateInfo={updateInfo} 
+              simulatedArch={simulatedArchitecture}
+              onSimulate={simulateArchitecture} 
+            />
+          </>
+        )}
+
+        {__DEV__ && (
+          <View style={styles.debugButtonContainer}>
+            <TouchableOpacity 
+              style={[
+                styles.debugButton,
+                isCheckingForUpdates && { opacity: 0.7 }
+              ]}
+              onPress={handleDebugCheckForUpdates}
+              disabled={isCheckingForUpdates}
+            >
+              <Text style={styles.debugButtonText}>
+                {isCheckingForUpdates ? 'Checking...' : 'Check for Updates'}
+              </Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[
+                styles.debugButton,
+                { marginLeft: 10, backgroundColor: '#4CAF50' }
+              ]}
+              onPress={showTestUpdateModal}
+              disabled={!updateInfo}
+            >
+              <Text style={styles.debugButtonText}>
+                Test Update Modal
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={styles.footer}>
           <Text style={styles.footerText}>Made with ❤️ for anime fans</Text>
         </View>
@@ -445,6 +654,174 @@ function InfoRow({ icon, label, value, isLink = false }: InfoRowProps) {
 function SectionDivider() {
   return <View style={styles.sectionDivider} />;
 }
+
+// Add this new component after the InfoRow component
+const DebugSection = ({ 
+  updateInfo, 
+  simulatedArch, 
+  onSimulate 
+}: { 
+  updateInfo: UpdateInfo | null, 
+  simulatedArch: string | null,
+  onSimulate: (arch: string | null) => Promise<void> 
+}) => {
+  if (!updateInfo) return null;
+  
+  // Get raw architecture information
+  const rawArchitectures = Device.supportedCpuArchitectures || [];
+  const primaryRawArch = rawArchitectures.length > 0 ? rawArchitectures[0] : 'unknown';
+  
+  return (
+    <View style={styles.debugSection}>
+      <Text style={styles.debugTitle}>Debug Information</Text>
+      
+      <ArchitectureSimulator 
+        currentSimulation={simulatedArch} 
+        onSimulate={onSimulate} 
+      />
+      
+      <Text style={styles.debugSubtitle}>Device Architecture:</Text>
+      <View style={styles.debugRow}>
+        <Text style={styles.debugLabel}>Raw Value:</Text>
+        <Text style={styles.debugValue}>{primaryRawArch}</Text>
+      </View>
+      <View style={styles.debugRow}>
+        <Text style={styles.debugLabel}>All Values:</Text>
+        <Text style={styles.debugValue}>{rawArchitectures.join(', ')}</Text>
+      </View>
+      <View style={styles.debugRow}>
+        <Text style={styles.debugLabel}>Mapped Key:</Text>
+        <Text style={styles.debugValue}>{deviceInfo.detectedUrlKey}</Text>
+      </View>
+      
+      <Text style={styles.debugSubtitle}>Available Download URLs:</Text>
+      {Object.entries(updateInfo.downloadUrls).map(([key, url]) => (
+        <View key={key} style={styles.debugRow}>
+          <Text style={[
+            styles.debugLabel, 
+            key === deviceInfo.detectedUrlKey && styles.highlightedText
+          ]}>
+            {key}:
+          </Text>
+          <Text style={[
+            styles.debugValue, 
+            key === deviceInfo.detectedUrlKey && styles.highlightedText
+          ]} numberOfLines={1} ellipsizeMode="middle">
+            {url}
+          </Text>
+        </View>
+      ))}
+      
+      <Text style={styles.debugSubtitle}>Selected URL:</Text>
+      <Text style={styles.debugValue}>
+        {getArchitectureSpecificDownloadUrl(updateInfo.downloadUrls, simulatedArch)}
+      </Text>
+
+      <View style={styles.debugButtonRow}>
+        <TouchableOpacity 
+          style={styles.smallDebugButton}
+          onPress={() => refreshArchitectureInfo()}
+        >
+          <Text style={styles.smallDebugButtonText}>Refresh Architecture Info</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.smallDebugButton, { marginLeft: 10, backgroundColor: '#f4511e' }]}
+          onPress={() => testArchitectureSpecificDownloadUrl()}
+        >
+          <Text style={styles.smallDebugButtonText}>Test Download URL</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+const ArchitectureSimulator = ({ 
+  currentSimulation, 
+  onSimulate 
+}: { 
+  currentSimulation: string | null, 
+  onSimulate: (arch: string | null) => Promise<void> 
+}) => {
+  const [isSimulating, setIsSimulating] = useState(false);
+
+  const handleSimulate = async (arch: string | null) => {
+    setIsSimulating(true);
+    try {
+      await onSimulate(arch);
+    } finally {
+      setIsSimulating(false);
+    }
+  };
+
+  return (
+    <View style={styles.simulatorContainer}>
+      <Text style={styles.debugSubtitle}>Simulate Architecture:</Text>
+      <View style={styles.simulatorButtons}>
+        <TouchableOpacity 
+          style={[
+            styles.simulatorButton, 
+            currentSimulation === null && styles.simulatorButtonActive
+          ]}
+          onPress={() => handleSimulate(null)}
+          disabled={isSimulating}
+        >
+          <Text style={styles.simulatorButtonText}>Default</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[
+            styles.simulatorButton, 
+            currentSimulation === 'arm64' && styles.simulatorButtonActive
+          ]}
+          onPress={() => handleSimulate('arm64')}
+          disabled={isSimulating}
+        >
+          <Text style={styles.simulatorButtonText}>ARM64</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[
+            styles.simulatorButton, 
+            currentSimulation === 'x86_64' && styles.simulatorButtonActive
+          ]}
+          onPress={() => handleSimulate('x86_64')}
+          disabled={isSimulating}
+        >
+          <Text style={styles.simulatorButtonText}>x86_64</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[
+            styles.simulatorButton, 
+            currentSimulation === 'x86' && styles.simulatorButtonActive
+          ]}
+          onPress={() => handleSimulate('x86')}
+          disabled={isSimulating}
+        >
+          <Text style={styles.simulatorButtonText}>x86</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[
+            styles.simulatorButton, 
+            currentSimulation === 'arm64-v8a' && styles.simulatorButtonActive
+          ]}
+          onPress={() => handleSimulate('arm64-v8a')}
+          disabled={isSimulating}
+        >
+          <Text style={styles.simulatorButtonText}>ARM64-v8a</Text>
+        </TouchableOpacity>
+      </View>
+      {currentSimulation && (
+        <Text style={styles.simulationActive}>
+          Simulating: {currentSimulation}
+        </Text>
+      )}
+      {isSimulating && (
+        <Text style={styles.simulationActive}>
+          Updating...
+        </Text>
+      )}
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -558,5 +935,103 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: 'rgba(255,255,255,0.05)',
     marginVertical: 10,
+  },
+  debugSection: {
+    padding: 16,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    margin: 16,
+  },
+  debugTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#333',
+  },
+  debugSubtitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 12,
+    marginBottom: 4,
+    color: '#555',
+  },
+  debugRow: {
+    flexDirection: 'row',
+    marginVertical: 2,
+  },
+  debugLabel: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#666',
+    width: 100,
+  },
+  debugValue: {
+    fontSize: 14,
+    color: '#333',
+    flex: 1,
+  },
+  debugButtonContainer: {
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  debugButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  debugButtonText: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  simulatorContainer: {
+    marginVertical: 12,
+  },
+  simulatorButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+  },
+  simulatorButton: {
+    backgroundColor: '#e0e0e0',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  simulatorButtonActive: {
+    backgroundColor: '#007AFF',
+  },
+  simulatorButtonText: {
+    fontSize: 14,
+    color: '#333',
+  },
+  simulationActive: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#007AFF',
+    fontWeight: 'bold',
+  },
+  highlightedText: {
+    color: '#007AFF',
+    fontWeight: 'bold',
+  },
+  debugButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  smallDebugButton: {
+    backgroundColor: '#555',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 4,
+  },
+  smallDebugButtonText: {
+    color: 'white',
+    fontSize: 14,
   },
 }); 

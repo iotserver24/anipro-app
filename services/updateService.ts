@@ -18,6 +18,7 @@ interface VersionInfo {
   };
   releaseDate: string;
   isForced: boolean;
+  currentAppVersion?: string;
 }
 
 const UPDATE_CHECK_KEY = '@anisurge_last_update_check';
@@ -55,6 +56,10 @@ class UpdateService {
 
       const response = await fetch(UPDATE_ENDPOINT);
       const versionInfo: VersionInfo = await response.json();
+
+      // Set currentAppVersion to our actual app version (overriding any server value)
+      // This ensures we're displaying the correct current version in the UI
+      versionInfo.currentAppVersion = this.currentVersion;
 
       // Save last check time
       await AsyncStorage.setItem(UPDATE_CHECK_KEY, now.toString());

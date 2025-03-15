@@ -8,8 +8,8 @@
 export const APP_CONFIG = {
   // App Information
   APP_NAME: 'AniSurge',
-  VERSION: '6.3.4',
-  VERSION_CODE: 5,
+  VERSION: '2.9.7',
+  VERSION_CODE: 6,
   
   // API Endpoints
   API_BASE_URL: 'https://app.animeverse.cc/api',
