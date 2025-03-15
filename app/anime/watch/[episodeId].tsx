@@ -1235,19 +1235,19 @@ export default function WatchEpisode() {
         setVideoUrl(selectedSource.url);
         setStreamingUrl(selectedSource.url);
         
-        // The VideoPlayer component will handle seeking to the saved position
-        // and restoring the playback state after the video loads
-        
-        // Set a timeout to reset quality changing state if something goes wrong
+        // Always reset quality changing state after 2.9 seconds to ensure button becomes clickable again
+        // regardless of whether the quality change was successful or not
         setTimeout(() => {
-          if (isQualityChanging) {
-            console.log('[DEBUG] Quality change: Timeout reached, resetting quality changing state');
-            setIsQualityChanging(false);
-          }
-        }, 5000); // Reduced from 10 seconds to 5 seconds
+          console.log('[DEBUG] Quality change: 2.9 second timeout reached, making button clickable again');
+          setIsQualityChanging(false);
+        }, 2900);
       } catch (error) {
         console.error('[DEBUG] Error during quality change:', error);
-        setIsQualityChanging(false);
+        // Even on error, wait a moment before making the button clickable again
+        // to prevent rapid clicking causing multiple errors
+        setTimeout(() => {
+          setIsQualityChanging(false);
+        }, 1000);
       }
     }
   };

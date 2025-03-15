@@ -112,6 +112,18 @@ const VideoPlayer = ({
       wasPlayingBeforeQualityChange.current = isPlaying;
       setIsQualityChanging(true);
       setSavedPosition(savedQualityPosition);
+      
+      // Add a safety timeout to ensure we don't stay in quality changing state forever
+      const safetyTimeout = setTimeout(() => {
+        if (isQualityChanging) {
+          console.log('[DEBUG] VideoPlayer: Safety timeout reached, resetting quality changing state');
+          setIsQualityChanging(false);
+        }
+      }, 3500); // Slightly longer than the parent component's timeout (2.9s)
+      
+      return () => {
+        clearTimeout(safetyTimeout);
+      };
     }
   }, [externalQualityChanging, savedQualityPosition]);
 
@@ -440,7 +452,7 @@ const VideoPlayer = ({
       setShowControls(true);
       const timeout = setTimeout(() => {
         setShowControls(false);
-      }, 3000);
+      }, 4000);
       setControlsTimeout(timeout);
     }
   };
@@ -449,7 +461,7 @@ const VideoPlayer = ({
     if (showControls && isPlaying) {
       const timeout = setTimeout(() => {
         setShowControls(false);
-      }, 3000);
+      }, 4000);
       setControlsTimeout(timeout);
       
       return () => {
@@ -571,8 +583,20 @@ const VideoPlayer = ({
         
         isAtEndRef.current = false;
         
+        // Set a safety timeout to ensure quality changing state is reset
+        // This will be cleared if the normal flow completes successfully
+        let qualityChangeSafetyTimeout: NodeJS.Timeout | null = null;
+        
         if (isQualityChanging && savedPosition > 0) {
           console.log(`[DEBUG] VideoPlayer: Quality change detected, seeking to saved position: ${savedPosition}`);
+          
+          // Set safety timeout to ensure we don't get stuck in quality changing state
+          qualityChangeSafetyTimeout = setTimeout(() => {
+            if (isQualityChanging) {
+              console.log('[DEBUG] VideoPlayer: Safety timeout in handleLoad reached, resetting quality changing state');
+              setIsQualityChanging(false);
+            }
+          }, 2500); // Shorter than the parent component's timeout (2.9s)
           
           if (videoRef.current) {
             try {
@@ -594,10 +618,23 @@ const VideoPlayer = ({
                 setIsPlaying(true);
               }
               
+              // Clear the safety timeout since we've successfully completed the quality change
+              if (qualityChangeSafetyTimeout) {
+                clearTimeout(qualityChangeSafetyTimeout);
+                qualityChangeSafetyTimeout = null;
+              }
+              
               setIsQualityChanging(false);
               console.log('[DEBUG] VideoPlayer: Quality change position restored successfully');
             } catch (error) {
               console.error('[DEBUG] VideoPlayer: Error seeking after quality change:', error);
+              
+              // Clear the safety timeout since we're handling the error
+              if (qualityChangeSafetyTimeout) {
+                clearTimeout(qualityChangeSafetyTimeout);
+                qualityChangeSafetyTimeout = null;
+              }
+              
               setIsQualityChanging(false);
             }
           }
