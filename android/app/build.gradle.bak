@@ -19,6 +19,45 @@ react {
     cliFile = new File(["node", "--print", "require.resolve('@expo/cli', { paths: [require.resolve('expo/package.json')] })"].execute(null, rootDir).text.trim())
     bundleCommand = "export:embed"
 
+    /* Folders */
+     //   The root of your project, i.e. where "package.json" lives. Default is '../..'
+    // root = file("../../")
+    //   The folder where the react-native NPM package is. Default is ../../node_modules/react-native
+    // reactNativeDir = file("../../node_modules/react-native")
+    //   The folder where the react-native Codegen package is. Default is ../../node_modules/@react-native/codegen
+    // codegenDir = file("../../node_modules/@react-native/codegen")
+
+    /* Variants */
+    //   The list of variants to that are debuggable. For those we're going to
+    //   skip the bundling of the JS bundle and the assets. By default is just 'debug'.
+    //   If you add flavors like lite, prod, etc. you'll have to list your debuggableVariants.
+    // debuggableVariants = ["liteDebug", "prodDebug"]
+
+    /* Bundling */
+    //   A list containing the node command and its flags. Default is just 'node'.
+    // nodeExecutableAndArgs = ["node"]
+
+    //
+    //   The path to the CLI configuration file. Default is empty.
+    // bundleConfig = file(../rn-cli.config.js)
+    //
+    //   The name of the generated asset file containing your JS bundle
+    // bundleAssetName = "MyApplication.android.bundle"
+    //
+    //   The entry file for bundle generation. Default is 'index.android.js' or 'index.js'
+    // entryFile = file("../js/MyApplication.android.js")
+    //
+    //   A list of extra flags to pass to the 'bundle' commands.
+    //   See https://github.com/react-native-community/cli/blob/main/docs/commands.md#bundle
+    // extraPackagerArgs = []
+
+    /* Hermes Commands */
+    //   The hermes compiler command to run. By default it is 'hermesc'
+    // hermesCommand = "$rootDir/my-custom-hermesc/bin/hermesc"
+    //
+    //   The list of flags to pass to the Hermes compiler. By default is "-O", "-output-source-map"
+    // hermesFlags = ["-O", "-output-source-map"]
+
     /* Autolinking */
     autolinkLibrariesWithApp()
 }
@@ -52,17 +91,51 @@ android {
         applicationId 'com.anisurge.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 6
-        versionName "2.9.7"
+        versionCode 1
+        versionName "1.0.0"
+        
+        // Specify the architectures you want to build for
+        ndk {
+            abiFilters "arm64-v8a", "x86", "x86_64"
+            // Note: armeabi-v7a is excluded
+        }
     }
-
-    // Add this block to enable split APKs
+    
+    // Add this block to generate separate APKs for each architecture
     splits {
         abi {
             enable true
             reset()
-            include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
-            universalApk true
+            include "arm64-v8a", "x86", "x86_64"
+            universalApk true // Also generate a universal APK
+        }
+    }
+    
+    // Optional: Modify the version code for each architecture-specific APK
+    // This helps ensure that the Play Store serves the correct APK
+    applicationVariants.all { variant ->
+        variant.outputs.each { output ->
+            // Skip this for non-release variants
+            if (variant.buildType.name != "release") return
+
+            // For each architecture, create a new version code
+            def versionCodes = ["arm64-v8a": 1, "x86": 2, "x86_64": 3]
+            def abi = output.getFilter(com.android.build.OutputFile.ABI)
+            
+            if (abi != null) {
+                // Architecture-specific APK
+                output.versionCodeOverride = 
+                    variant.versionCode * 10 + versionCodes.get(abi)
+                
+                // Set custom output filename for architecture-specific APKs
+                output.outputFileName = "anisurge-${variant.versionName}.${output.versionCodeOverride}-${abi}.apk"
+            } else {
+                // Universal APK
+                output.versionCodeOverride = variant.versionCode * 10
+                
+                // Set custom output filename for universal APK
+                output.outputFileName = "anisurge-${variant.versionName}.${output.versionCodeOverride}-universal.apk"
+            }
         }
     }
     
@@ -145,4 +218,35 @@ dependencies {
     } else {
         implementation jscFlavor
     }
-} 
+}
+
+// Add a custom task to copy and rename the APKs to a more accessible location
+tasks.register('copyAndRenameApks') {
+    dependsOn 'assembleRelease'
+    doLast {
+        def outputDir = new File("${rootDir}/app-release-apks")
+        if (!outputDir.exists()) {
+            outputDir.mkdirs()
+        }
+        
+        // Copy all APKs from the build directory to the output directory
+        copy {
+            from "${buildDir}/outputs/apk/release"
+            include "*.apk"
+            into outputDir
+        }
+        
+        println "APKs have been copied to ${outputDir.absolutePath}"
+        println "APK files:"
+        outputDir.listFiles().each { file ->
+            if (file.name.endsWith('.apk')) {
+                println " - ${file.name}"
+            }
+        }
+    }
+}
+
+// Hook into the assembleRelease task to automatically run our custom task
+tasks.named('assembleRelease').configure {
+    finalizedBy 'copyAndRenameApks'
+}

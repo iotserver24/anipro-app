@@ -9,6 +9,7 @@ npx react-native bundle --platform android `
 cd android
 ./gradlew clean
 ./gradlew assembleRelease
+./gradlew installRelease
 
 # The APKs will be generated in the following locations:
 # Universal APK: android/app/build/outputs/apk/release/app-universal-release.apk
