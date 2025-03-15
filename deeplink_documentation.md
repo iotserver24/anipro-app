@@ -11,6 +11,8 @@ AniSurge supports the following deeplink formats:
 1. **Anime Details**: `anisurge://anime/{animeId}`
 2. **Watch Episode**: `anisurge://anime/watch/{episodeId}`
 
+Note: The `episodeId` includes the full episode identifier with token in the format: `animeId$ep=episodeNumber$token=uniqueToken`
+
 ## How Deeplinks Are Configured
 
 ### App Configuration
@@ -93,8 +95,9 @@ You can test deeplinks using:
 
 The app implements sharing functionality that generates web URLs which can be converted back to deeplinks:
 
-1. When a user shares content from the app, it creates a web URL: `https://app.animeverse.cc/share/{animeId}`
-2. When this URL is opened on a device with AniSurge installed, it can redirect to the app using the `anisurge://` scheme
+1. When a user shares anime content from the app, it creates a web URL: `https://app.animeverse.cc/share/{animeId}`
+2. When a user shares episode content, it creates a web URL: `https://app.animeverse.cc/share/{encodedEpisodeId}` where `encodedEpisodeId` is the URL-encoded full episode ID with token
+3. When these URLs are opened on a device with AniSurge installed, they redirect to the app using the `anisurge://` scheme
 
 ## Web to App Linking
 
@@ -128,11 +131,37 @@ const openAnimeInApp = async (animeId) => {
 };
 ```
 
+### Handling Shared Episode Links
+
+When handling shared episode links, you need to properly decode the episode ID:
+
+```javascript
+import { Linking } from 'react-native';
+import { router } from 'expo-router';
+
+// Example deep linking handler for shared episodes
+const handleDeepLink = (url) => {
+  const parsedUrl = Linking.parse(url);
+  
+  if (parsedUrl.path.includes('share/')) {
+    // Extract and decode the episode ID from the path
+    const episodeId = decodeURIComponent(parsedUrl.path.replace('share/', ''));
+    
+    // Navigate to the watch screen with the full episode ID
+    router.push({
+      pathname: "/anime/watch/[episodeId]",
+      params: { episodeId: episodeId }
+    });
+  }
+};
+```
+
 ## Security Considerations
 
 - Deeplinks can potentially expose sensitive functionality, so ensure proper validation of parameters
 - Consider implementing authentication checks for sensitive content accessed via deeplinks
 - Validate all input parameters from deeplinks before using them in your app logic
+- Always URL-encode and decode episode IDs properly as they may contain special characters like `$`, `=`, and other URL-unsafe characters
 
 ## Benefits of Using Deeplinks
 
@@ -150,7 +179,17 @@ If deeplinks aren't working:
 3. Check that the URL format matches exactly what the app expects
 4. On Android, verify the intent filters are correctly configured
 5. Test with the ADB command to rule out issues with the source of the deeplink
+6. For episode links, ensure the episode ID is properly URL-encoded when creating the share URL and properly decoded when handling the deeplink
+
+### Common Episode Sharing Issues
+
+If episode sharing is not working correctly:
+
+1. **Encoding Issues**: Make sure the episode ID is properly URL-encoded using `encodeURIComponent()` when creating the share URL
+2. **Decoding Issues**: Ensure the episode ID is properly decoded using `decodeURIComponent()` when handling the deeplink
+3. **Token Format**: Verify that the complete episode ID with token is being used (format: `animeId$ep=episodeNumber$token=uniqueToken`)
+4. **API Compatibility**: Confirm that the episode ID format matches what the API expects
 
 ## Conclusion
 
-Deeplinks using the `anisurge://` scheme provide a powerful way to navigate directly to content within the AniSurge app. By implementing proper deeplink handling, the app offers a seamless experience for users sharing and accessing content across different platforms. 
+Deeplinks using the `anisurge://` scheme provide a powerful way to navigate directly to content within the AniSurge app. By implementing proper deeplink handling, the app offers a seamless experience for users sharing and accessing content across different platforms. The updated episode sharing format that includes the complete episode ID with token ensures that users can directly access specific episodes without errors. 

@@ -356,7 +356,7 @@ export default function AnimeDetails() {
     if (!animeData) return;
     
     try {
-      const shareUrl = `https://app.animeverse.cc/share/${id}`;
+      const shareUrl = `https://app.animeverse.cc/share/${encodeURIComponent(id as string)}`;
       const episodeInfo = `${animeData.info.episodes.sub > 0 ? `🗣️ ${animeData.info.episodes.sub} Sub Episodes` : ''}${animeData.info.episodes.dub > 0 ? `\n🎙️ ${animeData.info.episodes.dub} Dub Episodes` : ''}`;
       const message = `📺 ${animeData.info.name}\n\n${episodeInfo}\n\n${animeData.info.description?.slice(0, 150)}...\n\n🔥 Watch now on AniSurge!\n\n${shareUrl}`;
       
@@ -374,7 +374,7 @@ export default function AnimeDetails() {
     if (!animeData) return;
     
     try {
-      const shareUrl = `https://app.animeverse.cc/share/${id}/${episode.number}`;
+      const shareUrl = `https://app.animeverse.cc/share/${encodeURIComponent(episode.id)}`;
       const emojiType = selectedMode === 'sub' ? '🗣️' : '🎙️';
       const message = `📺 ${animeData.info.name}\n${emojiType} Episode ${episode.number}${episode.title ? `: ${episode.title}` : ''}\n\n${episode.isFiller ? '⚠️ Filler Episode\n\n' : ''}🔥 Watch now on AniSurge!\n\n${shareUrl}`;
       
@@ -387,6 +387,20 @@ export default function AnimeDetails() {
       console.error('Error sharing episode:', error);
     }
   };
+
+  // NOTE: Make sure to update your deep linking handler to properly decode the episode ID
+  // Example deep linking handler code:
+  // const handleDeepLink = (url) => {
+  //   const parsedUrl = Linking.parse(url);
+  //   if (parsedUrl.path.includes('share/')) {
+  //     const episodeId = decodeURIComponent(parsedUrl.path.replace('share/', ''));
+  //     // Navigate to the watch screen with the full episode ID
+  //     router.push({
+  //       pathname: "/anime/watch/[episodeId]",
+  //       params: { episodeId: episodeId }
+  //     });
+  //   }
+  // };
 
   const handleTabChange = (tab: 'episodes' | 'related' | 'recommendations') => {
     Animated.timing(fadeAnim, {
