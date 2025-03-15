@@ -126,9 +126,15 @@ android {
                 // Architecture-specific APK
                 output.versionCodeOverride = 
                     variant.versionCode * 10 + versionCodes.get(abi)
+                
+                // Set custom output filename for architecture-specific APKs
+                output.outputFileName = "anisurge-${variant.versionName}.${output.versionCodeOverride}-${abi}.apk"
             } else {
                 // Universal APK
                 output.versionCodeOverride = variant.versionCode * 10
+                
+                // Set custom output filename for universal APK
+                output.outputFileName = "anisurge-${variant.versionName}.${output.versionCodeOverride}-universal.apk"
             }
         }
     }
@@ -212,4 +218,35 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+}
+
+// Add a custom task to copy and rename the APKs to a more accessible location
+tasks.register('copyAndRenameApks') {
+    dependsOn 'assembleRelease'
+    doLast {
+        def outputDir = new File("${rootDir}/app-release-apks")
+        if (!outputDir.exists()) {
+            outputDir.mkdirs()
+        }
+        
+        // Copy all APKs from the build directory to the output directory
+        copy {
+            from "${buildDir}/outputs/apk/release"
+            include "*.apk"
+            into outputDir
+        }
+        
+        println "APKs have been copied to ${outputDir.absolutePath}"
+        println "APK files:"
+        outputDir.listFiles().each { file ->
+            if (file.name.endsWith('.apk')) {
+                println " - ${file.name}"
+            }
+        }
+    }
+}
+
+// Hook into the assembleRelease task to automatically run our custom task
+tasks.named('assembleRelease').configure {
+    finalizedBy 'copyAndRenameApks'
 }
