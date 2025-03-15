@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Share, Image, Alert, Platform, ImageBackground } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Share, Image, Alert, Platform, ImageBackground, NativeModules } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,6 +9,7 @@ import { useWatchHistoryStore } from '../store/watchHistoryStore';
 import { useMyListStore } from '../store/myListStore';
 import * as FileSystem from 'expo-file-system';
 import { Asset } from 'expo-asset';
+import * as Device from 'expo-device';
 
 interface UpdateInfo {
   latestVersion: string;
@@ -31,6 +32,10 @@ export default function AboutScreen() {
   const [clearingCache, setClearingCache] = useState(false);
   const [imageReady, setImageReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [deviceInfo, setDeviceInfo] = useState({
+    appArchitecture: '',
+    deviceArchitecture: '',
+  });
   const [stats, setStats] = useState({
     watchedAnime: 0,
     totalWatchTime: 0,
@@ -40,6 +45,65 @@ export default function AboutScreen() {
   
   const { history } = useWatchHistoryStore();
   const { myList } = useMyListStore();
+
+  // Get device and app architecture information
+  useEffect(() => {
+    const getArchitectureInfo = async () => {
+      try {
+        // Get device architecture
+        const deviceArch = Device.supportedCpuArchitectures;
+        const primaryArch = deviceArch && deviceArch.length > 0 ? deviceArch[0] : 'unknown';
+        
+        // Format architecture for display
+        const formatArchitecture = (arch: string) => {
+          switch(arch.toLowerCase()) {
+            case 'arm64':
+              return 'ARM64 (64-bit)';
+            case 'arm':
+              return 'ARM (32-bit)';
+            case 'x86_64':
+              return 'x86_64 (64-bit Intel/AMD)';
+            case 'x86':
+              return 'x86 (32-bit Intel/AMD)';
+            default:
+              return arch;
+          }
+        };
+        
+        // For app architecture, we'll show the build type
+        // In a real app, this would be determined at build time
+        // For now, we'll use a heuristic based on device architecture
+        let appArch = 'Universal APK';
+        
+        // This is a simplification - in reality, the app architecture
+        // would be determined by the build configuration
+        if (Platform.OS === 'android') {
+          if (primaryArch === 'arm64') {
+            appArch = 'ARM64-v8a';
+          } else if (primaryArch === 'arm') {
+            appArch = 'ARMv7';
+          } else if (primaryArch === 'x86_64') {
+            appArch = 'x86_64';
+          } else if (primaryArch === 'x86') {
+            appArch = 'x86';
+          }
+        }
+        
+        setDeviceInfo({
+          appArchitecture: appArch,
+          deviceArchitecture: formatArchitecture(primaryArch),
+        });
+      } catch (error) {
+        console.error('Error getting architecture info:', error);
+        setDeviceInfo({
+          appArchitecture: 'unknown',
+          deviceArchitecture: 'unknown',
+        });
+      }
+    };
+    
+    getArchitectureInfo();
+  }, []);
 
   // Preload the background image
   useEffect(() => {
@@ -323,6 +387,30 @@ export default function AboutScreen() {
             <TouchableOpacity onPress={navigateToDownloads}>
               <InfoRow icon="file-download" label="Downloads" value="Manage" isLink />
             </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Device Information */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Device Information</Text>
+          <View style={styles.infoCard}>
+            <InfoRow 
+              icon="smartphone" 
+              label="Device" 
+              value={`${Device.modelName || 'Unknown'}`} 
+            />
+            <SectionDivider />
+            <InfoRow 
+              icon="memory" 
+              label="Device Architecture" 
+              value={deviceInfo.deviceArchitecture} 
+            />
+            <SectionDivider />
+            <InfoRow 
+              icon="developer-board" 
+              label="App Build Type" 
+              value={deviceInfo.appArchitecture} 
+            />
           </View>
         </View>
 

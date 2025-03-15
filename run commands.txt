@@ -1,5 +1,3 @@
-
-
 cd "C:\Users\Asus\all repos\anime app\anipro"
 npx expo prebuild --clean
 
@@ -11,4 +9,35 @@ npx react-native bundle --platform android `
 cd android
 ./gradlew clean
 ./gradlew assembleRelease
+
+# The APKs will be generated in the following locations:
+# Universal APK: android/app/build/outputs/apk/release/app-universal-release.apk
+# ARM64 APK: android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
+# x86 APK: android/app/build/outputs/apk/release/app-x86-release.apk
+# x86_64 APK: android/app/build/outputs/apk/release/app-x86_64-release.apk
+
+# To install the appropriate APK for your device:
 ./gradlew installRelease
+
+# =====================================================================
+# QUICK UPDATE COMMANDS (for small changes)
+# =====================================================================
+# If you're only making small changes to JavaScript/TypeScript code
+# and not modifying native code or adding new dependencies, you can use:
+
+cd "C:\Users\Asus\all repos\anime app\anipro"
+
+# Bundle the JavaScript code
+npx react-native bundle --platform android `
+    --dev false `
+    --entry-file app/_layout.tsx `
+    --bundle-output android/app/src/main/assets/index.android.bundle `
+    --assets-dest android/app/src/main/res
+
+cd android
+
+# Build the APKs (skip clean for faster builds)
+./gradlew assembleRelease
+
+# Install on your device (optional)
+# ./gradlew installRelease

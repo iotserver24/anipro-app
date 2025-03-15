@@ -93,7 +93,46 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0.0"
+        
+        // Specify the architectures you want to build for
+        ndk {
+            abiFilters "arm64-v8a", "x86", "x86_64"
+            // Note: armeabi-v7a is excluded
+        }
     }
+    
+    // Add this block to generate separate APKs for each architecture
+    splits {
+        abi {
+            enable true
+            reset()
+            include "arm64-v8a", "x86", "x86_64"
+            universalApk true // Also generate a universal APK
+        }
+    }
+    
+    // Optional: Modify the version code for each architecture-specific APK
+    // This helps ensure that the Play Store serves the correct APK
+    applicationVariants.all { variant ->
+        variant.outputs.each { output ->
+            // Skip this for non-release variants
+            if (variant.buildType.name != "release") return
+
+            // For each architecture, create a new version code
+            def versionCodes = ["arm64-v8a": 1, "x86": 2, "x86_64": 3]
+            def abi = output.getFilter(com.android.build.OutputFile.ABI)
+            
+            if (abi != null) {
+                // Architecture-specific APK
+                output.versionCodeOverride = 
+                    variant.versionCode * 10 + versionCodes.get(abi)
+            } else {
+                // Universal APK
+                output.versionCodeOverride = variant.versionCode * 10
+            }
+        }
+    }
+    
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
