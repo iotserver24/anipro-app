@@ -147,14 +147,51 @@ const handleDeepLink = (url) => {
     // Extract and decode the episode ID from the path
     const episodeId = decodeURIComponent(parsedUrl.path.replace('share/', ''));
     
+    // Extract anime ID from episode ID format: animeId$ep=number$token=xyz
+    const animeId = episodeId.split('$')[0];
+    
     // Navigate to the watch screen with the full episode ID
     router.push({
       pathname: "/anime/watch/[episodeId]",
-      params: { episodeId: episodeId }
+      params: { 
+        episodeId: episodeId,
+        animeId: animeId // Include animeId for better UI experience
+      }
     });
   }
 };
 ```
+
+### Enhanced User Experience with Additional Parameters
+
+To provide a better user experience when navigating from shared links, the app now extracts and displays additional information:
+
+1. **Anime Title**: When opening a shared episode link, the app extracts the anime ID from the episode ID and fetches the anime details to display the proper title.
+
+2. **Episode Title**: The app also extracts the episode number and title to display in the header, showing both the anime name and episode information.
+
+Example implementation in the watch screen:
+
+```javascript
+// In the episode player screen
+useEffect(() => {
+  // If animeId is not provided (e.g., from a shared URL), extract it from episodeId
+  if (!animeId && typeof episodeId === 'string') {
+    // Extract animeId from episodeId format: animeId$ep=number$token=xyz
+    const extractedAnimeId = episodeId.split('$')[0];
+    if (extractedAnimeId) {
+      // Fetch anime info with the extracted ID
+      const animeData = await animeAPI.getAnimeDetails(extractedAnimeId);
+      
+      // Set anime info and episodes
+      setAnimeInfo(animeData);
+      setEpisodes(animeData.episodes);
+    }
+  }
+}, [episodeId, animeId]);
+```
+
+This approach ensures that users get a complete experience even when accessing content through shared links, with proper titles and navigation options.
 
 ## Security Considerations
 
@@ -189,7 +226,16 @@ If episode sharing is not working correctly:
 2. **Decoding Issues**: Ensure the episode ID is properly decoded using `decodeURIComponent()` when handling the deeplink
 3. **Token Format**: Verify that the complete episode ID with token is being used (format: `animeId$ep=episodeNumber$token=uniqueToken`)
 4. **API Compatibility**: Confirm that the episode ID format matches what the API expects
+5. **Missing UI Elements**: If the anime title or episode list is not showing when accessing from a shared link, ensure the app is extracting the anime ID from the episode ID and fetching the necessary data
 
 ## Conclusion
 
-Deeplinks using the `anisurge://` scheme provide a powerful way to navigate directly to content within the AniSurge app. By implementing proper deeplink handling, the app offers a seamless experience for users sharing and accessing content across different platforms. The updated episode sharing format that includes the complete episode ID with token ensures that users can directly access specific episodes without errors. 
+Deeplinks using the `anisurge://` scheme provide a powerful way to navigate directly to content within the AniSurge app. By implementing proper deeplink handling, the app offers a seamless experience for users sharing and accessing content across different platforms. 
+
+The updated episode sharing implementation now provides a complete user experience by:
+1. Using the full episode ID with token to ensure accurate playback
+2. Extracting the anime ID to fetch and display proper anime information
+3. Showing both anime title and episode title in the header
+4. Providing access to the full episode list for easy navigation
+
+These enhancements ensure that users can enjoy a consistent experience whether they access content through the app's navigation or via shared links. 
