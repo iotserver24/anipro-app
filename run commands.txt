@@ -17,8 +17,7 @@ cd android
 # x86 APK: android/app/build/outputs/apk/release/app-x86-release.apk
 # x86_64 APK: android/app/build/outputs/apk/release/app-x86_64-release.apk
 
-# To install the appropriate APK for your device:
-./gradlew installRelease
+
 
 # =====================================================================
 # QUICK UPDATE COMMANDS (for small changes)
@@ -26,9 +25,10 @@ cd android
 # If you're only making small changes to JavaScript/TypeScript code
 # and not modifying native code or adding new dependencies, you can use:
 
+
+
 cd "C:\Users\Asus\all repos\anime app\anipro"
 
-# Bundle the JavaScript code
 npx react-native bundle --platform android `
     --dev false `
     --entry-file app/_layout.tsx `
@@ -36,9 +36,9 @@ npx react-native bundle --platform android `
     --assets-dest android/app/src/main/res
 
 cd android
+node scripts/update-version.js <version> <versionCode>  
+example: node scripts/update-version.js 1.0.0 100
 
-# Build the APKs (skip clean for faster builds)
+
 ./gradlew assembleRelease
-
-# Install on your device (optional)
-# ./gradlew installRelease
+./gradlew installRelease
