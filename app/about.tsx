@@ -33,13 +33,10 @@ export default function AboutScreen() {
   const [imageReady, setImageReady] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [deviceInfo, setDeviceInfo] = useState({
-    appArchitecture: '',
     deviceArchitecture: '',
   });
   const [stats, setStats] = useState({
     watchedAnime: 0,
-    totalWatchTime: 0,
-    minutesStreamed: 0,
     bookmarkedAnime: 0
   });
   
@@ -70,33 +67,12 @@ export default function AboutScreen() {
           }
         };
         
-        // For app architecture, we'll show the build type
-        // In a real app, this would be determined at build time
-        // For now, we'll use a heuristic based on device architecture
-        let appArch = 'Universal APK';
-        
-        // This is a simplification - in reality, the app architecture
-        // would be determined by the build configuration
-        if (Platform.OS === 'android') {
-          if (primaryArch === 'arm64') {
-            appArch = 'ARM64-v8a';
-          } else if (primaryArch === 'arm') {
-            appArch = 'ARMv7';
-          } else if (primaryArch === 'x86_64') {
-            appArch = 'x86_64';
-          } else if (primaryArch === 'x86') {
-            appArch = 'x86';
-          }
-        }
-        
         setDeviceInfo({
-          appArchitecture: appArch,
           deviceArchitecture: formatArchitecture(primaryArch),
         });
       } catch (error) {
         console.error('Error getting architecture info:', error);
         setDeviceInfo({
-          appArchitecture: 'unknown',
           deviceArchitecture: 'unknown',
         });
       }
@@ -132,30 +108,15 @@ export default function AboutScreen() {
       // Count unique anime by creating a Set of unique anime IDs from watch history
       const uniqueAnime = new Set(history.map(item => item.id));
       
-      // Calculate total watch time in minutes from actual duration data in history
-      const totalMinutes = history.reduce((total, item) => {
-        // Only count if duration exists, convert seconds to minutes
-        return total + (item.duration ? Math.floor(item.duration / 60) : 0);
-      }, 0);
-      
       // Set real statistics based on user's actual data
       setStats({
         watchedAnime: uniqueAnime.size, // Number of unique anime watched
-        totalWatchTime: totalMinutes, // Total watch time in minutes
-        minutesStreamed: totalMinutes, // Minutes streamed from continue watching
         bookmarkedAnime: myList.length // Number of bookmarked anime
       });
     };
     
     calculateStats();
   }, [history, myList]);
-
-  // Format watch time into hours and minutes
-  const formatWatchTime = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return `${hours} hr ${mins} min`;
-  };
 
   const openLink = (url: string) => {
     Linking.openURL(url).catch((err) => console.error('Error opening URL:', err));
@@ -345,29 +306,16 @@ export default function AboutScreen() {
           <View style={styles.infoCard}>
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <MaterialIcons name="timer" size={24} color="#f4511e" />
-                <Text style={styles.statValue}>{stats.minutesStreamed}</Text>
-                <Text style={styles.statLabel}>Minutes Streamed</Text>
-              </View>
-              
-              <View style={styles.statItem}>
                 <MaterialIcons name="tv" size={24} color="#f4511e" />
                 <Text style={styles.statValue}>{stats.watchedAnime}</Text>
-                <Text style={styles.statLabel}>Anime</Text>
+                <Text style={styles.statLabel}>Anime Watched</Text>
               </View>
               
               <View style={styles.statItem}>
                 <MaterialIcons name="bookmark" size={24} color="#f4511e" />
                 <Text style={styles.statValue}>{stats.bookmarkedAnime}</Text>
-                <Text style={styles.statLabel}>Bookmarked</Text>
+                <Text style={styles.statLabel}>Anime Bookmarked</Text>
               </View>
-            </View>
-            
-            <View style={styles.watchTimeContainer}>
-              <MaterialIcons name="access-time" size={20} color="#f4511e" />
-              <Text style={styles.watchTimeText}>
-                Total Watch Time: {formatWatchTime(stats.totalWatchTime)}
-              </Text>
             </View>
           </View>
         </View>
@@ -404,12 +352,6 @@ export default function AboutScreen() {
               icon="memory" 
               label="Device Architecture" 
               value={deviceInfo.deviceArchitecture} 
-            />
-            <SectionDivider />
-            <InfoRow 
-              icon="developer-board" 
-              label="App Build Type" 
-              value={deviceInfo.appArchitecture} 
             />
           </View>
         </View>
@@ -593,8 +535,9 @@ const styles = StyleSheet.create({
   },
   statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'space-evenly',
     marginVertical: 10,
+    paddingHorizontal: 20,
   },
   statItem: {
     alignItems: 'center',
@@ -610,20 +553,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#999',
     marginTop: 2,
-  },
-  watchTimeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.1)',
-  },
-  watchTimeText: {
-    color: '#ccc',
-    marginLeft: 8,
-    fontSize: 14,
   },
   sectionDivider: {
     height: 1,
