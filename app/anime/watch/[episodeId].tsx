@@ -588,7 +588,7 @@ const DownloadPopup = ({ visible, onClose, downloadUrl }: {
 
 // Add the WatchEpisode component as a default export
 export default function WatchEpisode() {
-  const { episodeId, animeId, episodeNumber, title, category, resumeTime } = useLocalSearchParams();
+  const { episodeId, animeId, episodeNumber, title, episodeTitle, category, resumeTime } = useLocalSearchParams();
   const categoryAsSubOrDub = (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub';
   const videoRef = useRef<VideoRef>(null);
   const [streamingUrl, setStreamingUrl] = useState<string | null>(null);
@@ -801,6 +801,36 @@ export default function WatchEpisode() {
         isNavigating.current = false;
       }
       
+      // If animeId is not provided (e.g., from a shared URL), extract it from episodeId
+      if (!animeId && typeof episodeId === 'string') {
+        // Extract animeId from episodeId format: animeId$ep=number$token=xyz
+        const extractedAnimeId = episodeId.split('$')[0];
+        if (extractedAnimeId) {
+          console.log(`[DEBUG] Extracted animeId from episodeId: ${extractedAnimeId}`);
+          // Fetch anime info with the extracted ID
+          const animeData = await animeAPI.getAnimeDetails(extractedAnimeId);
+          
+          // Set anime info
+          const processedData = {
+            ...animeData,
+            title: animeData.title,
+            image: animeData.image,
+            description: animeData.description,
+            type: animeData.type,
+            status: animeData.status,
+            genres: animeData.genres
+          };
+          setAnimeInfo(processedData);
+          
+          // Set episodes
+          if (animeData.episodes) {
+            setEpisodes(animeData.episodes as APIEpisode[]);
+            const index = animeData.episodes.findIndex(ep => ep.id === episodeId);
+            setCurrentEpisodeIndex(index);
+          }
+        }
+      }
+      
       // Rest of the function remains the same
       const sources = await animeAPI.getEpisodeSources(
         episodeId as string, 
@@ -997,7 +1027,8 @@ export default function WatchEpisode() {
           episodeId: nextEpisode.id,
           animeId: animeId as string,
           episodeNumber: nextEpisode.number,
-          title: nextEpisode.title,
+          title: animeInfo?.title || (title as string) || 'Unknown Anime',
+          episodeTitle: nextEpisode.title || `Episode ${nextEpisode.number}`,
           category: category,
           resumeTime: "0" // Force start from beginning
         }
@@ -1394,12 +1425,13 @@ export default function WatchEpisode() {
           episodeId: prevEpisode.id,
           animeId: animeId as string,
           episodeNumber: prevEpisode.number,
-          title: prevEpisode.title || `Episode ${prevEpisode.number}`,
+          title: animeInfo?.title || (title as string) || 'Unknown Anime',
+          episodeTitle: prevEpisode.title || `Episode ${prevEpisode.number}`,
           category: category
         }
       });
     }
-  }, [currentEpisodeIndex, episodes, router, animeId, category]);
+  }, [currentEpisodeIndex, episodes, router, animeId, animeInfo, title, category]);
 
   // Handle next episode navigation
   const handleNextEpisode = useCallback(() => {
@@ -1414,12 +1446,13 @@ export default function WatchEpisode() {
           episodeId: nextEpisode.id,
           animeId: animeId as string,
           episodeNumber: nextEpisode.number,
-          title: nextEpisode.title || `Episode ${nextEpisode.number}`,
+          title: animeInfo?.title || (title as string) || 'Unknown Anime',
+          episodeTitle: nextEpisode.title || `Episode ${nextEpisode.number}`,
           category: category
         }
       });
     }
-  }, [currentEpisodeIndex, episodes, router, animeId, category]);
+  }, [currentEpisodeIndex, episodes, router, animeId, animeInfo, title, category]);
 
   // Reset navigation state when component mounts or episodeId changes
   useEffect(() => {
@@ -1510,7 +1543,9 @@ export default function WatchEpisode() {
       <Stack.Screen 
         options={{
           headerShown: !isFullscreen,
-          title: title as string,
+          title: animeInfo?.title ? 
+            (episodeTitle ? `${animeInfo.title} - ${episodeTitle}` : animeInfo.title) : 
+            (title as string || 'Watch Anime'),
           statusBarHidden: isFullscreen,
           statusBarStyle: 'light',
           statusBarTranslucent: true,

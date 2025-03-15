@@ -709,6 +709,7 @@ export default function AnimeDetails() {
             animeId: id,
             episodeNumber: item.number,
             title: animeData?.info.name || 'Unknown Anime',
+            episodeTitle: item.title || `Episode ${item.number}`,
             category: selectedMode
           }
         });
