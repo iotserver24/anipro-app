@@ -4,6 +4,11 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useMyListStore } from '../store/myListStore';
+import * as Notifications from 'expo-notifications';
+import { logger } from '../utils/logger';
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as TaskManager from 'expo-task-manager';
 
 interface AnimeScheduleItem {
   id: string;
@@ -89,11 +94,151 @@ const convertToIST = (germanTime: string) => {
   return `${hours12}:${finalMinutes.toString().padStart(2, '0')} ${period} IST`;
 };
 
+// Configure notifications globally (outside of any component)
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
+// Request notification permissions
+export const requestNotificationPermissions = async () => {
+  try {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    
+    if (finalStatus !== 'granted') {
+      logger.warn('Notification permissions not granted');
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    logger.error('Error requesting notification permissions:', error);
+    return false;
+  }
+};
+
+// Modify the checkAndNotifyAiringAnime function to accept a bypassHistory parameter
+export const checkAndNotifyAiringAnime = async (schedule: ScheduleData, myList: any[], selectedDate: string, bypassHistory: boolean = false) => {
+  try {
+    // Check permissions first
+    const hasPermission = await requestNotificationPermissions();
+    if (!hasPermission) {
+      logger.warn('No notification permission');
+      return;
+    }
+
+    const scheduleForDate = schedule[selectedDate] || [];
+    let notificationCount = 0;
+
+    for (const scheduledAnime of scheduleForDate) {
+      try {
+        const isInMyList = myList.some(item => item.id === scheduledAnime.id);
+        
+        if (isInMyList) {
+          let shouldNotify = true;
+          
+          if (!bypassHistory) {
+            // Only check notification history if not bypassing
+            const notificationKey = `notified_${scheduledAnime.id}_${scheduledAnime.airingEpisode}`;
+            const alreadyNotified = await AsyncStorage.getItem(notificationKey);
+            shouldNotify = !alreadyNotified;
+          }
+          
+          if (shouldNotify) {
+            const identifier = await Notifications.scheduleNotificationAsync({
+              content: {
+                title: `Airing on ${selectedDate}: ${scheduledAnime.title}`,
+                body: `Episode ${scheduledAnime.airingEpisode} airs at ${scheduledAnime.airingTime}`,
+                data: {
+                  deepLink: `anisurge://anime/${scheduledAnime.id}`,
+                  animeId: scheduledAnime.id,
+                  episode: scheduledAnime.airingEpisode
+                },
+              },
+              trigger: null, // Send immediately
+            });
+
+            if (identifier) {
+              if (!bypassHistory) {
+                // Only store in history if not bypassing
+                await AsyncStorage.setItem(`notified_${scheduledAnime.id}_${scheduledAnime.airingEpisode}`, 'true');
+              }
+              notificationCount++;
+              logger.info(`Scheduled notification for ${scheduledAnime.title}`);
+            }
+          }
+        }
+      } catch (animeError) {
+        logger.error(`Error processing anime ${scheduledAnime.title}:`, animeError);
+        continue;
+      }
+    }
+
+    if (notificationCount > 0) {
+      logger.info(`Sent ${notificationCount} airing notifications for ${selectedDate}`);
+    } else {
+      logger.info(`No new episodes airing on ${selectedDate} from your list`);
+    }
+  } catch (error) {
+    logger.error('Error checking for airing notifications:', error);
+  }
+};
+
+// Move all task-related code outside the component
+const BACKGROUND_NOTIFICATION_TASK = 'BACKGROUND_NOTIFICATION_TASK';
+
+const getNext1AMIST = () => {
+  const now = new Date();
+  const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000));
+  const next1AM = new Date(ist);
+  next1AM.setHours(1, 0, 0, 0);
+  
+  if (ist.getHours() >= 1) {
+    next1AM.setDate(next1AM.getDate() + 1);
+  }
+  
+  return new Date(next1AM.getTime() - (5.5 * 60 * 60 * 1000));
+};
+
+// Define background task outside component
+TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async () => {
+  try {
+    const today = new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric'
+    });
+
+    const cachedData = await AsyncStorage.getItem(CACHE_KEY);
+    if (!cachedData) return BackgroundFetch.Result.NoData;
+
+    const { data: schedule } = JSON.parse(cachedData);
+    const myListData = await AsyncStorage.getItem('my_list');
+    const myList = myListData ? JSON.parse(myListData) : [];
+
+    await checkAndNotifyAiringAnime(schedule, myList, today);
+    return BackgroundFetch.Result.NewData;
+  } catch (error) {
+    logger.error('Background task error:', error);
+    return BackgroundFetch.Result.Failed;
+  }
+});
+
 export default function Schedule() {
   const [schedule, setSchedule] = useState<ScheduleData>({});
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const { myList } = useMyListStore();
 
   // Get dates for the current week
   const getWeekDates = () => {
@@ -290,32 +435,90 @@ export default function Schedule() {
     return dateWithoutDay;
   };
 
+  // Modify the manual check function to bypass history
+  const handleCheckNotifications = async (selectedDate: string) => {
+    try {
+      logger.info('Manually checking for airing notifications...');
+      await checkAndNotifyAiringAnime(schedule, myList, selectedDate, true); // Set bypassHistory to true
+    } catch (error) {
+      logger.error('Error in manual notification check:', error);
+    }
+  };
+
+  // Add notification response handler in the main component
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      try {
+        const data = response.notification.request.content.data;
+        if (data?.deepLink) {
+          router.push(data.deepLink.replace('anisurge://', ''));
+        }
+      } catch (error) {
+        logger.error('Error handling notification response:', error);
+      }
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  // Register background task in a separate useEffect
+  useEffect(() => {
+    const setupBackgroundTask = async () => {
+      try {
+        await BackgroundFetch.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK, {
+          minimumInterval: 24 * 60 * 60, // 24 hours in seconds
+          stopOnTerminate: false,
+          startOnBoot: true,
+        });
+
+        logger.info('Background task registered successfully');
+      } catch (error) {
+        logger.error('Failed to register background task:', error);
+      }
+    };
+
+    setupBackgroundTask();
+  }, []);
+
   return (
     <View style={styles.container}>
       {/* Date selector */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.dateSelector}
+      <View style={styles.header}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.dateSelector}
+        >
+          {Object.keys(schedule).map((date, index) => (
+            <TouchableOpacity
+              key={index}
+              style={[
+                styles.dateButton,
+                selectedDate === date && styles.selectedDate
+              ]}
+              onPress={() => setSelectedDate(date)}
+            >
+              <Text style={[
+                styles.dateText,
+                selectedDate === date && styles.selectedDateText
+              ]}>
+                {formatDate(date)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* Notification button */}
+      <TouchableOpacity
+        style={styles.notifyButtonContainer}
+        onPress={() => handleCheckNotifications(selectedDate)}
       >
-        {Object.keys(schedule).map((date, index) => (
-          <TouchableOpacity
-            key={index}
-            style={[
-              styles.dateButton,
-              selectedDate === date && styles.selectedDate
-            ]}
-            onPress={() => setSelectedDate(date)}
-          >
-            <Text style={[
-              styles.dateText,
-              selectedDate === date && styles.selectedDateText
-            ]}>
-              {formatDate(date)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+        <View style={styles.notifyButton}>
+          <MaterialIcons name="notifications" size={24} color="#fff" />
+          <Text style={styles.notifyButtonText}>Check Notifications for {formatDate(selectedDate)}</Text>
+        </View>
+      </TouchableOpacity>
 
       <FlatList
         data={schedule[selectedDate] || []}
@@ -346,9 +549,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
   },
-  dateSelector: {
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: '#333',
+  },
+  dateSelector: {
+    flex: 1,
   },
   dateButton: {
     paddingHorizontal: 20,
@@ -424,5 +632,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     opacity: 0.6,
     marginBottom: 8,
+  },
+  notifyButtonContainer: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  notifyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f4511e',
+    padding: 12,
+    borderRadius: 8,
+  },
+  notifyButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginLeft: 8,
   },
 }); 

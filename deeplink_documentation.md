@@ -10,8 +10,11 @@ AniSurge supports the following deeplink formats:
 
 1. **Anime Details**: `anisurge://anime/{animeId}`
 2. **Watch Episode**: `anisurge://anime/watch/{episodeId}`
+3. **About Page Sections**: `anisurge://about/{section}`
 
-Note: The `episodeId` includes the full episode identifier with token in the format: `animeId$ep=episodeNumber$token=uniqueToken`
+Note: 
+- The `episodeId` includes the full episode identifier with token in the format: `animeId$ep=episodeNumber$token=uniqueToken`
+- The `section` parameter for About page can be one of: `about`, `donate`, `stats`, `version`, `content`, `device`, `data`, `app`, or `developer`
 
 ## How Deeplinks Are Configured
 
@@ -37,6 +40,11 @@ The deeplink scheme is configured in the `app.json` file:
               "scheme": "anisurge",
               "host": "*",
               "pathPrefix": "/anime/watch"
+            },
+            {
+              "scheme": "anisurge",
+              "host": "*",
+              "pathPrefix": "/about"
             }
           ],
           "category": [
@@ -52,7 +60,7 @@ The deeplink scheme is configured in the `app.json` file:
 
 This configuration:
 - Registers the `anisurge://` URL scheme
-- Sets up intent filters for Android to handle URLs with the paths `/anime` and `/anime/watch`
+- Sets up intent filters for Android to handle URLs with the paths `/anime`, `/anime/watch`, and `/about`
 - Makes the links browsable (can be opened from browsers)
 
 ### Deeplink Handling
@@ -62,8 +70,9 @@ AniSurge uses Expo Router to automatically handle deeplinks. When a user clicks 
 1. The operating system recognizes the `anisurge://` scheme
 2. The app is launched (if not already running)
 3. Expo Router parses the URL and navigates to the corresponding screen:
-   - `anisurge://anime/{animeId}` → Opens the anime details screen for the specified anime
-   - `anisurge://anime/watch/{episodeId}` → Opens the video player for the specified episode
+   - `anisurge://anime/{animeId}` → Opens the anime details screen
+   - `anisurge://anime/watch/{episodeId}` → Opens the video player
+   - `anisurge://about/{section}` → Opens the About page and scrolls to the specified section
 
 ## Using Deeplinks
 
@@ -77,6 +86,38 @@ const animeDeeplink = `anisurge://anime/${animeId}`;
 
 // To link to a specific episode
 const episodeDeeplink = `anisurge://anime/watch/${episodeId}`;
+
+// To link to an About page section
+const aboutDeeplink = `anisurge://about/${section}`;
+```
+
+### About Page Section Links
+
+The About page supports deep linking to specific sections. Available sections are:
+
+1. `about` - General app information
+2. `donate` - Support development section
+3. `stats` - User statistics
+4. `version` - Version information
+5. `content` - User content (history, bookmarks, etc.)
+6. `device` - Device information
+7. `data` - Data management
+8. `app` - App settings
+9. `developer` - Developer information
+
+Example implementation for sharing About page sections:
+
+```javascript
+const shareSectionLink = async (section, sectionName) => {
+  try {
+    const deepLink = `anisurge://about/${section}`;
+    await Share.share({
+      message: `Check out the ${sectionName} section in AniSurge: ${deepLink}`,
+    });
+  } catch (error) {
+    console.error('Error sharing section link:', error);
+  }
+};
 ```
 
 ### Testing Deeplinks
@@ -85,7 +126,11 @@ You can test deeplinks using:
 
 1. **ADB (Android Debug Bridge)**:
    ```bash
+   # Test anime details
    adb shell am start -a android.intent.action.VIEW -d "anisurge://anime/12345" com.anisurge.app
+
+   # Test about page section
+   adb shell am start -a android.intent.action.VIEW -d "anisurge://about/stats" com.anisurge.app
    ```
 
 2. **Browser**:

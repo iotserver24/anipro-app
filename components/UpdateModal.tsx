@@ -18,6 +18,7 @@ import RichChangelog from './RichChangelog';
 import LoadingOverlay from './LoadingOverlay';
 import { getArchitectureSpecificDownloadUrl } from '../utils/deviceUtils';
 import { logger } from '../utils/logger';
+import { getAppVersionCode } from '../constants/appConfig';
 
 interface ChangelogItem {
   type: 'text' | 'image' | 'video' | 'url';
@@ -178,13 +179,13 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
           
           <View style={styles.infoItem}>
             <Text style={styles.infoLabel}>Update Version</Text>
-            <Text style={styles.infoValue}>{updateInfo.latestVersion}</Text>
+            <Text style={styles.infoValue}>{updateInfo.latestVersion} (Code: {updateInfo.versionCode})</Text>
           </View>
           
           {updateInfo.currentAppVersion && (
             <View style={styles.infoItem}>
               <Text style={styles.infoLabel}>Current Version</Text>
-              <Text style={styles.infoValue}>{updateInfo.currentAppVersion}</Text>
+              <Text style={styles.infoValue}>{updateInfo.currentAppVersion} (Code: {getAppVersionCode()})</Text>
             </View>
           )}
           

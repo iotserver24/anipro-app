@@ -13,6 +13,7 @@ import { logger } from '../../../utils/logger';
 import { activateKeepAwake, deactivateKeepAwake } from 'expo-keep-awake';
 import * as NavigationBar from 'expo-navigation-bar';
 import { WebView } from 'react-native-webview';
+import { debounce } from 'lodash';
 
 type StreamSource = {
   url: string;
@@ -164,7 +165,7 @@ type VideoResponse = {
 };
 
 // Add types for video controls
-type ControlsOverlayProps = {
+interface ControlsOverlayProps {
   showControls: boolean;
   isPlaying: boolean;
   isFullscreen: boolean;
@@ -175,12 +176,11 @@ type ControlsOverlayProps = {
   onPlayPress: () => void;
   onFullscreenPress: () => void;
   onSeek: (value: number) => void;
-};
+}
 
-// Add ControlsOverlay component
-const ControlsOverlay = ({
-  showControls,
-  isPlaying,
+const ControlsOverlay = React.memo(({ 
+  showControls, 
+  isPlaying, 
   isFullscreen,
   currentTime,
   duration,
@@ -190,77 +190,58 @@ const ControlsOverlay = ({
   onFullscreenPress,
   onSeek
 }: ControlsOverlayProps) => {
+  if (!showControls) return null;
+
   const formatTime = (seconds: number) => {
     if (!seconds) return '0:00';
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  return showControls ? (
-    <View style={{
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundColor: 'rgba(0,0,0,0.5)',
-      justifyContent: 'space-between',
-    }}>
-      {/* Title bar */}
-      <View style={{ padding: 16 }}>
-        <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>{title}</Text>
+  return (
+    <View style={styles.controlsOverlay}>
+      <View style={styles.topControls}>
+        <Text style={styles.title}>{title}</Text>
       </View>
-
-      {/* Center play/pause button */}
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      
+      <View style={styles.centerControls}>
         {isBuffering ? (
           <ActivityIndicator size="large" color="#f4511e" />
         ) : (
           <TouchableOpacity onPress={onPlayPress}>
             <MaterialIcons 
-              name={isPlaying ? "pause" : "play-arrow"} 
+              name={isPlaying ? 'pause' : 'play-arrow'} 
               size={40} 
               color="white" 
             />
           </TouchableOpacity>
         )}
       </View>
-
-      {/* Bottom controls */}
-      <View style={{ padding: 16 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-          <Text style={{ color: 'white', marginRight: 16, fontSize: 14 }}>
-            {formatTime(currentTime)}
-          </Text>
-          <Slider
-            style={{ flex: 1, marginHorizontal: 8 }}
-            value={currentTime}
-            maximumValue={duration}
-            minimumValue={0}
-            onValueChange={onSeek}
-            minimumTrackTintColor="#f4511e"
-            maximumTrackTintColor="rgba(255,255,255,0.5)"
-            thumbTintColor="#f4511e"
+      
+      <View style={styles.bottomControls}>
+        <Text style={styles.time}>{formatTime(currentTime)}</Text>
+        <Slider
+          style={styles.slider}
+          minimumValue={0}
+          maximumValue={duration}
+          value={currentTime}
+          onSlidingComplete={onSeek}
+          minimumTrackTintColor="#f4511e"
+          maximumTrackTintColor="rgba(255,255,255,0.3)"
+        />
+        <Text style={styles.time}>{formatTime(duration)}</Text>
+        <TouchableOpacity onPress={onFullscreenPress}>
+          <MaterialIcons 
+            name={isFullscreen ? 'fullscreen-exit' : 'fullscreen'} 
+            size={24} 
+            color="white" 
           />
-          <Text style={{ color: 'white', marginRight: 16, fontSize: 14 }}>
-            {formatTime(duration)}
-          </Text>
-        </View>
-
-        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center' }}>
-          <TouchableOpacity onPress={onFullscreenPress}>
-            <MaterialIcons
-              name={isFullscreen ? "fullscreen-exit" : "fullscreen"}
-              size={24}
-              color="white"
-            />
-          </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
       </View>
     </View>
-  ) : null;
-};
+  );
+});
 
 const EpisodeItem = React.memo(({ episode, onPress, onLongPress, mode, isCurrentEpisode }: {
   episode: APIEpisode;
@@ -424,8 +405,8 @@ const sortEpisodesByProximity = (episodes: APIEpisode[], currentEpisodeId: strin
   return [current, ...afterCurrent, ...beforeCurrent];
 };
 
-// Add this component after the VideoPlayer and before the speed controls
-const EpisodeControls = ({ 
+// Memoize the EpisodeControls component
+const EpisodeControls = React.memo(({ 
   currentEpisodeIndex, 
   episodes, 
   onPrevious, 
@@ -520,7 +501,7 @@ const EpisodeControls = ({
       </TouchableOpacity>
     </View>
   );
-};
+});
 
 // Add a context provider to pass down video player state
 const VideoPlayerContext = React.createContext<{
@@ -586,7 +567,7 @@ const DownloadPopup = ({ visible, onClose, downloadUrl }: {
   );
 };
 
-// Add the WatchEpisode component as a default export
+// Optimize the main WatchEpisode component
 export default function WatchEpisode() {
   const { episodeId, animeId, episodeNumber, title, episodeTitle, category, resumeTime } = useLocalSearchParams();
   const categoryAsSubOrDub = (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub';
@@ -959,30 +940,29 @@ export default function WatchEpisode() {
     }
   };
 
-  // Optimize the handleProgress function to prevent excessive updates
-  const handleProgress = useCallback((data: VideoProgress) => {
-    if (!isSeeking && !isQualityChanging) {
+  // Memoize handlers
+  const handleProgress = useMemo(() => 
+    debounce((data: VideoProgress) => {
       const newTime = data.currentTime;
       const newDuration = data.seekableDuration;
       
       setCurrentTime(newTime);
       setDuration(newDuration);
       
-      // Throttle progress updates to reduce UI load
+      // Save progress more frequently and with less restrictions
       const now = Date.now();
-      // Only save progress every 3 seconds AND if progress has changed by at least 1 second
-      if (now - lastProgressUpdateRef.current >= 3000 && 
-          animeInfo && 
-          newTime > 0 && 
-          Math.abs(newTime - lastProgressValueRef.current) > 1) {
+      // Save progress every 2 seconds or if position changed significantly
+      if (animeInfo && newTime > 0 && newDuration > 0 && 
+          (now - lastProgressUpdateRef.current >= 2000 || 
+           Math.abs(newTime - lastProgressValueRef.current) > 5)) {
+        
+        console.log(`[DEBUG] Saving progress - Time: ${newTime}, Duration: ${newDuration}`);
         
         lastProgressUpdateRef.current = now;
         lastProgressValueRef.current = newTime;
         setLastSaveTime(now);
         
-        console.log(`[DEBUG] Saving progress: ${newTime}/${newDuration}`);
-        
-        // Save progress
+        // Save progress to history with explicit number conversion
         addToHistory({
           id: animeId as string,
           name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
@@ -990,14 +970,38 @@ export default function WatchEpisode() {
           episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
           episodeNumber: Number(episodeNumber),
           timestamp: now,
-          progress: newTime,
-          duration: newDuration,
+          progress: Number(newTime), // Ensure it's a number
+          duration: Number(newDuration), // Ensure it's a number
           lastWatched: now,
           subOrDub: (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub'
         });
       }
-    }
-  }, [isSeeking, isQualityChanging, animeInfo, animeId, episodeId, episodeNumber, category]);
+    }, 500),
+    [animeInfo, animeId, episodeId, episodeNumber, category, addToHistory]
+  );
+
+  // Add cleanup effect to save final progress
+  useEffect(() => {
+    return () => {
+      // Save progress when component unmounts
+      if (currentTime > 0 && duration > 0 && animeInfo) {
+        console.log(`[DEBUG] Saving final progress - Time: ${currentTime}, Duration: ${duration}`);
+        const now = Date.now();
+        addToHistory({
+          id: animeId as string,
+          name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
+          img: animeInfo.image || animeInfo.info?.image || '',
+          episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
+          episodeNumber: Number(episodeNumber),
+          timestamp: now,
+          progress: Number(currentTime), // Ensure it's a number
+          duration: Number(duration), // Ensure it's a number
+          lastWatched: now,
+          subOrDub: (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub'
+        });
+      }
+    };
+  }, [currentTime, duration, animeInfo, animeId, episodeId, episodeNumber, category, addToHistory]);
 
   // Define handleSeek before it's used in useEffect
   const handleSeek = async (value: number) => {
@@ -1139,60 +1143,77 @@ export default function WatchEpisode() {
     setIsPlaying(!isPlaying);
   };
 
-  // Update video props
-  const videoProps = {
+  // Memoize video props
+  const videoPlayerProps = useMemo(() => ({
     source: { 
       uri: videoUrl || '',
       headers: videoHeaders || {}
     },
+    title: title as string,
+    initialPosition: resumePosition,
     rate: playbackSpeed,
-    paused: !isPlaying,
-    resizeMode: "contain",
-    onProgress: handleProgress,
-    onBuffer: ({ isBuffering }: { isBuffering: boolean }) => {
-      setIsBuffering(isBuffering);
-    },
-    onError: handleVideoError,
-    onLoad: (data: OnLoadData) => {
-      setDuration(data.duration);
-      setLoading(false);
-      console.log(`onLoad called, resumePosition: ${resumePosition}, isVideoReady: ${isVideoReady}`);
-      if (resumePosition > 0 && !isVideoReady) {
-        console.log(`Seeking to resumePosition: ${resumePosition}`);
-        // Use a timeout to ensure the video is ready
-        setTimeout(() => {
-          handleSeek(resumePosition);
-          setIsVideoReady(true);
-        }, 300);
+    onPlaybackRateChange: handlePlaybackSpeedChange,
+    onProgress: (currentTime: number, videoDuration: number) => {
+      // Update local state
+      setCurrentTime(currentTime);
+      setDuration(videoDuration);
+      
+      // Save progress if we have valid data
+      if (animeInfo && currentTime > 0 && videoDuration > 0) {
+        const now = Date.now();
+        
+        // Save progress every 2 seconds or if position changed significantly
+        if (now - lastProgressUpdateRef.current >= 2000 || 
+            Math.abs(currentTime - lastProgressValueRef.current) > 5) {
+          
+          console.log(`[DEBUG] Saving progress - Time: ${currentTime}, Duration: ${videoDuration}`);
+          
+          lastProgressUpdateRef.current = now;
+          lastProgressValueRef.current = currentTime;
+          
+          // Save progress to history
+          addToHistory({
+            id: animeId as string,
+            name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
+            img: animeInfo.image || animeInfo.info?.image || '',
+            episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
+            episodeNumber: Number(episodeNumber),
+            timestamp: now,
+            progress: Math.floor(currentTime), // Ensure it's an integer
+            duration: Math.floor(videoDuration), // Ensure it's an integer
+            lastWatched: now,
+            subOrDub: (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub'
+          });
+        }
       }
     },
-    onPlayPause: togglePlayPause,
-    onSeek: handleSeek,
-    onFullscreen: handleFullscreenChange,
-    onFullscreenChange: setIsFullscreen,
-    onPlaybackRateChange: handlePlaybackSpeedChange,
-    bufferConfig: {
-      minBufferMs: 15000,
-      maxBufferMs: 50000,
-      bufferForPlaybackMs: 2500,
-      bufferForPlaybackAfterRebufferMs: 5000
-    },
-    progressUpdateInterval: 1000,
+    onEnd: onVideoEnd,
+    onFullscreenChange: handleFullscreenChange,
+    style: isFullscreen ? 
+      { width: playerDimensions.width, height: playerDimensions.height, backgroundColor: '#000' } : 
+      { width: '100%', aspectRatio: 16/9, backgroundColor: '#000' },
     intro: videoData?.intro,
     outro: videoData?.outro,
-    onSkipIntro: () => {
-      if (videoRef.current && videoData?.intro) {
-        videoRef.current.setPositionAsync(videoData.intro.end * 1000);
-      }
-    },
-    onSkipOutro: () => {
-      if (videoRef.current && videoData?.outro) {
-        videoRef.current.setPositionAsync(videoData.outro.end * 1000);
-      }
-    },
     isQualityChanging: isQualityChanging,
     savedQualityPosition: savedPosition
-  };
+  }), [
+    videoUrl,
+    videoHeaders,
+    title,
+    resumePosition,
+    playbackSpeed,
+    isFullscreen,
+    playerDimensions,
+    videoData,
+    isQualityChanging,
+    savedPosition,
+    animeInfo,
+    animeId,
+    episodeId,
+    episodeNumber,
+    category,
+    addToHistory
+  ]);
 
   // Add control visibility timeout
   useEffect(() => {
@@ -1584,51 +1605,7 @@ export default function WatchEpisode() {
           styles.container,
           isFullscreen && styles.fullscreenContainer
         ]}>
-          <VideoPlayer
-            source={{ 
-              uri: videoUrl || '',
-              headers: videoHeaders || {}
-            }}
-            title={title as string}
-            initialPosition={resumePosition}
-            rate={playbackSpeed}
-            onPlaybackRateChange={handlePlaybackSpeedChange}
-            onProgress={(currentTime, duration) => {
-              if (!isSeeking) {
-                setCurrentTime(currentTime);
-                setDuration(duration);
-                
-                // Save progress every 2 seconds
-                if (Math.floor(currentTime) % 2 === 0 && currentTime > 0) {
-                  console.log(`[DEBUG] Saving progress: ${currentTime}/${duration}`);
-                  if (animeInfo?.info || animeInfo) {
-                    addToHistory({
-                      id: animeId as string,
-                      name: animeInfo.info?.title || animeInfo.title || animeInfo.name || 'Unknown Anime',
-                      img: animeInfo.info?.image || animeInfo.image || animeInfo.img || '',
-                      episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
-                      episodeNumber: Number(episodeNumber),
-                      timestamp: Date.now(),
-                      progress: currentTime,
-                      duration: duration,
-                      lastWatched: Date.now(),
-                      subOrDub: (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub'
-                    });
-                  }
-                }
-              }
-            }}
-            onEnd={onVideoEnd}
-            onFullscreenChange={handleFullscreenChange}
-            style={isFullscreen ? 
-              { width: playerDimensions.width, height: playerDimensions.height, backgroundColor: '#000' } : 
-              { width: '100%', aspectRatio: 16/9, backgroundColor: '#000' }
-            }
-            intro={videoData?.intro}
-            outro={videoData?.outro}
-            isQualityChanging={isQualityChanging}
-            savedQualityPosition={savedPosition}
-          />
+          <VideoPlayer {...videoPlayerProps} />
           
           {!isFullscreen && (
             <>
@@ -1780,6 +1757,12 @@ export default function WatchEpisode() {
                       ))}
                     </ScrollView>
                   </View>
+
+                  <View style={styles.footerContainer}>
+                    <Text style={styles.footerText}>
+                      made with ❤️ by AniSurge Team
+                    </Text>
+                  </View>
                 </View>
               </ScrollView>
             </>
@@ -1840,10 +1823,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'space-between',
   },
-  titleBar: {
+  topControls: {
     padding: 16,
   },
-  titleText: {
+  title: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
@@ -1856,17 +1839,7 @@ const styles = StyleSheet.create({
   bottomControls: {
     padding: 16,
   },
-  progressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  controlsRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  timeText: {
+  time: {
     color: 'white',
     marginRight: 16,
     fontSize: 14,
@@ -2145,5 +2118,16 @@ const styles = StyleSheet.create({
   qualityChanging: {
     backgroundColor: '#f4511e55',
     borderColor: '#f4511e',
+  },
+  footerContainer: {
+    marginTop: 16,
+    marginBottom: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  footerText: {
+    color: '#666',
+    fontSize: 14,
+    textAlign: 'center',
   },
 }); 

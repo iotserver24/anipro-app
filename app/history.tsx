@@ -7,90 +7,16 @@ import { useWatchHistoryStore, WatchHistoryItem } from '../store/watchHistorySto
 import { formatDistanceToNow } from 'date-fns';
 
 export default function History() {
+  // 1. Store hooks
   const { history, initializeHistory, clearHistory, removeFromHistory } = useWatchHistoryStore();
+  
+  // 2. State hooks
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-
-  useEffect(() => {
-    console.log('[DEBUG] HistoryPage: Initializing watch history');
-    setLoading(true);
-    initializeHistory().then(() => {
-      console.log('[DEBUG] HistoryPage: Watch history initialized with', history.length, 'items');
-      setLoading(false);
-    }).catch(error => {
-      console.error('[DEBUG] HistoryPage: Error initializing watch history:', error);
-      setError('Failed to load watch history');
-      setLoading(false);
-    });
-  }, []);
-
-  // Group history items by anime ID and get the most recent episode for each
-  const groupedHistory = history.reduce((acc, item) => {
-    if (!acc[item.id] || item.lastWatched > acc[item.id].lastWatched) {
-      acc[item.id] = item;
-    }
-    return acc;
-  }, {} as Record<string, WatchHistoryItem>);
-
-  const filteredHistory = Object.values(groupedHistory)
-    .filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
-    .sort((a, b) => b.lastWatched - a.lastWatched);
-
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#f4511e" />
-        <Text style={styles.loadingText}>Loading watch history...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity 
-          style={styles.browseButton}
-          onPress={() => router.push('/')}
-        >
-          <Text style={styles.browseButtonText}>Browse Anime</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  const handleClearAll = () => {
-    Alert.alert(
-      'Clear All History',
-      'Are you sure you want to clear all watch history?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear All',
-          style: 'destructive',
-          onPress: () => clearHistory()
-        }
-      ]
-    );
-  };
-
-  const handleRemove = (item: WatchHistoryItem) => {
-    Alert.alert(
-      'Remove from History',
-      'Are you sure you want to remove this from your watch history?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => removeFromHistory(item.id)
-        }
-      ]
-    );
-  };
-
-  const handlePress = (item: WatchHistoryItem) => {
+  
+  // 3. Callback hooks - define ALL callbacks using useCallback
+  const handlePress = useCallback((item: WatchHistoryItem) => {
     const resumeTimeParam = item.progress && item.progress > 0 ? 
       item.progress.toString() : undefined;
     
@@ -109,7 +35,37 @@ export default function History() {
         }
       });
     }, 100);
-  };
+  }, []);
+
+  const handleClearAll = useCallback(() => {
+    Alert.alert(
+      'Clear All History',
+      'Are you sure you want to clear all watch history?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: () => clearHistory()
+        }
+      ]
+    );
+  }, [clearHistory]);
+
+  const handleRemove = useCallback((item: WatchHistoryItem) => {
+    Alert.alert(
+      'Remove from History',
+      'Are you sure you want to remove this from your watch history?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: () => removeFromHistory(item.id)
+        }
+      ]
+    );
+  }, [removeFromHistory]);
 
   const renderWatchItem = useCallback(({ item }: { item: WatchHistoryItem }) => (
     <TouchableOpacity
@@ -144,15 +100,60 @@ export default function History() {
     </TouchableOpacity>
   ), [handlePress, handleRemove]);
 
-  // Add a getItemLayout function to optimize FlatList rendering
-  const getItemLayout = useCallback((data, index) => {
-    const ITEM_HEIGHT = 150; // Adjust this to match your actual item height
-    return {
-      length: ITEM_HEIGHT,
-      offset: ITEM_HEIGHT * index,
-      index,
-    };
+  const getItemLayout = useCallback((data, index) => ({
+    length: 150,
+    offset: 150 * index,
+    index,
+  }), []);
+
+  // 4. Effect hooks
+  useEffect(() => {
+    console.log('[DEBUG] HistoryPage: Initializing watch history');
+    setLoading(true);
+    initializeHistory().then(() => {
+      console.log('[DEBUG] HistoryPage: Watch history initialized with', history.length, 'items');
+      setLoading(false);
+    }).catch(error => {
+      console.error('[DEBUG] HistoryPage: Error initializing watch history:', error);
+      setError('Failed to load watch history');
+      setLoading(false);
+    });
   }, []);
+
+  // 5. Derived state
+  const groupedHistory = history.reduce((acc, item) => {
+    if (!acc[item.id] || item.lastWatched > acc[item.id].lastWatched) {
+      acc[item.id] = item;
+    }
+    return acc;
+  }, {} as Record<string, WatchHistoryItem>);
+
+  const filteredHistory = Object.values(groupedHistory)
+    .filter(item => item.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    .sort((a, b) => b.lastWatched - a.lastWatched);
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#f4511e" />
+        <Text style={styles.loadingText}>Loading watch history...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity 
+          style={styles.browseButton}
+          onPress={() => router.push('/')}
+        >
+          <Text style={styles.browseButtonText}>Browse Anime</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -16,6 +16,7 @@ import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as NavigationBar from 'expo-navigation-bar';
+import { debounce } from 'lodash';
 
 interface VideoPlayerProps {
   source: {
@@ -51,7 +52,24 @@ interface APIEpisode {
   isFiller: boolean;
 }
 
-const VideoPlayer = ({
+// Memoize the controls overlay component
+const ControlsOverlay = React.memo(({
+  showControls,
+  isPlaying,
+  isFullscreen,
+  currentTime,
+  duration,
+  isBuffering,
+  title,
+  onPlayPress,
+  onFullscreenPress,
+  onSeek
+}: ControlsOverlayProps) => {
+  // ... existing ControlsOverlay code ...
+});
+
+// Optimize the main VideoPlayer component
+const VideoPlayer: React.FC<VideoPlayerProps> = ({
   source,
   style,
   initialPosition = 0,
@@ -108,6 +126,74 @@ const VideoPlayer = ({
 
   // Add a lastRateLoggedRef to track the last rate we logged
   const lastRateLoggedRef = useRef<number>(1);
+
+  // Debounce the progress handler
+  const debouncedProgress = useMemo(
+    () => debounce((status: AVPlaybackStatus) => {
+      if (!status.isLoaded) return;
+      onPlaybackStatusUpdate(status);
+    }, 250),
+    []
+  );
+
+  // Memoize event handlers
+  const handleScreenTap = useCallback(
+    debounce(() => {
+      if (showControls) {
+        setShowControls(false);
+        if (controlsTimeout) {
+          clearTimeout(controlsTimeout);
+        }
+      } else {
+        if (videoRef.current && currentPositionRef.current > 0) {
+          setCurrentTime(currentPositionRef.current);
+        }
+        setShowControls(true);
+        const timeout = setTimeout(() => {
+          setShowControls(false);
+        }, 4000);
+        setControlsTimeout(timeout);
+      }
+    }, 100),
+    [showControls, controlsTimeout]
+  );
+
+  // Memoize the video props
+  const videoProps = useMemo(() => ({
+    ref: videoRef,
+    source,
+    style: [
+      styles.video, 
+      isFullscreen && { 
+        width: dimensions.width, 
+        height: dimensions.height,
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0
+      }
+    ],
+    resizeMode: ResizeMode.CONTAIN,
+    shouldPlay: isPlaying,
+    onPlaybackStatusUpdate: debouncedProgress,
+    useNativeControls: false,
+    onFullscreenUpdate: handleFullscreenUpdate,
+    onLoad: handleLoad,
+    progressUpdateIntervalMillis: 500,
+    positionMillis: isQualityChanging ? savedPosition * 1000 : undefined,
+    rate,
+    shouldCorrectPitch: true,
+    isMuted: false,
+  }), [
+    source,
+    isFullscreen,
+    dimensions,
+    isPlaying,
+    isQualityChanging,
+    savedPosition,
+    rate
+  ]);
 
   useEffect(() => {
     console.log(`[DEBUG] VideoPlayer: External quality changing state changed to ${externalQualityChanging}`);
@@ -337,17 +423,19 @@ const VideoPlayer = ({
     lastUpdateTimeRef.current = now;
 
     if (status.isLoaded) {
-      // Log rate if it's different from what we expect
-      if (status.rate !== rate) {
-        console.log(`[DEBUG] VideoPlayer: Rate mismatch - expected ${rate}x, got ${status.rate}x`);
-      }
-      
       const newPosition = status.positionMillis / 1000;
+      const videoDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
+      
       currentPositionRef.current = newPosition;
       
       // Always update currentTime for accurate progress bar
       if (!isSeeking) {
         setCurrentTime(newPosition);
+      }
+      
+      // Call onProgress with current time and duration
+      if (onProgress && !isSeeking && !isQualityChanging) {
+        onProgress(newPosition, videoDuration);
       }
       
       if (!isSeeking && !isQualityChanging && lastPositionRef.current > 0) {
@@ -424,13 +512,6 @@ const VideoPlayer = ({
         }
       }
 
-      if (onProgress && !isSeeking && !isQualityChanging) {
-        onProgress(
-          newPosition,
-          status.durationMillis ? status.durationMillis / 1000 : 0
-        );
-      }
-
       if (onPositionChange && !isSeeking && !isQualityChanging) {
         onPositionChange(newPosition);
       }
@@ -448,27 +529,6 @@ const VideoPlayer = ({
       if (shouldShowSkipOutro !== showSkipOutro) {
         setShowSkipOutro(shouldShowSkipOutro);
       }
-    }
-  };
-
-  const handleScreenTap = () => {
-    if (showControls) {
-      setShowControls(false);
-      if (controlsTimeout) {
-        clearTimeout(controlsTimeout);
-      }
-    } else {
-      // Ensure current position is up-to-date before showing controls
-      if (videoRef.current && currentPositionRef.current > 0) {
-        console.log(`[DEBUG] VideoPlayer: Updating currentTime to ${currentPositionRef.current} before showing controls`);
-        setCurrentTime(currentPositionRef.current);
-      }
-      
-      setShowControls(true);
-      const timeout = setTimeout(() => {
-        setShowControls(false);
-      }, 4000);
-      setControlsTimeout(timeout);
     }
   };
 
@@ -1141,4 +1201,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default VideoPlayer; 
+export default React.memo(VideoPlayer); 

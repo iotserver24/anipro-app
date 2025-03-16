@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Linking, Share, Image, Alert, Platform, ImageBackground, NativeModules } from 'react-native';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { APP_CONFIG, getAppVersion, getAppVersionCode } from '../constants/appConfig';
@@ -67,6 +67,64 @@ export default function AboutScreen() {
 
   const { history } = useWatchHistoryStore();
   const { myList } = useMyListStore();
+
+  // Add refs for each section
+  const scrollViewRef = useRef<ScrollView>(null);
+  const aboutSectionRef = useRef<View>(null);
+  const donationSectionRef = useRef<View>(null);
+  const statsSectionRef = useRef<View>(null);
+  const versionSectionRef = useRef<View>(null);
+  const userContentSectionRef = useRef<View>(null);
+  const deviceInfoSectionRef = useRef<View>(null);
+  const dataManagementSectionRef = useRef<View>(null);
+  const appSectionRef = useRef<View>(null);
+  const developerSectionRef = useRef<View>(null);
+
+  // Get section param from deep link
+  const { section } = useLocalSearchParams();
+
+  // Function to scroll to a specific section
+  const scrollToSection = (sectionRef: React.RefObject<View>) => {
+    if (sectionRef.current && scrollViewRef.current) {
+      sectionRef.current.measureLayout(
+        // @ts-ignore - Known issue with ScrollView ref type
+        scrollViewRef.current,
+        (_, y) => {
+          scrollViewRef.current?.scrollTo({ y: y - 20, animated: true });
+        },
+        () => console.log('Failed to measure')
+      );
+    }
+  };
+
+  // Handle deep linking
+  useEffect(() => {
+    if (section) {
+      const sectionRefs: { [key: string]: React.RefObject<View> } = {
+        about: aboutSectionRef,
+        donate: donationSectionRef,
+        stats: statsSectionRef,
+        version: versionSectionRef,
+        content: userContentSectionRef,
+        device: deviceInfoSectionRef,
+        data: dataManagementSectionRef,
+        app: appSectionRef,
+        developer: developerSectionRef
+      };
+
+      const targetRef = sectionRefs[section as string];
+      if (targetRef) {
+        // Add a small delay to ensure the layout is ready
+        setTimeout(() => scrollToSection(targetRef), 300);
+      }
+    }
+  }, [section]);
+
+  // Function to create deep link
+  const createDeepLink = (section: string) => {
+    const scheme = APP_CONFIG.APP_SCHEME || 'anisurge';
+    return `${scheme}://about/${section}`;
+  };
 
   // Move the getArchitectureInfo function outside the useEffect
   const getArchitectureInfo = async () => {
@@ -437,7 +495,10 @@ export default function AboutScreen() {
         />
       )}
       
-      <ScrollView style={styles.container}>
+      <ScrollView 
+        ref={scrollViewRef}
+        style={styles.container}
+      >
         {/* App Header */}
         {isLoading ? (
           <LinearGradient
@@ -473,8 +534,8 @@ export default function AboutScreen() {
           </ImageBackground>
         )}
 
-        {/* App Information */}
-        <View style={styles.section}>
+        {/* About Section */}
+        <View ref={aboutSectionRef} style={styles.section}>
           <Text style={styles.sectionTitle}>About</Text>
           <View style={styles.infoCard}>
             <Text style={styles.aboutText}>
@@ -486,8 +547,8 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        {/* Donation Section - Moved up */}
-        <View style={styles.section}>
+        {/* Donation Section */}
+        <View ref={donationSectionRef} style={styles.section}>
           <Text style={styles.sectionTitle}>Support Development</Text>
           <View style={styles.donationCard}>
             <TouchableOpacity 
@@ -502,8 +563,8 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        {/* App Statistics - Moved up */}
-        <View style={styles.section}>
+        {/* Stats Section */}
+        <View ref={statsSectionRef} style={styles.section}>
           <Text style={styles.sectionTitle}>Your Statistics</Text>
           <View style={styles.infoCard}>
             <View style={styles.statsRow}>
@@ -522,8 +583,8 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        {/* Version Information */}
-        <View style={styles.section}>
+        {/* Version Section */}
+        <View ref={versionSectionRef} style={styles.section}>
           <Text style={styles.sectionTitle}>Version Information</Text>
           <View style={styles.infoCard}>
             <TouchableOpacity onPress={showVersionDetails}>
@@ -552,8 +613,8 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        {/* User Content */}
-        <View style={styles.section}>
+        {/* User Content Section */}
+        <View ref={userContentSectionRef} style={styles.section}>
           <Text style={styles.sectionTitle}>Your Content</Text>
           <View style={styles.infoCard}>
             <TouchableOpacity onPress={navigateToHistory}>
@@ -579,8 +640,8 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        {/* Device Information */}
-        <View style={styles.section}>
+        {/* Device Information Section */}
+        <View ref={deviceInfoSectionRef} style={styles.section}>
           <Text style={styles.sectionTitle}>Device Information</Text>
           <View style={styles.infoCard}>
             <InfoRow 
@@ -603,8 +664,8 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        {/* Data Management */}
-        <View style={styles.section}>
+        {/* Data Management Section */}
+        <View ref={dataManagementSectionRef} style={styles.section}>
           <Text style={styles.sectionTitle}>Data Management</Text>
           <View style={styles.infoCard}>
             <TouchableOpacity onPress={clearAppCache} disabled={clearingCache}>
@@ -618,8 +679,8 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        {/* Actions */}
-        <View style={styles.section}>
+        {/* App Section */}
+        <View ref={appSectionRef} style={styles.section}>
           <Text style={styles.sectionTitle}>App</Text>
           <View style={styles.infoCard}>
             <TouchableOpacity onPress={showThemeOptions}>
@@ -641,8 +702,8 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        {/* Developer Information */}
-        <View style={styles.section}>
+        {/* Developer Section */}
+        <View ref={developerSectionRef} style={styles.section}>
           <Text style={styles.sectionTitle}>Developer</Text>
           <View style={styles.infoCard}>
             <InfoRow icon="code" label="Developed By" value={`${APP_CONFIG.APP_NAME} Team`} />
@@ -988,11 +1049,17 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingHorizontal: 16,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 10,
+    marginBottom: 16,
   },
   infoCard: {
     backgroundColor: '#1a1a1a',

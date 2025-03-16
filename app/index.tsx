@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, Dimensions, Animated, ActivityIndicator, AppState, Alert, Linking, Platform, Share, Notifications } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, Dimensions, Animated, ActivityIndicator, AppState, Alert, Linking, Platform, Share } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,6 +21,10 @@ import { shouldShowWhatsNew, fetchWhatsNewInfo, WhatsNewInfo } from '../utils/wh
 import * as Device from 'expo-device';
 import { getArchitectureSpecificDownloadUrl } from '../utils/deviceUtils';
 import { notificationEmitter } from './notifications';
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as TaskManager from 'expo-task-manager';
+import { checkAndNotifyAiringAnime } from './schedule';
+import * as Notifications from 'expo-notifications';
 
 const { width } = Dimensions.get('window');
 const ITEM_WIDTH = width * 0.9;
@@ -135,6 +139,90 @@ const shareApp = async () => {
   } catch (error) {
     console.error('Error sharing app:', error);
   }
+};
+
+// Move notification configuration to after imports
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
+// Constants
+const AIRING_NOTIFICATION_TASK = 'AIRING_NOTIFICATION_TASK';
+
+// Configure notifications for background tasks
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+
+// Define the background task
+TaskManager.defineTask(AIRING_NOTIFICATION_TASK, async () => {
+  try {
+    // Get the user's My List from AsyncStorage
+    const myListJson = await AsyncStorage.getItem('my_list');
+    const myList = myListJson ? JSON.parse(myListJson) : [];
+
+    // Get today's date
+    const today = new Date().toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric'
+    });
+
+    // Fetch today's schedule
+    const response = await fetch(`https://conapi.anipro.site/anime/animekai/schedule/${today}`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch schedule');
+    }
+
+    const scheduleData = await response.json();
+    const schedule = { [today]: scheduleData.results };
+
+    // Check for notifications
+    await checkAndNotifyAiringAnime(schedule, myList);
+
+    return BackgroundFetch.Result.NewData;
+  } catch (error) {
+    logger.error('Background task error:', error);
+    return BackgroundFetch.Result.Failed;
+  }
+});
+
+// Add function to get next 1 AM IST trigger
+const getNext1AMIST = () => {
+  const now = new Date();
+  const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000)); // Convert to IST
+  const next1AM = new Date(ist);
+  next1AM.setHours(1, 0, 0, 0);
+  
+  // If it's past 1 AM IST, schedule for next day
+  if (ist.getHours() >= 1) {
+    next1AM.setDate(next1AM.getDate() + 1);
+  }
+  
+  // Convert back to local time
+  return new Date(next1AM.getTime() - (5.5 * 60 * 60 * 1000));
+};
+
+// Add this helper function before the Home component
+const compareVersions = (v1: string, v2: string) => {
+  const parts1 = v1.split('.').map(Number);
+  const parts2 = v2.split('.').map(Number);
+  
+  for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+    const num1 = parts1[i] || 0;
+    const num2 = parts2[i] || 0;
+    if (num1 > num2) return 1;
+    if (num1 < num2) return -1;
+  }
+  return 0;
 };
 
 export default function Home() {
@@ -305,8 +393,8 @@ export default function Home() {
       const currentVersionCode = getAppVersionCode();
       
       // Compare our actual app version with the server's latest version
-      if (updateData.versionCode > currentVersionCode || 
-          updateData.latestVersion > currentVersion) {
+      const versionComparison = compareVersions(currentVersion, updateData.latestVersion);
+      if (versionComparison < 0 || (versionComparison === 0 && currentVersionCode < updateData.versionCode)) {
         setUpdateInfo(updateData);
         
         // Only show update notifications if showUpdate flag is true
@@ -472,9 +560,44 @@ export default function Home() {
     fetchAnime();
   }, []);
 
-  const onRefresh = () => {
+  useEffect(() => {
+    const registerBackgroundTask = async () => {
+      try {
+        // Get next 1 AM IST time
+        const next1AM = getNext1AMIST();
+        const now = Date.now();
+        const timeUntil1AM = next1AM.getTime() - now;
+
+        // Register the background task
+        await BackgroundFetch.registerTaskAsync(AIRING_NOTIFICATION_TASK, {
+          minimumInterval: 24 * 60 * 60, // 24 hours
+          startOnBoot: true,
+          stopOnTerminate: false,
+        });
+
+        logger.info(`Background task registered. Next check at: ${next1AM.toLocaleString()}`);
+      } catch (error) {
+        logger.error('Failed to register background task:', error);
+      }
+    };
+
+    registerBackgroundTask();
+  }, []);
+
+  const onRefresh = async () => {
     setRefreshing(true);
-    fetchAnime(true); // Pass true to bypass cache
+    try {
+      // Clear all caches first
+      await Promise.all([
+        AsyncStorage.removeItem(CACHE_KEYS.TRENDING_RECENT),
+        AsyncStorage.removeItem(CACHE_KEYS.NEW_EPISODES)
+      ]);
+      // Fetch fresh data
+      await fetchAnime(true);
+    } catch (error) {
+      logger.error('Error refreshing:', error);
+      setRefreshing(false);
+    }
   };
 
   // Auto slide function
