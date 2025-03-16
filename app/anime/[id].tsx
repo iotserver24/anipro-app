@@ -744,10 +744,12 @@ export default function AnimeDetails() {
                   colors={['transparent', '#121212']}
                   style={styles.gradientOverlay}
                 >
-                  <TouchableOpacity style={styles.moreInfoButton} onPress={toggleMoreInfo}>
-                    <Text style={styles.moreInfoText}>More Info</Text>
-                    <MaterialIcons name="keyboard-arrow-down" size={20} color="#f4511e" />
-                  </TouchableOpacity>
+                  <View>
+                    <TouchableOpacity style={styles.moreInfoButton} onPress={toggleMoreInfo}>
+                      <Text style={styles.moreInfoText}>More Info</Text>
+                      <MaterialIcons name="keyboard-arrow-down" size={20} color="#f4511e" />
+                    </TouchableOpacity>
+                  </View>
                 </LinearGradient>
               )}
             </View>
@@ -865,10 +867,12 @@ export default function AnimeDetails() {
                       colors={['transparent', '#121212']}
                       style={styles.gradientOverlay}
                     >
-                      <TouchableOpacity style={styles.moreInfoButton} onPress={toggleMoreInfo}>
-                        <Text style={styles.moreInfoText}>More Info</Text>
-                        <MaterialIcons name="keyboard-arrow-down" size={20} color="#f4511e" />
-                      </TouchableOpacity>
+                      <View>
+                        <TouchableOpacity style={styles.moreInfoButton} onPress={toggleMoreInfo}>
+                          <Text style={styles.moreInfoText}>More Info</Text>
+                          <MaterialIcons name="keyboard-arrow-down" size={20} color="#f4511e" />
+                        </TouchableOpacity>
+                      </View>
                     </LinearGradient>
                   )}
                 </View>

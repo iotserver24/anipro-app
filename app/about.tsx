@@ -12,13 +12,23 @@ import { Asset } from 'expo-asset';
 import * as Device from 'expo-device';
 import { getArchitectureSpecificDownloadUrl, getDeviceArchitectureUrlKey } from '../utils/deviceUtils';
 import UpdateModal from '../components/UpdateModal';
+import WhatsNewModal from '../components/WhatsNewModal';
+import { fetchWhatsNewInfo, WhatsNewInfo } from '../utils/whatsNewUtils';
 import { logger } from '../utils/logger';
+
+interface ChangelogItem {
+  type: 'text' | 'image' | 'video' | 'url';
+  content: string;
+  title?: string;
+  description?: string;
+  format?: 'bold' | 'italic' | 'normal';
+}
 
 interface UpdateInfo {
   latestVersion: string;
   minVersion: string;
   versionCode: number;
-  changelog: string[] | ChangelogItem[];
+  changelog: ChangelogItem[];
   downloadUrls: {
     universal: string;
     'arm64-v8a': string;
@@ -27,7 +37,7 @@ interface UpdateInfo {
   };
   releaseDate: string;
   isForced: boolean;
-  showUpdate?: boolean;
+  showUpdate: boolean;
   aboutUpdate?: string;
   currentAppVersion?: string;
 }
@@ -50,6 +60,11 @@ export default function AboutScreen() {
   const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
   const [simulatedArchitecture, setSimulatedArchitecture] = useState<string | null>(null);
   
+  // Add state for the "What's New" modal
+  const [whatsNewInfo, setWhatsNewInfo] = useState<WhatsNewInfo | null>(null);
+  const [showWhatsNewModal, setShowWhatsNewModal] = useState(false);
+  const [isLoadingWhatsNew, setIsLoadingWhatsNew] = useState(false);
+
   const { history } = useWatchHistoryStore();
   const { myList } = useMyListStore();
 
@@ -168,7 +183,7 @@ export default function AboutScreen() {
    */
   const checkForUpdates = async () => {
     try {
-      const response = await fetch(`${APP_CONFIG.API_URL}/api/updates/latest`);
+      const response = await fetch(`${APP_CONFIG.API_BASE_URL}/updates/latest`);
       if (!response.ok) {
         throw new Error(`Failed to check for updates: ${response.status}`);
       }
@@ -368,6 +383,28 @@ export default function AboutScreen() {
     );
   };
 
+  // Add a function to show the "What's New" modal
+  const handleShowWhatsNew = async () => {
+    try {
+      setIsLoadingWhatsNew(true);
+      
+      // Fetch the "What's New" information
+      const info = await fetchWhatsNewInfo();
+      
+      if (info) {
+        setWhatsNewInfo(info);
+        setShowWhatsNewModal(true);
+      } else {
+        Alert.alert('Error', 'Failed to load "What\'s New" information. Please try again later.');
+      }
+    } catch (error) {
+      logger.error('Error showing "What\'s New":', error);
+      Alert.alert('Error', 'Failed to load "What\'s New" information. Please try again later.');
+    } finally {
+      setIsLoadingWhatsNew(false);
+    }
+  };
+
   return (
     <>
       <Stack.Screen
@@ -388,6 +425,15 @@ export default function AboutScreen() {
           onClose={() => setShowUpdateModal(false)}
           onUpdate={handleUpdate}
           simulatedArch={simulatedArchitecture}
+        />
+      )}
+      
+      {/* What's New Modal */}
+      {whatsNewInfo && (
+        <WhatsNewModal 
+          visible={showWhatsNewModal}
+          whatsNewInfo={whatsNewInfo}
+          onClose={() => setShowWhatsNewModal(false)}
         />
       )}
       
@@ -440,37 +486,23 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        {/* Version Information */}
+        {/* Donation Section - Moved up */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Version Information</Text>
-          <View style={styles.infoCard}>
-            <TouchableOpacity onPress={showVersionDetails}>
-              <InfoRow 
-                icon="info" 
-                label="App Version" 
-                value={appVersion} 
-                isLink
-              />
+          <Text style={styles.sectionTitle}>Support Development</Text>
+          <View style={styles.donationCard}>
+            <TouchableOpacity 
+              style={styles.customDonationButton}
+              onPress={() => openLink('https://www.buymeacoffee.com/R3AP3Redit')}
+            >
+              <Text style={styles.customDonationButtonText}>☕ Donate here</Text>
             </TouchableOpacity>
-            <SectionDivider />
-            <TouchableOpacity onPress={showVersionDetails}>
-              <InfoRow 
-                icon="code" 
-                label="Version Source" 
-                value="constants/appConfig.ts" 
-                isLink
-              />
-            </TouchableOpacity>
-            <SectionDivider />
-            <InfoRow 
-              icon="tag" 
-              label="Version Code" 
-              value={getAppVersionCode().toString()} 
-            />
+            <Text style={styles.donationText}>
+              If you enjoy using {APP_CONFIG.APP_NAME}, please consider supporting the development. Your donations help keep the app free and ad-free!
+            </Text>
           </View>
         </View>
 
-        {/* App Statistics */}
+        {/* App Statistics - Moved up */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Your Statistics</Text>
           <View style={styles.infoCard}>
@@ -490,12 +522,51 @@ export default function AboutScreen() {
           </View>
         </View>
 
+        {/* Version Information */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Version Information</Text>
+          <View style={styles.infoCard}>
+            <TouchableOpacity onPress={showVersionDetails}>
+              <InfoRow 
+                icon="info" 
+                label="App Version" 
+                value={appVersion} 
+                isLink
+              />
+            </TouchableOpacity>
+            <SectionDivider />
+            <TouchableOpacity onPress={handleShowWhatsNew} disabled={isLoadingWhatsNew}>
+              <InfoRow 
+                icon="new-releases" 
+                label="What's New" 
+                value={isLoadingWhatsNew ? "Loading..." : "View"} 
+                isLink
+              />
+            </TouchableOpacity>
+            <SectionDivider />
+            <InfoRow 
+              icon="tag" 
+              label="Version Code" 
+              value={getAppVersionCode().toString()} 
+            />
+          </View>
+        </View>
+
         {/* User Content */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Your Content</Text>
           <View style={styles.infoCard}>
             <TouchableOpacity onPress={navigateToHistory}>
               <InfoRow icon="history" label="Watch History" value="View" isLink />
+            </TouchableOpacity>
+            <SectionDivider />
+            <TouchableOpacity onPress={() => router.push('/notifications')}>
+              <InfoRow 
+                icon="notifications" 
+                label="Notifications" 
+                value="View" 
+                isLink 
+              />
             </TouchableOpacity>
             <SectionDivider />
             <TouchableOpacity onPress={() => router.push('/mylist')}>
@@ -579,6 +650,10 @@ export default function AboutScreen() {
             <TouchableOpacity onPress={() => openLink(`mailto:${APP_CONFIG.SUPPORT_EMAIL}`)}>
               <InfoRow icon="email" label="Contact" value={APP_CONFIG.SUPPORT_EMAIL} isLink />
             </TouchableOpacity>
+            <SectionDivider />
+            <TouchableOpacity onPress={() => openLink('https://www.buymeacoffee.com/R3AP3Redit')}>
+              <InfoRow icon="favorite" label="Support Development" value="Donate" isLink />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -592,36 +667,6 @@ export default function AboutScreen() {
               onSimulate={simulateArchitecture} 
             />
           </>
-        )}
-
-        {__DEV__ && (
-          <View style={styles.debugButtonContainer}>
-            <TouchableOpacity 
-              style={[
-                styles.debugButton,
-                isCheckingForUpdates && { opacity: 0.7 }
-              ]}
-              onPress={handleDebugCheckForUpdates}
-              disabled={isCheckingForUpdates}
-            >
-              <Text style={styles.debugButtonText}>
-                {isCheckingForUpdates ? 'Checking...' : 'Check for Updates'}
-              </Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={[
-                styles.debugButton,
-                { marginLeft: 10, backgroundColor: '#4CAF50' }
-              ]}
-              onPress={showTestUpdateModal}
-              disabled={!updateInfo}
-            >
-              <Text style={styles.debugButtonText}>
-                Test Update Modal
-              </Text>
-            </TouchableOpacity>
-          </View>
         )}
 
         <View style={styles.footer}>
@@ -665,11 +710,95 @@ const DebugSection = ({
   simulatedArch: string | null,
   onSimulate: (arch: string | null) => Promise<void> 
 }) => {
-  if (!updateInfo) return null;
-  
+  // Get access to the deviceInfo from the parent component
+  const [deviceInfo, setDeviceInfo] = useState({
+    deviceArchitecture: '',
+    detectedUrlKey: ''
+  });
+
   // Get raw architecture information
   const rawArchitectures = Device.supportedCpuArchitectures || [];
   const primaryRawArch = rawArchitectures.length > 0 ? rawArchitectures[0] : 'unknown';
+
+  // Function to refresh architecture info
+  const refreshArchitectureInfo = async () => {
+    try {
+      // Get device architecture
+      const deviceArch = Device.supportedCpuArchitectures;
+      const primaryArch = deviceArch && deviceArch.length > 0 ? deviceArch[0] : 'unknown';
+      
+      // Get the URL key that would be used for downloads
+      const urlKey = getDeviceArchitectureUrlKey(simulatedArch);
+      
+      // Format architecture for display
+      const formatArchitecture = (arch: string) => {
+        switch(arch.toLowerCase()) {
+          case 'arm64':
+            return 'ARM64 (64-bit)';
+          case 'arm64-v8a':
+            return 'ARM64-v8a (64-bit)';
+          case 'arm':
+            return 'ARM (32-bit)';
+          case 'x86_64':
+            return 'x86_64 (64-bit Intel/AMD)';
+          case 'x86':
+            return 'x86 (32-bit Intel/AMD)';
+          default:
+            return arch;
+        }
+      };
+      
+      setDeviceInfo({
+        deviceArchitecture: formatArchitecture(primaryArch),
+        detectedUrlKey: urlKey
+      });
+      
+      Alert.alert('Refreshed', 'Architecture information has been refreshed.');
+    } catch (error) {
+      console.error('Error refreshing architecture info:', error);
+      Alert.alert('Error', 'Failed to refresh architecture information.');
+    }
+  };
+
+  // Function to test architecture-specific download URL
+  const testArchitectureSpecificDownloadUrl = async () => {
+    if (!updateInfo) {
+      Alert.alert('No Update Info', 'Please check for updates first to load update information.');
+      return;
+    }
+    
+    try {
+      const downloadUrl = getArchitectureSpecificDownloadUrl(
+        updateInfo.downloadUrls,
+        simulatedArch
+      );
+      
+      Alert.alert(
+        'Download URL',
+        `The selected download URL is:\n\n${downloadUrl}\n\nWould you like to open it?`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Open URL',
+            onPress: () => Linking.openURL(downloadUrl)
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error getting download URL:', error);
+      Alert.alert('Error', 'Failed to get download URL.');
+    }
+  };
+  
+  // Update deviceInfo when component mounts or simulatedArch changes
+  useEffect(() => {
+    refreshArchitectureInfo();
+  }, [simulatedArch]);
+  
+  if (!updateInfo) return null;
   
   return (
     <View style={styles.debugSection}>
@@ -1033,5 +1162,34 @@ const styles = StyleSheet.create({
   smallDebugButtonText: {
     color: 'white',
     fontSize: 14,
+  },
+  donationCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 10,
+    padding: 15,
+    marginBottom: 10,
+    alignItems: 'center',
+  },
+  customDonationButton: {
+    backgroundColor: '#FFDD00',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderWidth: 1,
+    borderColor: '#000000',
+    marginVertical: 15,
+  },
+  customDonationButtonText: {
+    color: '#000000',
+    fontSize: 18,
+    fontWeight: 'bold',
+    fontFamily: 'System',
+  },
+  donationText: {
+    color: '#ccc',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 10,
+    lineHeight: 20,
   },
 }); 

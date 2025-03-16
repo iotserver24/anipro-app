@@ -17,5 +17,11 @@ export const logger = {
     if (isDevelopment) {
       console.info(...args);
     }
+  },
+  
+  warn: (...args: any[]) => {
+    if (isDevelopment) {
+      console.warn(...args);
+    }
   }
 }; 

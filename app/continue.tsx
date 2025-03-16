@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -106,7 +106,7 @@ export default function ContinueWatching() {
     }, 100);
   };
 
-  const renderWatchItem = ({ item }: { item: WatchHistoryItem }) => (
+  const renderWatchItem = useCallback(({ item }: { item: WatchHistoryItem }) => (
     <TouchableOpacity
       style={styles.watchCard}
       onPress={() => handlePress(item)}
@@ -134,10 +134,20 @@ export default function ContinueWatching() {
         style={styles.removeButton}
         onPress={() => handleRemove(item)}
       >
-        <MaterialIcons name="close" size={20} color="#fff" />
+        <MaterialIcons name="close" size={16} color="white" />
       </TouchableOpacity>
     </TouchableOpacity>
-  );
+  ), [handlePress, handleRemove, formatLastWatched]);
+
+  // Add a getItemLayout function to optimize FlatList rendering
+  const getItemLayout = useCallback((data, index) => {
+    const ITEM_HEIGHT = 150; // Adjust this to match your actual item height
+    return {
+      length: ITEM_HEIGHT,
+      offset: ITEM_HEIGHT * index,
+      index,
+    };
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -148,6 +158,11 @@ export default function ContinueWatching() {
         keyExtractor={(item) => item.episodeId}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
+        getItemLayout={getItemLayout}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        initialNumToRender={5}
       />
       <BottomNav />
     </View>

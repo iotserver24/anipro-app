@@ -39,7 +39,12 @@
       "permissions": [
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_EXTERNAL_STORAGE"
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.INTERNET",
+        "NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED",
+        "SCHEDULE_EXACT_ALARM",
+        "POST_NOTIFICATIONS"
       ],
       "softwareKeyboardLayoutMode": "pan",
       "allowsFullScreenVideo": true,
@@ -61,7 +66,7 @@
         "xxhdpi": "./assets/splash.png",
         "xxxhdpi": "./assets/splash.png"
       },
-      "versionCode": 6
+      "versionCode": 8
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -93,7 +98,20 @@
           "microphonePermission": false
         }
       ],
-      "expo-video"
+      "expo-video",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#f4511e",
+          "sounds": [
+            "./assets/notification-sound.wav"
+          ],
+          "androidMode": "default",
+          "androidCollapsedTitle": "AniSurge",
+          "androidImportance": "high"
+        }
+      ]
     ],
     "scheme": "anisurge",
     "fonts": [
@@ -119,8 +137,9 @@
         "origin": false
       },
       "eas": {
-        "projectId": "69442921-1758-493b-9ddf-d3cc35e5604f"
+        "projectId": "7b41008d-1077-418b-bdd0-e6e4469b6086"
       }
-    }
+    },
+    "owner": "r3ap3reditz"
   }
 }

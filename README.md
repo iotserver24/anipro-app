@@ -11,10 +11,17 @@ The app uses a centralized configuration system to manage app-wide settings like
 - **`constants/appConfig.ts`**: The main configuration file that stores all app settings
 - **`app.json`**: Expo configuration file that needs to be kept in sync with appConfig.ts
 
-### Updating App Version
+### App Version Management
 
+#### Checking Current Version
+To check the current app version and version code:
+```bash
+node scripts/check-version.js
+```
+This will display the current version information in a formatted output.
+
+#### Updating App Version
 To update the app version, use the provided script:
-
 ```bash
 node scripts/update-version.js <version> <versionCode>
 ```

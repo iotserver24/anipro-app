@@ -266,22 +266,24 @@ export default function Search() {
           colors={['transparent', 'rgba(0,0,0,0.8)']}
           style={styles.gradient}
         >
-          <Text style={styles.animeName} numberOfLines={2}>{item.title}</Text>
-          {item.episodeNumber > 0 && (
-            <View style={styles.infoContainer}>
-              <View style={styles.episodeInfo}>
-                <MaterialIcons name="tv" size={12} color="#fff" />
-                <Text style={styles.episodeText}>
-                  {item.episodeNumber} Episodes
-                </Text>
+          <View>
+            <Text style={styles.animeName} numberOfLines={2}>{item.title}</Text>
+            {item.episodeNumber > 0 && (
+              <View style={styles.infoContainer}>
+                <View style={styles.episodeInfo}>
+                  <MaterialIcons name="tv" size={12} color="#fff" />
+                  <Text style={styles.episodeText}>
+                    {item.episodeNumber} Episodes
+                  </Text>
+                </View>
+                {item.subOrDub && (
+                  <Text style={[styles.episodeText, styles.typeText]}>
+                    {item.subOrDub.toUpperCase()}
+                  </Text>
+                )}
               </View>
-              {item.subOrDub && (
-                <Text style={[styles.episodeText, styles.typeText]}>
-                  {item.subOrDub.toUpperCase()}
-                </Text>
-              )}
-            </View>
-          )}
+            )}
+          </View>
         </LinearGradient>
       </TouchableOpacity>
       <TouchableOpacity 

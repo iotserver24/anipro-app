@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, Dimensions, Animated, ActivityIndicator, AppState, Alert, Linking, Platform, Share } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, Dimensions, Animated, ActivityIndicator, AppState, Alert, Linking, Platform, Share, Notifications } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,8 +16,11 @@ import { useWatchHistoryStore } from '../store/watchHistoryStore';
 import Constants from 'expo-constants';
 import { APP_CONFIG, getAppVersion, getAppVersionCode } from '../constants/appConfig';
 import UpdateModal from '../components/UpdateModal';
+import WhatsNewModal from '../components/WhatsNewModal';
+import { shouldShowWhatsNew, fetchWhatsNewInfo, WhatsNewInfo } from '../utils/whatsNewUtils';
 import * as Device from 'expo-device';
 import { getArchitectureSpecificDownloadUrl } from '../utils/deviceUtils';
+import { notificationEmitter } from './notifications';
 
 const { width } = Dimensions.get('window');
 const ITEM_WIDTH = width * 0.9;
@@ -58,7 +61,7 @@ type AnimeItem = AnimeResult & {
     eps: number;
     sub: number;
     dub: number;
-  };
+  } | number;
 };
 
 const mapToAnimeItem = (item: any): AnimeItem => ({
@@ -67,11 +70,11 @@ const mapToAnimeItem = (item: any): AnimeItem => ({
   image: item.image || item.img,
   banner: item.banner,
   subOrDub: item.subOrDub || 'sub',
-  episodes: {
-    eps: item.totalEpisodes || item.episodes?.eps || 0,
-    sub: item.sub || item.episodes?.sub || 0,
-    dub: item.dub || item.episodes?.dub || 0
-  }
+  episodes: item.totalEpisodes || (item.episodes ? {
+    eps: item.episodes?.eps || 0,
+    sub: item.episodes?.sub || 0,
+    dub: item.episodes?.dub || 0
+  } : 0)
 });
 
 interface ChangelogItem {
@@ -112,7 +115,7 @@ const countUser = async () => {
           brand: Platform.OS,
           model: Platform.Version.toString(),
           systemVersion: Platform.Version.toString(),
-          isTablet: Platform.isPad,
+          isTablet: Platform.OS === 'ios' ? false : false,
           architecture: Platform.OS === 'android' ? 'arm64' : 'universal'
         }
       })
@@ -151,6 +154,10 @@ export default function Home() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [showUpdateBanner, setShowUpdateBanner] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [whatsNewInfo, setWhatsNewInfo] = useState<WhatsNewInfo | null>(null);
+  const [showWhatsNewModal, setShowWhatsNewModal] = useState(false);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(0);
 
   const fetchAnime = async (bypassCache: boolean = false) => {
     try {
@@ -207,8 +214,9 @@ export default function Home() {
         animeAPI.getTrending()
       ]);
 
-      const recentResults = recent?.results || recent;
-      const trendingResults = trending?.results || trending;
+      // Handle both array and object with results property
+      const recentResults = Array.isArray(recent) ? recent : (recent?.results || []);
+      const trendingResults = Array.isArray(trending) ? trending : (trending?.results || []);
 
       const mappedRecent = recentResults?.map(mapToAnimeItem) || [];
       const mappedTrending = trendingResults?.map(mapToAnimeItem) || [];
@@ -234,7 +242,8 @@ export default function Home() {
   const fetchNewEpisodes = async () => {
     try {
       const latest = await animeAPI.getLatestCompleted();
-      const latestResults = latest?.results || latest;
+      // Handle both array and object with results property
+      const latestResults = Array.isArray(latest) ? latest : (latest?.results || []);
       const mappedLatest = latestResults?.map(mapToAnimeItem) || [];
 
       setNewEpisodes(mappedLatest);
@@ -324,6 +333,56 @@ export default function Home() {
     logger.info('Update initiated for version:', updateInfo.latestVersion);
   };
 
+  const checkWhatsNew = async () => {
+    try {
+      // Check if the modal should be shown
+      const shouldShow = await shouldShowWhatsNew();
+      
+      if (shouldShow) {
+        // Fetch the "What's New" information
+        const info = await fetchWhatsNewInfo();
+        
+        if (info) {
+          setWhatsNewInfo(info);
+          setShowWhatsNewModal(true);
+        }
+      }
+    } catch (error) {
+      logger.error('Error checking "What\'s New":', error);
+    }
+  };
+
+  const checkForUnreadNotifications = async () => {
+    try {
+      // Get device ID
+      const deviceId = await AsyncStorage.getItem('device_id');
+      if (!deviceId) return;
+      
+      // Get locally stored read notifications
+      const readIdsStr = await AsyncStorage.getItem('read_notifications');
+      const readIds = readIdsStr ? JSON.parse(readIdsStr) : [];
+      
+      // Fetch notifications from API
+      const response = await fetch(`${APP_CONFIG.API_BASE_URL}/notifications`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch notifications: ${response.status}`);
+      }
+      
+      const notifications = await response.json();
+      
+      // Count unread notifications
+      const unreadCount = notifications.filter((notification: any) => 
+        !readIds.includes(notification.id)
+      ).length;
+      
+      setNotificationCount(unreadCount);
+      setHasUnreadNotifications(unreadCount > 0);
+    } catch (error) {
+      logger.error('Error checking for unread notifications:', error);
+    }
+  };
+
   useEffect(() => {
     // Initialize watch history
     initializeHistory();
@@ -334,20 +393,34 @@ export default function Home() {
     // Count user on app start
     countUser();
 
+    // Check for "What's New"
+    checkWhatsNew();
+    
+    // Check for unread notifications
+    checkForUnreadNotifications();
+
+    // Setup notification update listener
+    const notificationListener = notificationEmitter.on('notificationUpdate', () => {
+      checkForUnreadNotifications();
+    });
+
     // Setup app state subscription
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
         fetchAnime(false);
         // Count user when app comes to foreground
         countUser();
+        // Check for unread notifications when app comes to foreground
+        checkForUnreadNotifications();
       }
     });
 
     return () => {
-      // Cleanup subscription
+      // Cleanup subscriptions
       if (subscription) {
         subscription.remove();
       }
+      notificationListener.removeAllListeners();
     };
   }, []);
 
@@ -369,6 +442,34 @@ export default function Home() {
     return () => {
       subscription.remove();
     };
+  }, []);
+
+  useEffect(() => {
+    // Request notification permissions when app starts
+    const requestNotificationPermissions = async () => {
+      try {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        let finalStatus = existingStatus;
+
+        // Only ask if permissions have not been determined
+        if (existingStatus !== 'granted') {
+          const { status } = await Notifications.requestPermissionsAsync();
+          finalStatus = status;
+        }
+
+        if (finalStatus !== 'granted') {
+          logger.warn('Notification permissions not granted');
+          return;
+        }
+
+        logger.info('Notification permissions granted');
+      } catch (error) {
+        logger.error('Error requesting notification permissions:', error);
+      }
+    };
+
+    requestNotificationPermissions();
+    fetchAnime();
   }, []);
 
   const onRefresh = () => {
@@ -445,15 +546,19 @@ export default function Home() {
             colors={['transparent', 'rgba(0,0,0,0.9)']}
             style={styles.gradient}
           >
-            <Text style={styles.trendingTitle} numberOfLines={2}>{item.title}</Text>
-            {item.episodes && (
-              <View style={styles.episodeInfo}>
-                <MaterialIcons name="play-circle-outline" size={16} color="#fff" />
-                <Text style={styles.episodeText}>
-                  {item.episodes.sub || item.episodes.eps} Episodes
-                </Text>
-              </View>
-            )}
+            <View>
+              <Text style={styles.trendingTitle} numberOfLines={2}>{item.title}</Text>
+              {item.episodes && (
+                <View style={styles.episodeInfo}>
+                  <MaterialIcons name="play-circle-outline" size={16} color="#fff" />
+                  <Text style={styles.episodeText}>
+                    {typeof item.episodes === 'number' 
+                      ? item.episodes 
+                      : (item.episodes.sub || item.episodes.eps)} Episodes
+                  </Text>
+                </View>
+              )}
+            </View>
           </LinearGradient>
         </TouchableOpacity>
       </Animated.View>
@@ -474,7 +579,9 @@ export default function Home() {
           colors={['transparent', 'rgba(0,0,0,0.8)']}
           style={styles.gradient}
         >
-          <Text style={styles.animeName} numberOfLines={2}>{item.title}</Text>
+          <View>
+            <Text style={styles.animeName} numberOfLines={2}>{item.title}</Text>
+          </View>
         </LinearGradient>
       </TouchableOpacity>
       <TouchableOpacity 
@@ -516,6 +623,20 @@ export default function Home() {
         </TouchableOpacity>
       )}
       
+      {/* Notification Banner */}
+      {hasUnreadNotifications && (
+        <TouchableOpacity 
+          style={styles.notificationBanner}
+          onPress={() => router.push('/notifications')}
+        >
+          <MaterialIcons name="notifications" size={24} color="#fff" />
+          <Text style={styles.notificationText}>
+            {notificationCount} new {notificationCount === 1 ? 'notification' : 'notifications'}
+          </Text>
+          <MaterialIcons name="arrow-forward" size={24} color="#fff" />
+        </TouchableOpacity>
+      )}
+      
       {/* Update Modal */}
       {updateInfo && (
         <UpdateModal 
@@ -524,6 +645,15 @@ export default function Home() {
           onClose={() => setShowUpdateModal(false)}
           onUpdate={handleUpdate}
           simulatedArch={null}
+        />
+      )}
+      
+      {/* What's New Modal */}
+      {whatsNewInfo && (
+        <WhatsNewModal 
+          visible={showWhatsNewModal}
+          whatsNewInfo={whatsNewInfo}
+          onClose={() => setShowWhatsNewModal(false)}
         />
       )}
       
@@ -752,6 +882,19 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   updateText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  notificationBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f4511e',
+    padding: 12,
+    gap: 8,
+  },
+  notificationText: {
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',

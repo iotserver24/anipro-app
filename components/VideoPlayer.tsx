@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   StyleSheet,
@@ -105,6 +105,9 @@ const VideoPlayer = ({
   const lastPositionRef = useRef<number>(0);
   const isBufferingRef = useRef<boolean>(false);
   const isHandlingBufferingRef = useRef<boolean>(false);
+
+  // Add a lastRateLoggedRef to track the last rate we logged
+  const lastRateLoggedRef = useRef<number>(1);
 
   useEffect(() => {
     console.log(`[DEBUG] VideoPlayer: External quality changing state changed to ${externalQualityChanging}`);
@@ -334,8 +337,18 @@ const VideoPlayer = ({
     lastUpdateTimeRef.current = now;
 
     if (status.isLoaded) {
+      // Log rate if it's different from what we expect
+      if (status.rate !== rate) {
+        console.log(`[DEBUG] VideoPlayer: Rate mismatch - expected ${rate}x, got ${status.rate}x`);
+      }
+      
       const newPosition = status.positionMillis / 1000;
       currentPositionRef.current = newPosition;
+      
+      // Always update currentTime for accurate progress bar
+      if (!isSeeking) {
+        setCurrentTime(newPosition);
+      }
       
       if (!isSeeking && !isQualityChanging && lastPositionRef.current > 0) {
         const positionDiff = newPosition - lastPositionRef.current;
@@ -353,10 +366,6 @@ const VideoPlayer = ({
       
       if (duration > 0 && newPosition > duration - 3) {
         isAtEndRef.current = true;
-      }
-      
-      if (!isSeeking && !isQualityChanging && Math.abs(currentTime - newPosition) > 0.5) {
-        setCurrentTime(newPosition);
       }
       
       if (status.durationMillis && Math.abs((status.durationMillis / 1000) - duration) > 1) {
@@ -449,6 +458,12 @@ const VideoPlayer = ({
         clearTimeout(controlsTimeout);
       }
     } else {
+      // Ensure current position is up-to-date before showing controls
+      if (videoRef.current && currentPositionRef.current > 0) {
+        console.log(`[DEBUG] VideoPlayer: Updating currentTime to ${currentPositionRef.current} before showing controls`);
+        setCurrentTime(currentPositionRef.current);
+      }
+      
       setShowControls(true);
       const timeout = setTimeout(() => {
         setShowControls(false);
@@ -684,10 +699,41 @@ const VideoPlayer = ({
   };
 
   useEffect(() => {
+    // Only log if the rate has actually changed from what we last logged
+    if (rate !== lastRateLoggedRef.current) {
+      console.log(`[DEBUG] VideoPlayer: Setting playback rate to ${rate}x`);
+      lastRateLoggedRef.current = rate;
+    }
+    
     if (videoRef.current) {
       videoRef.current.setRateAsync(rate, true);
+      currentRateRef.current = rate;
     }
   }, [rate]);
+
+  // Add a ref to track the current rate to avoid redundant calls
+  const currentRateRef = useRef<number>(rate);
+
+  useEffect(() => {
+    // Only set the rate if it's different from the current rate
+    if (videoRef.current && currentRateRef.current !== rate) {
+      console.log(`[DEBUG] VideoPlayer: Setting playback rate to ${rate}x`);
+      videoRef.current.setRateAsync(rate, true)
+        .then(() => {
+          console.log(`[DEBUG] VideoPlayer: Successfully set playback rate to ${rate}x`);
+          currentRateRef.current = rate; // Update the ref after successful change
+          if (onPlaybackRateChange) {
+            onPlaybackRateChange(rate);
+          }
+        })
+        .catch(error => {
+          console.error(`[DEBUG] VideoPlayer: Error setting playback rate to ${rate}x:`, error);
+        });
+    } else if (currentRateRef.current !== rate) {
+      // Update the ref even if videoRef is not available yet
+      currentRateRef.current = rate;
+    }
+  }, [rate, onPlaybackRateChange]);
 
   useEffect(() => {
     const dimensionsChangeHandler = ({ window, screen }: { window: { width: number; height: number }, screen: { width: number; height: number } }) => {
@@ -719,6 +765,15 @@ const VideoPlayer = ({
       subscription.remove();
     };
   }, [isFullscreen]);
+
+  // Add a useEffect to ensure currentTime is properly initialized
+  useEffect(() => {
+    // Initialize currentTime from initialPosition if available
+    if (initialPositionRef.current > 0) {
+      setCurrentTime(initialPositionRef.current);
+      currentPositionRef.current = initialPositionRef.current;
+    }
+  }, []);
 
   return (
     <View style={[
@@ -756,6 +811,7 @@ const VideoPlayer = ({
           progressUpdateIntervalMillis={500}
           positionMillis={isQualityChanging ? savedPosition * 1000 : undefined}
           rate={rate}
+          shouldCorrectPitch={true}
           isMuted={false}
         />
         
@@ -774,9 +830,11 @@ const VideoPlayer = ({
               colors={['rgba(0,0,0,0.7)', 'transparent']}
               style={styles.topBar}
             >
-              <Text style={styles.titleText} numberOfLines={1}>
-                {title}
-              </Text>
+              <View>
+                <Text style={styles.titleText} numberOfLines={1}>
+                  {title}
+                </Text>
+              </View>
             </LinearGradient>
 
             <View style={styles.centerControls}>
@@ -832,17 +890,22 @@ const VideoPlayer = ({
                 <Slider
                   style={styles.slider}
                   minimumValue={0}
-                  maximumValue={duration}
+                  maximumValue={duration > 0 ? duration : 1}
                   value={currentTime}
+                  onValueChange={(value) => {
+                    if (isSeeking) {
+                      setCurrentTime(value);
+                    }
+                  }}
                   onSlidingStart={(value) => {
                     setIsSeeking(true);
                   }}
                   onSlidingComplete={(value) => {
                     handleSeek(value);
                   }}
-                  minimumTrackTintColor="#2196F3"
-                  maximumTrackTintColor="rgba(255,255,255,0.3)"
-                  thumbTintColor="#2196F3"
+                  minimumTrackTintColor="#f4511e"
+                  maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
+                  thumbTintColor="#f4511e"
                 />
                 <Text style={styles.timeText}>{formatTime(duration)}</Text>
               </View>

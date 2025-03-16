@@ -997,12 +997,39 @@ export default function WatchEpisode() {
         });
       }
     }
+  }, [isSeeking, isQualityChanging, animeInfo, animeId, episodeId, episodeNumber, category]);
+
+  // Define handleSeek before it's used in useEffect
+  const handleSeek = async (value: number) => {
+    if (videoRef.current) {
+      const wasPlaying = isPlaying;
+      try {
+        await videoRef.current.setPositionAsync(value * 1000);
+        setCurrentTime(value);
+        
+        if (wasPlaying) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+          await videoRef.current.playAsync();
+          setIsPlaying(true);
+        }
+      } catch (error) {
+        logger.error('Error seeking:', error);
+      }
+    }
+  };
+
+  // Now the useEffect for intro/outro skipping
+  useEffect(() => {
+    if (isSeeking || isQualityChanging || !videoData?.intro) return;
+
+    // Get current time from the currentTime state
+    const currentVideoTime = currentTime;
 
     // Handle intro/outro skipping if available
-    if (videoData?.intro && data.currentTime >= videoData.intro.start && data.currentTime <= videoData.intro.end) {
+    if (currentVideoTime >= videoData.intro.start && currentVideoTime <= videoData.intro.end) {
       handleSeek(videoData.intro.end);
     }
-  }, [isSeeking, isQualityChanging, animeInfo, animeId, episodeId, episodeNumber, category, videoData, handleSeek]);
+  }, [isSeeking, isQualityChanging, videoData, currentTime, handleSeek]);
 
   // Add a useEffect to initialize the progress refs
   useEffect(() => {
@@ -1047,9 +1074,13 @@ export default function WatchEpisode() {
   };
 
   const handlePlaybackSpeedChange = (speed: number) => {
-    setPlaybackSpeed(speed);
-    // The VideoPlayer component will handle the actual speed change
-    // through the rate prop and useEffect
+    // Only update if the speed is actually changing
+    if (speed !== playbackSpeed) {
+      console.log(`[DEBUG] Changing playback speed to ${speed}x`);
+      setPlaybackSpeed(speed);
+      // The VideoPlayer component will handle the actual speed change
+      // through the rate prop and useEffect
+    }
   };
 
   const handleVideoError = (error: any) => {
@@ -1101,24 +1132,6 @@ export default function WatchEpisode() {
       }
     } catch (error) {
       console.error('Error handling fullscreen change:', error);
-    }
-  };
-
-  const handleSeek = async (value: number) => {
-    if (videoRef.current) {
-      const wasPlaying = isPlaying;
-      try {
-        await videoRef.current.setPositionAsync(value * 1000);
-        setCurrentTime(value);
-        
-        if (wasPlaying) {
-          await new Promise(resolve => setTimeout(resolve, 50));
-          await videoRef.current.playAsync();
-          setIsPlaying(true);
-        }
-      } catch (error) {
-        logger.error('Error seeking:', error);
-      }
     }
   };
 
@@ -1578,13 +1591,15 @@ export default function WatchEpisode() {
             }}
             title={title as string}
             initialPosition={resumePosition}
+            rate={playbackSpeed}
+            onPlaybackRateChange={handlePlaybackSpeedChange}
             onProgress={(currentTime, duration) => {
               if (!isSeeking) {
                 setCurrentTime(currentTime);
                 setDuration(duration);
                 
-                // Save progress every 5 seconds
-                if (Math.floor(currentTime) % 5 === 0 && currentTime > 0) {
+                // Save progress every 2 seconds
+                if (Math.floor(currentTime) % 2 === 0 && currentTime > 0) {
                   console.log(`[DEBUG] Saving progress: ${currentTime}/${duration}`);
                   if (animeInfo?.info || animeInfo) {
                     addToHistory({

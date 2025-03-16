@@ -6,6 +6,11 @@ import { useWatchHistoryStore } from './store/watchHistoryStore';
 import Constants from 'expo-constants';
 import { statsService } from './services/stats';
 import { updateService } from './services/updateService';
+import { StyleSheet } from 'react-native';
+import { Stack } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import * as Notifications from 'expo-notifications';
+import { logger } from './utils/logger';
 
 export default function App() {
   const initializeHistory = useWatchHistoryStore(state => state.initializeHistory);
@@ -77,5 +82,20 @@ export default function App() {
     statsService.trackActivity();
   }, []);
 
-  // ... rest of your App component
+  return (
+    <>
+      <StatusBar style="light" />
+      <Stack
+        screenOptions={{
+          headerStyle: {
+            backgroundColor: '#1a1a1a',
+          },
+          headerTintColor: '#fff',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+        }}
+      />
+    </>
+  );
 }

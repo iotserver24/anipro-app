@@ -59,13 +59,15 @@ export default function MyList() {
         colors={['transparent', 'rgba(0,0,0,0.9)']}
         style={styles.gradient}
       >
-        <Text style={styles.animeName} numberOfLines={2}>{item.name}</Text>
-        <TouchableOpacity 
-          style={styles.removeButton}
-          onPress={() => removeFromList(item.id)}
-        >
-          <MaterialIcons name="remove-circle-outline" size={24} color="#f4511e" />
-        </TouchableOpacity>
+        <View>
+          <Text style={styles.animeName} numberOfLines={2}>{item.name}</Text>
+          <TouchableOpacity 
+            style={styles.removeButton}
+            onPress={() => removeFromList(item.id)}
+          >
+            <MaterialIcons name="remove-circle-outline" size={24} color="#f4511e" />
+          </TouchableOpacity>
+        </View>
       </LinearGradient>
     </TouchableOpacity>
   );
