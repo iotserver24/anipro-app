@@ -20,7 +20,7 @@ export default function History() {
     const resumeTimeParam = item.progress && item.progress > 0 ? 
       item.progress.toString() : undefined;
     
-    console.log(`[DEBUG] HistoryPage: Navigating to episode with resumeTime: ${resumeTimeParam}, progress: ${item.progress}`);
+    //console.log(`[DEBUG] HistoryPage: Navigating to episode with resumeTime: ${resumeTimeParam}, progress: ${item.progress}`);
     
     setTimeout(() => {
       router.push({
@@ -108,10 +108,10 @@ export default function History() {
 
   // 4. Effect hooks
   useEffect(() => {
-    console.log('[DEBUG] HistoryPage: Initializing watch history');
+    //console.log('[DEBUG] HistoryPage: Initializing watch history');
     setLoading(true);
     initializeHistory().then(() => {
-      console.log('[DEBUG] HistoryPage: Watch history initialized with', history.length, 'items');
+      //console.log('[DEBUG] HistoryPage: Watch history initialized with', history.length, 'items');
       setLoading(false);
     }).catch(error => {
       console.error('[DEBUG] HistoryPage: Error initializing watch history:', error);

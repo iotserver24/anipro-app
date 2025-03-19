@@ -506,13 +506,28 @@ export default function AboutScreen() {
             style={styles.header}
           >
             <View style={styles.headerContent}>
-              <Image
-                source={require('../assets/icon.png')}
-                style={styles.appIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.appName}>{APP_CONFIG.APP_NAME}</Text>
-              <Text style={styles.appVersion}>Version {appVersion}</Text>
+              <View style={styles.appInfoContainer}>
+                <Image
+                  source={require('../assets/icon.png')}
+                  style={styles.appIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.appName}>{APP_CONFIG.APP_NAME}</Text>
+                <Text style={styles.appVersion}>Version {appVersion}</Text>
+              </View>
+              <View style={styles.socialButtons}>
+                <TouchableOpacity 
+                  style={styles.discordButton}
+                  onPress={() => openLink('https://app.animeverse.cc/discord')}
+                >
+                  <Image 
+                    source={require('../assets/discord-white.png')}
+                    style={styles.socialIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.socialButtonText}>Discord</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </LinearGradient>
         ) : (
@@ -523,13 +538,28 @@ export default function AboutScreen() {
             defaultSource={require('../assets/icon.png')}
           >
             <View style={styles.headerContent}>
-              <Image
-                source={require('../assets/icon.png')}
-                style={styles.appIcon}
-                resizeMode="contain"
-              />
-              <Text style={styles.appName}>{APP_CONFIG.APP_NAME}</Text>
-              <Text style={styles.appVersion}>Version {appVersion}</Text>
+              <View style={styles.appInfoContainer}>
+                <Image
+                  source={require('../assets/icon.png')}
+                  style={styles.appIcon}
+                  resizeMode="contain"
+                />
+                <Text style={styles.appName}>{APP_CONFIG.APP_NAME}</Text>
+                <Text style={styles.appVersion}>Version {appVersion}</Text>
+              </View>
+              <View style={styles.socialButtons}>
+                <TouchableOpacity 
+                  style={styles.discordButton}
+                  onPress={() => openLink('https://app.animeverse.cc/discord')}
+                >
+                  <Image 
+                    source={require('../assets/discord-white.png')}
+                    style={styles.socialIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.socialButtonText}>Discord</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </ImageBackground>
         )}
@@ -543,6 +573,23 @@ export default function AboutScreen() {
             </Text>
             <Text style={styles.aboutText}>
               With a vast library of content, {APP_CONFIG.APP_NAME} provides a seamless viewing experience with high-quality streams and a user-friendly interface.
+            </Text>
+          </View>
+        </View>
+
+        {/* User Account Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>User Account</Text>
+          <View style={styles.infoCard}>
+            <TouchableOpacity 
+              style={styles.profileButton}
+              onPress={() => router.push('/profile')}
+            >
+              <MaterialIcons name="person" size={24} color="#fff" />
+              <Text style={styles.profileButtonText}>View Profile</Text>
+            </TouchableOpacity>
+            <Text style={styles.aboutText}>
+              Access your account profile to log in, view your account details, or log out.
             </Text>
           </View>
         </View>
@@ -682,16 +729,31 @@ export default function AboutScreen() {
         {/* App Section */}
         <View ref={appSectionRef} style={styles.section}>
           <Text style={styles.sectionTitle}>App</Text>
-          <View style={styles.infoCard}>
-            <TouchableOpacity onPress={showThemeOptions}>
-              <InfoRow 
-                icon="brightness-6" 
-                label="App Theme" 
-                value="Coming Soon" 
-                isLink 
+          <View style={styles.socialButtonsContainer}>
+            <TouchableOpacity 
+              style={styles.discordButton}
+              onPress={() => openLink('https://app.animeverse.cc/discord')}
+            >
+              <Image 
+                source={require('../assets/discord-white.png')}
+                style={styles.socialIcon}
+                resizeMode="contain"
               />
+              <Text style={styles.socialButtonText}>Discord</Text>
             </TouchableOpacity>
-            <SectionDivider />
+            <TouchableOpacity 
+              style={styles.telegramButton}
+              onPress={() => openLink('https://app.animeverse.cc/telegram')}
+            >
+              <Image 
+                source={require('../assets/telegram-white.png')}
+                style={styles.socialIcon}
+                resizeMode="contain"
+              />
+              <Text style={styles.socialButtonText}>Telegram</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.infoCard}>
             <TouchableOpacity onPress={shareApp}>
               <InfoRow icon="share" label="Share App" value="Share" isLink />
             </TouchableOpacity>
@@ -1025,9 +1087,15 @@ const styles = StyleSheet.create({
   },
   headerContent: {
     alignItems: 'center',
-    paddingVertical: 30,
+    paddingVertical: 20,
     paddingHorizontal: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)', // Semi-transparent overlay
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  appInfoContainer: {
+    alignItems: 'center',
+    flex: 1,
   },
   appIcon: {
     width: 80,
@@ -1044,6 +1112,39 @@ const styles = StyleSheet.create({
   appVersion: {
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.8)',
+  },
+  socialButtons: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+  },
+  discordButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#5865F2',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+    flex: 1,
+  },
+  telegramButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0088cc',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+    flex: 1,
+  },
+  socialIcon: {
+    width: 16,
+    height: 16,
+    marginRight: 8,
+  },
+  socialButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   section: {
     marginTop: 20,
@@ -1258,5 +1359,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 10,
     lineHeight: 20,
+  },
+  socialButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 10,
+    marginBottom: 10,
+  },
+  profileButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f4511e',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  profileButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 10,
   },
 }); 

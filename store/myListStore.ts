@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MyListAnime } from '../utils/myList';
+import { syncService } from '../services/syncService';
 
 interface MyListStore {
   myList: MyListAnime[];
@@ -17,6 +18,17 @@ export const useMyListStore = create<MyListStore>((set, get) => ({
 
   initializeStore: async () => {
     try {
+      // Try to fetch from Firestore first
+      const userData = await syncService.fetchUserData();
+      if (userData?.watchlist) {
+        set({
+          myList: userData.watchlist,
+          bookmarkedIds: new Set(userData.watchlist.map((item: MyListAnime) => item.id))
+        });
+        return;
+      }
+
+      // Fallback to local storage
       const savedList = await AsyncStorage.getItem('my_list');
       if (savedList) {
         const list = JSON.parse(savedList);
@@ -35,7 +47,13 @@ export const useMyListStore = create<MyListStore>((set, get) => ({
       const { myList, bookmarkedIds } = get();
       if (!bookmarkedIds.has(anime.id)) {
         const newList = [...myList, anime];
+        
+        // Save to local storage
         await AsyncStorage.setItem('my_list', JSON.stringify(newList));
+        
+        // Sync with Firestore
+        await syncService.addToWatchlist(anime);
+        
         set({
           myList: newList,
           bookmarkedIds: new Set([...bookmarkedIds, anime.id])
@@ -53,7 +71,13 @@ export const useMyListStore = create<MyListStore>((set, get) => ({
     try {
       const { myList, bookmarkedIds } = get();
       const newList = myList.filter(item => item.id !== animeId);
+      
+      // Save to local storage
       await AsyncStorage.setItem('my_list', JSON.stringify(newList));
+      
+      // Sync with Firestore
+      await syncService.removeFromWatchlist(animeId);
+      
       bookmarkedIds.delete(animeId);
       set({
         myList: newList,

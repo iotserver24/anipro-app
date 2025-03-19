@@ -37,6 +37,12 @@ export default function BottomTabBar() {
       IconComponent: MaterialIcons
     }
     // {
+    //   name: 'Profile',
+    //   path: '/profile',
+    //   icon: 'person',
+    //   IconComponent: MaterialIcons
+    // }
+    // {
     //   name: 'Continue',
     //   path: '/continue',
     //   icon: 'play-circle-outline',

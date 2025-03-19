@@ -9,10 +9,26 @@ import SearchBar from '../components/SearchBar';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import BottomTabBar from '../components/BottomTabBar';
-import { useGlobalStore } from '../store/globalStore';
+import { migrateCommentsWithAvatars } from '../services/commentService';
+import { fetchAvatars } from '../constants/avatars';
+import { restoreUserSession } from '../services/userService';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth } from '../services/firebase';
+// These imports are commented out because we're removing the auth button from the header
+// import { useGlobalStore } from '../store/globalStore';
+// import AuthButton from '../components/AuthButton';
 
 // Make sure SplashScreen is prevented from auto-hiding
 SplashScreen.preventAutoHideAsync();
+
+// Custom header component with search bar only
+const HeaderRight = () => {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <SearchBar />
+    </View>
+  );
+};
 
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
@@ -30,17 +46,73 @@ export default function RootLayout() {
   }, [fontsLoaded, fontError]);
 
   const initializeHistory = useWatchHistoryStore(state => state.initializeHistory);
-
+  const [authInitialized, setAuthInitialized] = useState(false);
+  
+  // Handle authentication state
   useEffect(() => {
-    // Load watch history when app starts
-    console.log('[DEBUG] App: Initializing watch history store');
-    initializeHistory().then(() => {
-      console.log('[DEBUG] App: Watch history initialized successfully');
-    }).catch(error => {
-      console.error('[DEBUG] App: Error initializing watch history:', error);
+    console.log('[DEBUG] App: Setting up auth state initialization');
+    
+    // First try to restore from AsyncStorage - this will sign in the user 
+    // if there are stored credentials
+    const initAuth = async () => {
+      try {
+        const restored = await restoreUserSession();
+        if (restored) {
+          console.log('[DEBUG] App: Successfully restored auth session');
+        } else {
+          console.log('[DEBUG] App: No session to restore or restoration failed');
+        }
+      } catch (error) {
+        console.error('[DEBUG] App: Error during auth restoration:', error);
+      } finally {
+        // Mark auth as initialized regardless of outcome
+        setAuthInitialized(true);
+      }
+    };
+    
+    initAuth();
+    
+    // Then set up the Firebase auth state listener for future changes
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      if (user) {
+        console.log('[DEBUG] App: User is signed in:', user.uid);
+      } else {
+        console.log('[DEBUG] App: User is signed out');
+      }
     });
     
-    // Force a refresh of the history every time the app comes to the foreground
+    return () => unsubscribe();
+  }, []);
+
+  // Initialize app data after authentication is handled
+  useEffect(() => {
+    if (!authInitialized) return;
+    
+    // Function to initialize all app data
+    const initializeAppData = async () => {
+      console.log('[DEBUG] App: Starting app data initialization');
+      
+      try {
+        // Load watch history
+        console.log('[DEBUG] App: Initializing watch history store');
+        await initializeHistory();
+        console.log('[DEBUG] App: Watch history initialized successfully');
+        
+        // Initialize avatars
+        await fetchAvatars();
+        console.log('[DEBUG] App: Avatars loaded successfully');
+        
+        // Run comment avatar migration
+        await migrateCommentsWithAvatars();
+        console.log('[DEBUG] App: Comment avatar migration completed');
+      } catch (error) {
+        console.error('[DEBUG] App: Error initializing app data:', error);
+      }
+    };
+    
+    initializeAppData();
+    
+    // Set up refresh interval for watch history
     const refreshInterval = setInterval(() => {
       console.log('[DEBUG] App: Refreshing watch history');
       initializeHistory().catch(error => {
@@ -51,7 +123,7 @@ export default function RootLayout() {
     return () => {
       clearInterval(refreshInterval);
     };
-  }, []);
+  }, [authInitialized, initializeHistory]);
 
   useEffect(() => {
     const backAction = () => {
@@ -154,7 +226,7 @@ export default function RootLayout() {
             options={{
               title: 'AniSurge',
               headerShown: true,
-              headerRight: () => <SearchBar />,
+              headerRight: () => <HeaderRight />,
             }}
           />
           <Stack.Screen
@@ -208,6 +280,14 @@ export default function RootLayout() {
             name="about"
             options={{
               title: 'About',
+              headerShown: true,
+              animation: 'slide_from_right',
+            }}
+          />
+          <Stack.Screen
+            name="profile"
+            options={{
+              title: 'Profile',
               headerShown: true,
               animation: 'slide_from_right',
             }}

@@ -1,4 +1,4 @@
-import { View, TextInput, TouchableOpacity, StyleSheet, Animated, Keyboard } from 'react-native';
+import { View, TextInput, StyleSheet, Animated, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useState, useRef, useEffect } from 'react';
 import { router } from 'expo-router';
@@ -8,7 +8,6 @@ export default function SearchBar() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const expandAnim = useRef(new Animated.Value(0)).current;
-  const [isAnimating, setIsAnimating] = useState(false);
   const inputRef = useRef<TextInput>(null);
   const autoCloseTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -50,28 +49,25 @@ export default function SearchBar() {
   }, [isFocused, isExpanded, searchQuery]);
 
   const toggleSearch = () => {
-    if (isAnimating) return;
-    
     clearAutoCloseTimer();
-    setIsAnimating(true);
-    const toValue = isExpanded ? 0 : 1;
-    setIsExpanded(!isExpanded);
     
-    Animated.spring(expandAnim, {
-      toValue,
+    // Immediately update the expanded state for better responsiveness
+    const newExpandedState = !isExpanded;
+    setIsExpanded(newExpandedState);
+    
+    // Use faster animation for better responsiveness
+    Animated.timing(expandAnim, {
+      toValue: newExpandedState ? 1 : 0,
+      duration: 100, // Even faster animation
       useNativeDriver: false,
-      friction: 8,
-      tension: 40,
     }).start(() => {
-      setIsAnimating(false);
-      if (toValue === 0) {
+      if (!newExpandedState) {
         setSearchQuery('');
         setIsFocused(false);
       } else {
-        setTimeout(() => {
-          inputRef.current?.focus();
-          setIsFocused(true);
-        }, 100);
+        // Focus input immediately
+        inputRef.current?.focus();
+        setIsFocused(true);
       }
     });
   };
@@ -161,21 +157,18 @@ export default function SearchBar() {
             blurOnSubmit
           />
         )}
-        <TouchableOpacity 
-          style={[
+        <TouchableWithoutFeedback onPress={handleSearchPress}>
+          <View style={[
             styles.searchButton,
-            !isExpanded && styles.searchButtonCollapsed
-          ]}
-          onPress={handleSearchPress}
-          activeOpacity={0.7}
-          disabled={isAnimating}
-        >
-          <Ionicons 
-            name={isExpanded && searchQuery.length > 0 ? "search" : "search-outline"} 
-            size={22}
-            color="rgba(255, 255, 255, 0.9)"
-          />
-        </TouchableOpacity>
+            !isExpanded && styles.searchButtonCollapsed,
+          ]}>
+            <Ionicons 
+              name={isExpanded && searchQuery.length > 0 ? "search" : "search-outline"} 
+              size={22}
+              color="rgba(255, 255, 255, 0.9)"
+            />
+          </View>
+        </TouchableWithoutFeedback>
       </Animated.View>
     </View>
   );
@@ -184,6 +177,8 @@ export default function SearchBar() {
 const styles = StyleSheet.create({
   container: {
     marginRight: 12,
+    minWidth: 40,
+    minHeight: 40,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -211,6 +206,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
+    backgroundColor: 'rgba(244, 81, 30, 0.2)',
   },
   searchButtonCollapsed: {
     backgroundColor: 'rgba(255, 255, 255, 0.08)',

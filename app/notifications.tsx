@@ -36,7 +36,7 @@ const READ_NOTIFICATIONS_KEY = 'read_notifications';
 
 // Background task name
 const BACKGROUND_NOTIFICATION_TASK = 'BACKGROUND_NOTIFICATION_TASK';
-const NOTIFICATION_CHECK_INTERVAL = 30 * 60; // 30 minutes in seconds
+const NOTIFICATION_CHECK_INTERVAL = 5 * 60; // 5 minutes in seconds
 
 // Configure notification behavior
 Notifications.setNotificationHandler({

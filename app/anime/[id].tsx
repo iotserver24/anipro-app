@@ -1,16 +1,15 @@
-import { View, Text, Image, StyleSheet, ScrollView, TouchableOpacity, FlatList, ActivityIndicator, Dimensions, Platform, Animated, TouchableWithoutFeedback, TextInput, Alert, Share, SectionList } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
-import { useEffect, useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, FlatList, Alert, TextInput, ActivityIndicator, Platform, Animated, SectionList, Share, Dimensions } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import { DownloadOptionsModal } from '../../components/DownloadOptionsModal';
-import { addToMyList, removeFromMyList, isInMyList } from '../../utils/myList';
+import { DownloadStatus } from '../../types/downloads';
+import EpisodeItem from '../../components/EpisodeItem';
 import { useMyListStore } from '../../store/myListStore';
 import { animeAPI } from '../../services/api';
-import React from 'react';
+import CommentModal from '../../components/CommentModal';
 
 type AnimeInfo = {
   info: {
@@ -54,54 +53,7 @@ type APIEpisode = {
   isFiller: boolean;
 };
 
-type DownloadStatus = {
-  [key: string]: {
-    progress: number;
-    status: 'idle' | 'downloading' | 'completed' | 'error';
-  };
-};
-
 const { width, height } = Dimensions.get('window');
-
-const EpisodeItem = React.memo(({ episode, onPress, onLongPress, mode, animeTitle, onShare }: {
-  episode: APIEpisode;
-  onPress: () => void;
-  onLongPress: () => void;
-  mode: 'sub' | 'dub';
-  animeTitle: string;
-  onShare: () => void;
-}) => (
-  <TouchableOpacity
-    style={[styles.episodeCard, episode.isFiller && styles.fillerEpisodeCard]}
-    onPress={onPress}
-    onLongPress={onLongPress}
-  >
-    <View style={styles.episodeContent}>
-      <View style={styles.episodeNumberContainer}>
-        <Text style={styles.episodeNumber}>{episode.number}</Text>
-      </View>
-      <View style={styles.episodeInfo}>
-        <Text style={styles.episodeTitle} numberOfLines={1}>
-          {episode.title}
-        </Text>
-        <View style={styles.episodeBadges}>
-          {mode === 'dub' && episode.isDubbed && (
-            <Text style={styles.dubBadge}>DUB</Text>
-          )}
-          {episode.isFiller && (
-            <Text style={styles.fillerBadge}>FILLER</Text>
-          )}
-        </View>
-      </View>
-      <View style={styles.episodeActions}>
-        <TouchableOpacity onPress={onShare} style={styles.episodeActionButton}>
-          <MaterialIcons name="share" size={20} color="#f4511e" />
-        </TouchableOpacity>
-        <MaterialIcons name="play-circle-outline" size={24} color="#f4511e" />
-      </View>
-    </View>
-  </TouchableOpacity>
-));
 
 const RecommendationItem = ({ anime }: { 
   anime: {
@@ -224,6 +176,7 @@ export default function AnimeDetails() {
   const [showRecommendations, setShowRecommendations] = useState(false);
   const [selectedTab, setSelectedTab] = useState<'episodes' | 'related' | 'recommendations'>('episodes');
   const fadeAnim = useRef(new Animated.Value(1)).current;
+  const [showCommentsModal, setShowCommentsModal] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -374,7 +327,7 @@ export default function AnimeDetails() {
     if (!animeData) return;
     
     try {
-      const shareUrl = `https://app.animeverse.cc/share/${encodeURIComponent(episode.id)}`;
+      const shareUrl = `https://app.animeverse.cc/share/${encodeURIComponent(episode.id)}$category=${selectedMode}`;
       const emojiType = selectedMode === 'sub' ? '🗣️' : '🎙️';
       const message = `📺 ${animeData.info.name}\n${emojiType} Episode ${episode.number}${episode.title ? `: ${episode.title}` : ''}\n\n${episode.isFiller ? '⚠️ Filler Episode\n\n' : ''}🔥 Watch now on AniSurge!\n\n${shareUrl}`;
       
@@ -680,45 +633,6 @@ export default function AnimeDetails() {
     );
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#f4511e" />
-      </View>
-    );
-  }
-
-  if (!animeData) {
-    return (
-      <View style={styles.errorContainer}>
-        <Text style={styles.errorText}>Failed to load anime details</Text>
-      </View>
-    );
-  }
-
-  const renderEpisode = ({ item }: { item: APIEpisode }) => (
-    <EpisodeItem
-      episode={item}
-      mode={selectedMode}
-      animeTitle={animeData?.info.name || ''}
-      onPress={() => {
-        router.push({
-          pathname: "/anime/watch/[episodeId]",
-          params: {
-            episodeId: item.id,
-            animeId: id,
-            episodeNumber: item.number,
-            title: animeData?.info.name || 'Unknown Anime',
-            episodeTitle: item.title || `Episode ${item.number}`,
-            category: selectedMode
-          }
-        });
-      }}
-      onLongPress={() => handleDownload(item)}
-      onShare={() => handleEpisodeShare(item)}
-    />
-  );
-
   const renderContent = () => {
     if (!animeData) return null;
 
@@ -800,7 +714,7 @@ export default function AnimeDetails() {
               >
                 <MaterialIcons 
                   name={isBookmarked(id as string) ? "bookmark" : "bookmark-outline"} 
-                  size={24} 
+                  size={22} 
                   color="#f4511e" 
                 />
                 <Text style={styles.actionText}>
@@ -810,9 +724,17 @@ export default function AnimeDetails() {
 
               <TouchableOpacity 
                 style={styles.actionButton}
+                onPress={() => setShowCommentsModal(true)}
+              >
+                <MaterialIcons name="comment" size={22} color="#f4511e" />
+                <Text style={styles.actionText}>Comments</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.actionButton, styles.shareButton]}
                 onPress={handleShare}
               >
-                <MaterialIcons name="share" size={24} color="#f4511e" />
+                <MaterialIcons name="share" size={20} color="#f4511e" />
                 <Text style={styles.actionText}>Share</Text>
               </TouchableOpacity>
             </View>
@@ -842,127 +764,61 @@ export default function AnimeDetails() {
     );
   };
 
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#f4511e" />
+      </View>
+    );
+  }
+
+  if (!animeData) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>Failed to load anime details</Text>
+      </View>
+    );
+  }
+
+  const renderEpisode = ({ item }: { item: APIEpisode }) => (
+    <EpisodeItem
+      episode={item}
+      mode={selectedMode}
+      animeTitle={animeData?.info.name || ''}
+      onPress={() => {
+        router.push({
+          pathname: "/anime/watch/[episodeId]",
+          params: {
+            episodeId: item.id,
+            animeId: id,
+            episodeNumber: item.number,
+            title: animeData?.info.name || 'Unknown Anime',
+            episodeTitle: item.title || `Episode ${item.number}`,
+            category: selectedMode
+          }
+        });
+      }}
+      onLongPress={() => handleDownload(item)}
+      onShare={() => handleEpisodeShare(item)}
+    />
+  );
+
   return (
     <View style={styles.container}>
-      <SectionList
-        sections={[
-          {
-            title: 'header',
-            data: [null],
-            renderItem: () => renderAnimeHeader()
-          },
-          {
-            title: 'info',
-            data: [null],
-            renderItem: () => (
-              <View style={styles.section}>
-                {/* Synopsis */}
-                <View style={styles.synopsisContainer}>
-                  <Text style={styles.sectionTitle}>Synopsis</Text>
-                  <Text style={styles.description} numberOfLines={showMoreInfo ? undefined : 3}>
-                    {animeData?.info.description}
-                  </Text>
-                  {!showMoreInfo && (
-                    <LinearGradient
-                      colors={['transparent', '#121212']}
-                      style={styles.gradientOverlay}
-                    >
-                      <View>
-                        <TouchableOpacity style={styles.moreInfoButton} onPress={toggleMoreInfo}>
-                          <Text style={styles.moreInfoText}>More Info</Text>
-                          <MaterialIcons name="keyboard-arrow-down" size={20} color="#f4511e" />
-                        </TouchableOpacity>
-                      </View>
-                    </LinearGradient>
-                  )}
-                </View>
-
-                {/* More Info Grid */}
-                <Animated.View 
-                  style={[
-                    styles.moreInfoContent,
-                    {
-                      maxHeight: animatedHeight.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, 500]
-                      })
-                    }
-                  ]}
-                >
-                  <View style={styles.infoGrid}>
-                    {Object.entries(animeData?.moreInfo || {}).map(([key, value]) => (
-                      <View key={key} style={styles.infoItem}>
-                        <Text style={styles.infoLabel}>{key}</Text>
-                        <Text style={styles.infoValue}>{value}</Text>
-                      </View>
-                    ))}
-                  </View>
-                  {showMoreInfo && (
-                    <TouchableOpacity style={styles.showLessButton} onPress={toggleMoreInfo}>
-                      <MaterialIcons name="keyboard-arrow-up" size={24} color="#f4511e" />
-                    </TouchableOpacity>
-                  )}
-                </Animated.View>
-
-                {/* Action Buttons */}
-                <View style={styles.actionButtonsContainer}>
-                  <TouchableOpacity 
-                    style={styles.actionButton}
-                    onPress={async () => {
-                      if (isBookmarked(id as string)) {
-                        await removeAnime(id as string);
-                      } else if (animeData) {
-                        await addAnime({
-                          id: id as string,
-                          name: animeData.info.name,
-                          img: animeData.info.img,
-                          addedAt: Date.now()
-                        });
-                      }
-                    }}
-                  >
-                    <MaterialIcons 
-                      name={isBookmarked(id as string) ? "bookmark" : "bookmark-outline"} 
-                      size={24} 
-                      color="#f4511e" 
-                    />
-                    <Text style={styles.actionText}>
-                      {isBookmarked(id as string) ? 'In My List' : 'Add to List'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={styles.actionButton}
-                    onPress={handleShare}
-                  >
-                    <MaterialIcons name="share" size={24} color="#f4511e" />
-                    <Text style={styles.actionText}>Share</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )
-          },
-          {
-            title: 'content',
-            data: [null],
-            renderItem: () => (
-              <View style={styles.section}>
-                <TabBar />
-                {renderTabContent()}
-              </View>
-            )
-          }
-        ]}
-        keyExtractor={(item, index) => index.toString()}
-        stickySectionHeadersEnabled={false}
-        renderSectionHeader={null}
-      />
+      {renderContent()}
+      
       <DownloadOptionsModal
-        visible={showDownloadModal}
+        isVisible={showDownloadModal}
         onClose={() => setShowDownloadModal(false)}
         sourceData={selectedEpisodeData.sourceData}
         episodeInfo={selectedEpisodeData.episodeInfo}
-        animeTitle={animeData?.info.name || ''}
+      />
+
+      <CommentModal
+        visible={showCommentsModal}
+        onClose={() => setShowCommentsModal(false)}
+        animeId={id as string}
+        animeTitle={animeData?.info.name}
       />
     </View>
   );
@@ -1274,7 +1130,7 @@ const styles = StyleSheet.create({
   actionButtonsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 16,
+    gap: 12,
     marginTop: 16,
     marginBottom: 16,
   },
@@ -1284,13 +1140,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#1a1a1a',
-    padding: 12,
+    padding: 10,
     borderRadius: 8,
-    gap: 8,
+    gap: 6,
+  },
+  shareButton: {
+    flex: 0.85,
   },
   actionText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   showLessButton: {
@@ -1400,5 +1259,10 @@ const styles = StyleSheet.create({
   },
   episodeActionButton: {
     padding: 4,
+  },
+  loadingIndicator: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 }); 

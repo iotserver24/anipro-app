@@ -9,7 +9,6 @@ import { addToMyList, removeFromMyList, isInMyList } from '../utils/myList';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMyListStore } from '../store/myListStore';
 import { animeAPI } from '../services/api';
-import { AnimeResult } from '../services/api';
 import { ContinueWatching } from '../components/ContinueWatching';
 import { logger } from '../utils/logger';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
@@ -59,8 +58,22 @@ const isTrendingRecentCacheValid = (timestamp: number) => {
   return Date.now() < getMidnightIST();
 };
 
+// Define a simplified AnimeResult interface for this file
+interface AnimeResult {
+  id: string;
+  title: string;
+  image: string;
+  url?: string;
+  japaneseTitle?: string;
+  type?: string;
+  sub?: number;
+  dub?: number;
+  episodes?: number;
+}
+
 type AnimeItem = AnimeResult & {
   banner?: string;
+  subOrDub?: string;
   episodes?: {
     eps: number;
     sub: number;
@@ -74,10 +87,19 @@ const mapToAnimeItem = (item: any): AnimeItem => ({
   image: item.image || item.img,
   banner: item.banner,
   subOrDub: item.subOrDub || 'sub',
+  url: item.url,
+  japaneseTitle: item.japaneseTitle,
+  type: item.type,
+  sub: item.sub,
+  dub: item.dub,
   episodes: item.totalEpisodes || (item.episodes ? {
     eps: item.episodes?.eps || 0,
     sub: item.episodes?.sub || 0,
     dub: item.episodes?.dub || 0
+  } : (item.sub || item.dub) ? {
+    eps: Math.max(item.sub || 0, item.dub || 0),
+    sub: item.sub || 0,
+    dub: item.dub || 0
   } : 0)
 });
 
@@ -186,12 +208,12 @@ TaskManager.defineTask(AIRING_NOTIFICATION_TASK, async () => {
     const schedule = { [today]: scheduleData.results };
 
     // Check for notifications
-    await checkAndNotifyAiringAnime(schedule, myList);
+    await checkAndNotifyAiringAnime(schedule, myList, today);
 
-    return BackgroundFetch.Result.NewData;
+    return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch (error) {
     logger.error('Background task error:', error);
-    return BackgroundFetch.Result.Failed;
+    return BackgroundFetch.BackgroundFetchResult.Failed;
   }
 });
 
@@ -303,8 +325,8 @@ export default function Home() {
       ]);
 
       // Handle both array and object with results property
-      const recentResults = Array.isArray(recent) ? recent : (recent?.results || []);
-      const trendingResults = Array.isArray(trending) ? trending : (trending?.results || []);
+      const recentResults = Array.isArray(recent) ? recent : ((recent as any)?.results || []);
+      const trendingResults = Array.isArray(trending) ? trending : ((trending as any)?.results || []);
 
       const mappedRecent = recentResults?.map(mapToAnimeItem) || [];
       const mappedTrending = trendingResults?.map(mapToAnimeItem) || [];
@@ -331,7 +353,7 @@ export default function Home() {
     try {
       const latest = await animeAPI.getLatestCompleted();
       // Handle both array and object with results property
-      const latestResults = Array.isArray(latest) ? latest : (latest?.results || []);
+      const latestResults = Array.isArray(latest) ? latest : ((latest as any)?.results || []);
       const mappedLatest = latestResults?.map(mapToAnimeItem) || [];
 
       setNewEpisodes(mappedLatest);
@@ -671,16 +693,6 @@ export default function Home() {
           >
             <View>
               <Text style={styles.trendingTitle} numberOfLines={2}>{item.title}</Text>
-              {item.episodes && (
-                <View style={styles.episodeInfo}>
-                  <MaterialIcons name="play-circle-outline" size={16} color="#fff" />
-                  <Text style={styles.episodeText}>
-                    {typeof item.episodes === 'number' 
-                      ? item.episodes 
-                      : (item.episodes.sub || item.episodes.eps)} Episodes
-                  </Text>
-                </View>
-              )}
             </View>
           </LinearGradient>
         </TouchableOpacity>

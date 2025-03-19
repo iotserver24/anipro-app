@@ -65,7 +65,156 @@ const ControlsOverlay = React.memo(({
   onFullscreenPress,
   onSeek
 }: ControlsOverlayProps) => {
-  // ... existing ControlsOverlay code ...
+  // Memoize formatTime function
+  const formatTime = useCallback((seconds: number) => {
+    if (isNaN(seconds) || seconds === Infinity) return '00:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }, []);
+
+  // Memoize time strings
+  const currentTimeStr = useMemo(() => formatTime(currentTime), [formatTime, currentTime]);
+  const durationStr = useMemo(() => formatTime(duration), [formatTime, duration]);
+
+  // Memoize button handlers to prevent re-renders
+  const handlePlayPress = useCallback((e: any) => {
+    e.stopPropagation();
+    onPlayPress();
+  }, [onPlayPress]);
+
+  const handleFullscreenPress = useCallback((e: any) => {
+    e.stopPropagation();
+    onFullscreenPress();
+  }, [onFullscreenPress]);
+
+  // Add handlers for skip forward/backward
+  const handleSkipBackward = useCallback((e: any) => {
+    e.stopPropagation();
+    onSeek(Math.max(0, currentTime - 5));
+  }, [currentTime, onSeek]);
+
+  const handleSkipForward = useCallback((e: any) => {
+    e.stopPropagation();
+    onSeek(Math.min(duration, currentTime + 5));
+  }, [currentTime, duration, onSeek]);
+
+  // Memoize slider callbacks
+  const handleSliderComplete = useCallback((value: number) => {
+    onSeek(value);
+  }, [onSeek]);
+
+  if (!showControls) return null;
+
+  return (
+    <View 
+      style={styles.controlsOverlay}
+      onTouchEnd={(e) => e.stopPropagation()}
+    >
+      <LinearGradient
+        colors={['rgba(0,0,0,0.7)', 'transparent']}
+        style={styles.topBar}
+      >
+        <View>
+          <Text style={styles.titleText} numberOfLines={1}>
+            {title}
+          </Text>
+        </View>
+      </LinearGradient>
+
+      <View style={styles.centerControls}>
+        <TouchableOpacity 
+          style={styles.skipBackwardButton}
+          onPress={handleSkipBackward}
+        >
+          <MaterialIcons
+            name="replay-5"
+            size={28}
+            color="white"
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.playPauseButton}
+          onPress={handlePlayPress}
+        >
+          <MaterialIcons
+            name={isPlaying ? 'pause' : 'play-arrow'}
+            size={32}
+            color="white"
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.skipForwardButton}
+          onPress={handleSkipForward}
+        >
+          <MaterialIcons
+            name="forward-5"
+            size={28}
+            color="white"
+          />
+        </TouchableOpacity>
+      </View>
+
+      <LinearGradient
+        colors={['transparent', 'rgba(0,0,0,0.7)']}
+        style={styles.bottomControls}
+      >
+        <View style={styles.progressContainer}>
+          <Text style={styles.timeText}>{currentTimeStr}</Text>
+          <Slider
+            style={styles.slider}
+            minimumValue={0}
+            maximumValue={duration > 0 ? duration : 1}
+            value={currentTime}
+            onSlidingComplete={handleSliderComplete}
+            minimumTrackTintColor="#f4511e"
+            maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
+            thumbTintColor="#f4511e"
+          />
+          <Text style={styles.timeText}>{durationStr}</Text>
+        </View>
+
+        <View style={styles.controlsRow}>
+          <TouchableOpacity 
+            style={styles.controlButton}
+            onPress={handlePlayPress}
+          >
+            <MaterialIcons
+              name={isPlaying ? 'pause' : 'play-arrow'}
+              size={20}
+              color="white"
+            />
+          </TouchableOpacity>
+
+          <View style={styles.rightControls}>
+            <TouchableOpacity 
+              style={styles.controlButton}
+              onPress={handleFullscreenPress}
+            >
+              <MaterialIcons
+                name={isFullscreen ? 'fullscreen-exit' : 'fullscreen'}
+                size={20}
+                color="white"
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+}, (prevProps, nextProps) => {
+  // Custom comparison function to prevent unnecessary re-renders
+  return (
+    prevProps.showControls === nextProps.showControls &&
+    prevProps.isPlaying === nextProps.isPlaying &&
+    prevProps.isFullscreen === nextProps.isFullscreen &&
+    Math.floor(prevProps.currentTime) === Math.floor(nextProps.currentTime) &&
+    prevProps.duration === nextProps.duration &&
+    prevProps.isBuffering === nextProps.isBuffering &&
+    prevProps.title === nextProps.title
+  );
 });
 
 // Optimize the main VideoPlayer component
@@ -93,9 +242,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [isBuffering, setIsBuffering] = useState(false);
-  const [showBufferingIndicator, setShowBufferingIndicator] = useState(false);
-  const bufferingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsTimeout, setControlsTimeout] = useState<NodeJS.Timeout | null>(null);
@@ -121,82 +267,117 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const lastSeekTimeRef = useRef<number>(0);
   const isAtEndRef = useRef<boolean>(false);
   const lastPositionRef = useRef<number>(0);
-  const isBufferingRef = useRef<boolean>(false);
-  const isHandlingBufferingRef = useRef<boolean>(false);
+  const lastTapRef = useRef<number>(0);
+  const lastTapXRef = useRef<number>(0);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Add a lastRateLoggedRef to track the last rate we logged
   const lastRateLoggedRef = useRef<number>(1);
 
-  // Debounce the progress handler
+  // Debounce the progress handler with a shorter delay
   const debouncedProgress = useMemo(
     () => debounce((status: AVPlaybackStatus) => {
       if (!status.isLoaded) return;
       onPlaybackStatusUpdate(status);
-    }, 250),
+    }, 100), // Reduced from 250ms to 100ms for better responsiveness
     []
   );
 
-  // Memoize event handlers
-  const handleScreenTap = useCallback(
-    debounce(() => {
-      if (showControls) {
-        setShowControls(false);
-        if (controlsTimeout) {
-          clearTimeout(controlsTimeout);
+  // Remove debounce from handleScreenTap for immediate response
+  const handleScreenTap = useCallback((event: any) => {
+    const now = Date.now();
+    const tapX = event.nativeEvent.locationX;
+    
+    // Handle double tap
+    if (now - lastTapRef.current < 300 && Math.abs(tapX - lastTapXRef.current) < 40) {
+      // Double tap detected
+      if (tapX < dimensions.width / 2) {
+        // Left side - rewind
+        if (videoRef.current) {
+          videoRef.current.setPositionAsync(Math.max(0, currentTime - 10) * 1000);
         }
       } else {
-        if (videoRef.current && currentPositionRef.current > 0) {
-          setCurrentTime(currentPositionRef.current);
+        // Right side - forward
+        if (videoRef.current) {
+          videoRef.current.setPositionAsync(Math.min(duration, currentTime + 10) * 1000);
         }
-        setShowControls(true);
-        const timeout = setTimeout(() => {
+      }
+      return;
+    }
+    
+    // Update last tap info
+    lastTapRef.current = now;
+    lastTapXRef.current = tapX;
+    
+    // Handle single tap - toggle controls
+    if (showControls) {
+      setShowControls(false);
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+        controlsTimeoutRef.current = null;
+      }
+    } else {
+      if (videoRef.current && currentPositionRef.current > 0) {
+        setCurrentTime(currentPositionRef.current);
+      }
+      setShowControls(true);
+      
+      // Auto-hide controls after delay
+      if (isPlaying) {
+        if (controlsTimeoutRef.current) {
+          clearTimeout(controlsTimeoutRef.current);
+        }
+        controlsTimeoutRef.current = setTimeout(() => {
           setShowControls(false);
-        }, 4000);
-        setControlsTimeout(timeout);
+          controlsTimeoutRef.current = null;
+        }, 3000);
       }
-    }, 100),
-    [showControls, controlsTimeout]
-  );
+    }
+  }, [showControls, isPlaying, currentTime, duration, dimensions.width]);
 
-  // Memoize the video props
-  const videoProps = useMemo(() => ({
-    ref: videoRef,
-    source,
-    style: [
-      styles.video, 
-      isFullscreen && { 
-        width: dimensions.width, 
-        height: dimensions.height,
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0
+  // Clean up timeouts
+  useEffect(() => {
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
       }
-    ],
-    resizeMode: ResizeMode.CONTAIN,
-    shouldPlay: isPlaying,
-    onPlaybackStatusUpdate: debouncedProgress,
-    useNativeControls: false,
-    onFullscreenUpdate: handleFullscreenUpdate,
-    onLoad: handleLoad,
-    progressUpdateIntervalMillis: 500,
-    positionMillis: isQualityChanging ? savedPosition * 1000 : undefined,
-    rate,
-    shouldCorrectPitch: true,
-    isMuted: false,
-  }), [
-    source,
-    isFullscreen,
-    dimensions,
-    isPlaying,
-    isQualityChanging,
-    savedPosition,
-    rate
-  ]);
+    };
+  }, []);
+
+  // Update controls visibility based on playing state
+  useEffect(() => {
+    if (showControls && isPlaying && !isSeeking) {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+        controlsTimeoutRef.current = null;
+      }, 3000);
+    }
+    return () => {
+      if (controlsTimeoutRef.current) {
+        clearTimeout(controlsTimeoutRef.current);
+      }
+    };
+  }, [showControls, isPlaying, isSeeking]);
+
+  // Memoize the video style to prevent unnecessary re-renders
+  const videoStyle = useMemo(() => [
+    styles.video, 
+    isFullscreen && { 
+      width: dimensions.width, 
+      height: dimensions.height,
+      position: 'absolute' as const,
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0
+    }
+  ], [isFullscreen, dimensions.width, dimensions.height]);
 
   useEffect(() => {
-    console.log(`[DEBUG] VideoPlayer: External quality changing state changed to ${externalQualityChanging}`);
+    ////console.log(`[DEBUG] VideoPlayer: External quality changing state changed to ${externalQualityChanging}`);
     if (externalQualityChanging) {
       wasPlayingBeforeQualityChange.current = isPlaying;
       setIsQualityChanging(true);
@@ -205,7 +386,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       // Add a safety timeout to ensure we don't stay in quality changing state forever
       const safetyTimeout = setTimeout(() => {
         if (isQualityChanging) {
-          console.log('[DEBUG] VideoPlayer: Safety timeout reached, resetting quality changing state');
+          ////console.log('[DEBUG] VideoPlayer: Safety timeout reached, resetting quality changing state');
           setIsQualityChanging(false);
         }
       }, 3500); // Slightly longer than the parent component's timeout (2.9s)
@@ -218,12 +399,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   useEffect(() => {
     if (sourceRef.current.uri !== source.uri) {
-      console.log(`[DEBUG] VideoPlayer: Source URI changed from ${sourceRef.current.uri} to ${source.uri}`);
+      ////console.log(`[DEBUG] VideoPlayer: Source URI changed from ${sourceRef.current.uri} to ${source.uri}`);
       
       sourceRef.current = source;
       
       if (!isQualityChanging && currentTime > 0) {
-        console.log(`[DEBUG] VideoPlayer: Detected quality change, saving position: ${currentTime}`);
+        //////console.log(`[DEBUG] VideoPlayer: Detected quality change, saving position: ${currentTime}`);
         wasPlayingBeforeQualityChange.current = isPlaying;
         setIsQualityChanging(true);
         setSavedPosition(currentTime);
@@ -232,42 +413,35 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }, [source.uri]);
 
   useEffect(() => {
-    console.log(`[DEBUG] VideoPlayer: initialPosition changed to ${initialPosition}`);
     initialPositionRef.current = initialPosition;
     
     if (videoRef.current && initialPosition > 0 && isReady) {
-      console.log(`[DEBUG] VideoPlayer: Seeking to new initialPosition: ${initialPosition}`);
       videoRef.current.setPositionAsync(initialPosition * 1000)
-        .catch(error => console.error('[DEBUG] VideoPlayer: Error seeking to new position:', error));
+        .catch(() => {});
     }
-  }, [initialPosition]);
+  }, [initialPosition, isReady]);
 
+  // Optimize initial position seeking
   useEffect(() => {
     if (videoRef.current && initialPositionRef.current > 0 && !isReady) {
       const seekToInitialPosition = async () => {
         try {
-          console.log(`[DEBUG] VideoPlayer: Attempting to seek to initial position: ${initialPositionRef.current}`);
-          
-          await videoRef.current?.pauseAsync();
-          
-          await new Promise(resolve => setTimeout(resolve, 500));
-          
+          // Directly seek to initial position without pausing first
           await videoRef.current?.setPositionAsync(initialPositionRef.current * 1000);
-          
-          await new Promise(resolve => setTimeout(resolve, 100));
           
           if (isPlaying) {
             await videoRef.current?.playAsync();
           }
           
           setIsReady(true);
-          console.log('[DEBUG] VideoPlayer: Successfully seeked to initial position');
         } catch (error) {
           console.error('[DEBUG] VideoPlayer: Error seeking to initial position:', error);
+          setIsReady(true);
         }
       };
       
-      setTimeout(seekToInitialPosition, 1000);
+      // Reduce timeout for faster initial seeking
+      setTimeout(seekToInitialPosition, 500);
     }
   }, []);
 
@@ -281,18 +455,22 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const toggleFullscreen = async () => {
     try {
       if (isOrientationChangingRef.current) {
-        console.log('[DEBUG] VideoPlayer: Orientation change in progress, ignoring request');
         return;
       }
       
+      // Set this flag immediately to prevent multiple rapid calls
       isOrientationChangingRef.current = true;
       
-      if (isFullscreen) {
-        setIsFullscreen(false);
-        if (onFullscreenChange) {
-          onFullscreenChange(false);
-        }
-        
+      // Update UI state immediately for better responsiveness
+      const newIsFullscreen = !isFullscreen;
+      setIsFullscreen(newIsFullscreen);
+      
+      if (onFullscreenChange) {
+        onFullscreenChange(newIsFullscreen);
+      }
+      
+      if (!newIsFullscreen) {
+        // Going back to portrait
         await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
         if (Platform.OS === 'android') {
           await NavigationBar.setVisibilityAsync('visible');
@@ -305,11 +483,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           height: (width * 9) / 16
         });
       } else {
-        setIsFullscreen(true);
-        if (onFullscreenChange) {
-          onFullscreenChange(true);
-        }
-        
+        // Going to landscape
         await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
         if (Platform.OS === 'android') {
           await NavigationBar.setVisibilityAsync('hidden');
@@ -323,14 +497,16 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         });
       }
       
+      // Clear any existing timeout
       if (orientationChangeTimeoutRef.current) {
         clearTimeout(orientationChangeTimeoutRef.current);
       }
       
+      // Set a shorter timeout to reset the flag
       orientationChangeTimeoutRef.current = setTimeout(() => {
         isOrientationChangingRef.current = false;
         orientationChangeTimeoutRef.current = null;
-      }, 1000);
+      }, 500); // Reduced from 1000ms to 500ms
       
     } catch (error) {
       console.error('Error toggling fullscreen:', error);
@@ -340,83 +516,92 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const togglePlayPause = async () => {
     if (isInPlayPauseOperationRef.current) {
-      console.log('[DEBUG] VideoPlayer: Play/pause operation in progress, ignoring request');
       return;
     }
     
     isInPlayPauseOperationRef.current = true;
     
     try {
+      // Update UI state immediately for better responsiveness
+      const newIsPlaying = !isPlaying;
+      setIsPlaying(newIsPlaying);
+      
       if (videoRef.current) {
-        if (isPlaying) {
-          await videoRef.current.pauseAsync();
+        if (newIsPlaying) {
+          videoRef.current.playAsync().catch(error => {
+            console.error('Error playing:', error);
+            setIsPlaying(false); // Revert state on error
+          });
         } else {
-          await videoRef.current.playAsync();
+          videoRef.current.pauseAsync().catch(error => {
+            console.error('Error pausing:', error);
+            setIsPlaying(true); // Revert state on error
+          });
         }
-        setIsPlaying(!isPlaying);
       }
     } catch (error) {
       console.error('Error toggling play/pause:', error);
+      setIsPlaying(!isPlaying); // Revert state on error
     } finally {
+      // Use a shorter timeout to reset the operation flag
       setTimeout(() => {
         isInPlayPauseOperationRef.current = false;
-      }, 300);
+      }, 50); // Reduced from 100ms to 50ms
     }
   };
 
   const handleSeek = async (value: number) => {
     if (isInSeekOperationRef.current) {
-      console.log('[DEBUG] VideoPlayer: Seek operation in progress, ignoring request');
       return;
     }
     
+    // Reduce the throttling time for more responsive seeking
     const now = Date.now();
-    if (now - lastSeekTimeRef.current < 300) {
-      console.log('[DEBUG] VideoPlayer: Seeking too frequently, ignoring request');
+    if (now - lastSeekTimeRef.current < 100) { // Reduced from 150ms to 100ms
       return;
     }
     
     lastSeekTimeRef.current = now;
     isInSeekOperationRef.current = true;
+    
+    // Set seeking state and update time immediately for better UI feedback
     setIsSeeking(true);
+    setCurrentTime(value);
     
     try {
       if (videoRef.current) {
         const wasPlaying = isPlaying;
-        if (wasPlaying) {
-          await videoRef.current.pauseAsync();
-        }
-        
         const validPosition = Math.max(0, Math.min(value, duration));
-        if (validPosition !== value) {
-          console.log(`[DEBUG] VideoPlayer: Adjusted seek position from ${value} to ${validPosition}`);
-        }
         
-        await videoRef.current.setPositionAsync(validPosition * 1000);
-        setCurrentTime(validPosition);
+        // Update refs immediately
         currentPositionRef.current = validPosition;
         lastPositionRef.current = validPosition;
         
+        // Perform the seek operation without pausing first for faster response
+        await videoRef.current.setPositionAsync(validPosition * 1000);
+        
+        // Resume playback if it was playing before
         if (wasPlaying) {
-          await new Promise(resolve => setTimeout(resolve, 50));
-          await videoRef.current.playAsync();
+          videoRef.current.playAsync().catch(() => {});
         }
       }
     } catch (error) {
       console.error('Error seeking:', error);
     } finally {
       setIsSeeking(false);
+      // Use a shorter timeout to reset the operation flag
       setTimeout(() => {
         isInSeekOperationRef.current = false;
-      }, 300);
+      }, 50); // Reduced from 100ms to 50ms
     }
   };
 
   const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
     if (!status.isLoaded) return;
 
+    // Reduce update frequency for better performance
     const now = Date.now();
-    if (now - lastUpdateTimeRef.current < 250 && !status.didJustFinish) {
+    if (now - lastUpdateTimeRef.current < 100 && !status.didJustFinish) { // Reduced from 200ms to 100ms
       return;
     }
     
@@ -426,108 +611,77 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       const newPosition = status.positionMillis / 1000;
       const videoDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
       
+      // Update current position reference
       currentPositionRef.current = newPosition;
       
-      // Always update currentTime for accurate progress bar
+      // Only update UI when not seeking to avoid jitter
       if (!isSeeking) {
         setCurrentTime(newPosition);
       }
       
-      // Call onProgress with current time and duration
-      if (onProgress && !isSeeking && !isQualityChanging) {
+      // Call onProgress with current time and duration - only if significant change
+      if (onProgress && !isSeeking && !isQualityChanging && 
+          (Math.abs(newPosition - lastPositionRef.current) > 0.5 || status.didJustFinish)) {
         onProgress(newPosition, videoDuration);
       }
       
-      if (!isSeeking && !isQualityChanging && lastPositionRef.current > 0) {
-        const positionDiff = newPosition - lastPositionRef.current;
-        
-        if (positionDiff < -5 && Math.abs(positionDiff) > 5 && !isInSeekOperationRef.current) {
-          console.log(`[DEBUG] VideoPlayer: Detected unexpected backward jump from ${lastPositionRef.current} to ${newPosition}`);
-          
-          if (lastPositionRef.current > duration * 0.9 && !isAtEndRef.current) {
-            console.log(`[DEBUG] VideoPlayer: Preventing loop, continuing playback`);
-          }
-        }
-      }
-      
+      // Simplified position tracking
       lastPositionRef.current = newPosition;
       
+      // Check if we're near the end
       if (duration > 0 && newPosition > duration - 3) {
         isAtEndRef.current = true;
       }
       
+      // Update duration if it changed significantly
       if (status.durationMillis && Math.abs((status.durationMillis / 1000) - duration) > 1) {
         setDuration(status.durationMillis / 1000);
       }
       
-      const newIsBuffering = status.isBuffering && !status.isPlaying;
-      if (isBufferingRef.current !== newIsBuffering) {
-        isBufferingRef.current = newIsBuffering;
+      // Ensure video keeps playing during buffering - optimized to reduce unnecessary calls
+      if (isPlaying && !status.isPlaying && status.isBuffering && !isSeeking && !isQualityChanging && !isInPlayPauseOperationRef.current) {
+        isInPlayPauseOperationRef.current = true;
         
-        if (newIsBuffering) {
-          if (!isHandlingBufferingRef.current) {
-            isHandlingBufferingRef.current = true;
-            
-            if (bufferingTimeoutRef.current) {
-              clearTimeout(bufferingTimeoutRef.current);
-            }
-            
-            bufferingTimeoutRef.current = setTimeout(() => {
-              setIsBuffering(true);
-              setShowBufferingIndicator(true);
-              bufferingTimeoutRef.current = null;
-              
-              setTimeout(() => {
-                isHandlingBufferingRef.current = false;
-              }, 500);
-            }, 300);
-          }
-        } else {
-          if (bufferingTimeoutRef.current) {
-            clearTimeout(bufferingTimeoutRef.current);
-            bufferingTimeoutRef.current = null;
-          }
-          
-          setIsBuffering(false);
-          setShowBufferingIndicator(false);
-          isHandlingBufferingRef.current = false;
-        }
+        // Try to resume playback
+        videoRef.current?.playAsync()
+          .catch(err => console.error('Error resuming playback during buffering:', err))
+          .finally(() => {
+            setTimeout(() => {
+              isInPlayPauseOperationRef.current = false;
+            }, 100);
+          });
       }
-      
-      if (!status.isBuffering && !isSeeking && !isQualityChanging && isPlaying !== status.isPlaying) {
+      // Only update playing state from video if we're not buffering and it actually changed
+      else if (!status.isBuffering && !isSeeking && !isQualityChanging && isPlaying !== status.isPlaying) {
         setIsPlaying(status.isPlaying);
       }
-
-      if (status.isBuffering && !status.isPlaying && isPlaying && videoRef.current && !isSeeking && !isQualityChanging) {
-        if (!isInPlayPauseOperationRef.current) {
-          isInPlayPauseOperationRef.current = true;
-          
-          videoRef.current.playAsync()
-            .catch(err => console.error('Error resuming playback:', err))
-            .finally(() => {
-              setTimeout(() => {
-                isInPlayPauseOperationRef.current = false;
-              }, 300);
-            });
+      
+      // Handle intro/outro skipping - only update state when needed
+      if (intro && newPosition >= intro.start && newPosition < intro.end) {
+        if (!showSkipIntro) {
+          setShowSkipIntro(true);
         }
+      } else if (showSkipIntro) {
+        setShowSkipIntro(false);
       }
 
-      if (onPositionChange && !isSeeking && !isQualityChanging) {
+      if (outro && newPosition >= outro.start && newPosition < outro.end) {
+        if (!showSkipOutro) {
+          setShowSkipOutro(true);
+        }
+      } else if (showSkipOutro) {
+        setShowSkipOutro(false);
+      }
+      
+      // Call position change callback - only if significant change
+      if (onPositionChange && !isSeeking && !isQualityChanging && 
+          (Math.abs(newPosition - lastPositionRef.current) > 0.5 || status.didJustFinish)) {
         onPositionChange(newPosition);
       }
 
+      // Call end callback if needed
       if (status.didJustFinish && onEnd) {
         onEnd();
-      }
-
-      const shouldShowSkipIntro = intro && newPosition >= intro.start && newPosition < intro.end;
-      if (shouldShowSkipIntro !== showSkipIntro) {
-        setShowSkipIntro(shouldShowSkipIntro);
-      }
-
-      const shouldShowSkipOutro = outro && newPosition >= outro.start && newPosition < outro.end;
-      if (shouldShowSkipOutro !== showSkipOutro) {
-        setShowSkipOutro(shouldShowSkipOutro);
       }
     }
   };
@@ -550,9 +704,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       if (controlsTimeout) {
         clearTimeout(controlsTimeout);
       }
-      if (bufferingTimeoutRef.current) {
-        clearTimeout(bufferingTimeoutRef.current);
-      }
       if (orientationChangeTimeoutRef.current) {
         clearTimeout(orientationChangeTimeoutRef.current);
       }
@@ -573,7 +724,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const handleFullscreenUpdate = async ({ fullscreenUpdate }: { fullscreenUpdate: number }) => {
     try {
       if (isOrientationChangingRef.current && fullscreenUpdate !== 3) {
-        console.log('[DEBUG] VideoPlayer: Orientation change in progress, ignoring update:', fullscreenUpdate);
+        //console.log('[DEBUG] VideoPlayer: Orientation change in progress, ignoring update:', fullscreenUpdate);
         return;
       }
       
@@ -650,124 +801,119 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const handleLoad = async (status: AVPlaybackStatus) => {
     try {
-      if (status.isLoaded) {
-        const videoDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
-        setDuration(videoDuration);
-        
-        console.log(`[DEBUG] VideoPlayer: Video loaded, duration: ${videoDuration}`);
-        
-        isAtEndRef.current = false;
-        
-        // Set a safety timeout to ensure quality changing state is reset
-        // This will be cleared if the normal flow completes successfully
-        let qualityChangeSafetyTimeout: NodeJS.Timeout | null = null;
-        
-        if (isQualityChanging && savedPosition > 0) {
-          console.log(`[DEBUG] VideoPlayer: Quality change detected, seeking to saved position: ${savedPosition}`);
-          
-          // Set safety timeout to ensure we don't get stuck in quality changing state
-          qualityChangeSafetyTimeout = setTimeout(() => {
-            if (isQualityChanging) {
-              console.log('[DEBUG] VideoPlayer: Safety timeout in handleLoad reached, resetting quality changing state');
-              setIsQualityChanging(false);
-            }
-          }, 2500); // Shorter than the parent component's timeout (2.9s)
-          
-          if (videoRef.current) {
-            try {
-              if (savedPosition > videoDuration - 10) {
-                console.log(`[DEBUG] VideoPlayer: Saved position ${savedPosition} is too close to the end, starting from beginning`);
-                await videoRef.current.pauseAsync();
-                await new Promise(resolve => setTimeout(resolve, 100));
-                await videoRef.current.setPositionAsync(0);
-              } else {
-                await videoRef.current.pauseAsync();
-                await new Promise(resolve => setTimeout(resolve, 100));
-                await videoRef.current.setPositionAsync(savedPosition * 1000);
-              }
-              
-              await new Promise(resolve => setTimeout(resolve, 100));
-              
-              if (wasPlayingBeforeQualityChange.current) {
-                await videoRef.current.playAsync();
-                setIsPlaying(true);
-              }
-              
-              // Clear the safety timeout since we've successfully completed the quality change
-              if (qualityChangeSafetyTimeout) {
-                clearTimeout(qualityChangeSafetyTimeout);
-                qualityChangeSafetyTimeout = null;
-              }
-              
-              setIsQualityChanging(false);
-              console.log('[DEBUG] VideoPlayer: Quality change position restored successfully');
-            } catch (error) {
-              console.error('[DEBUG] VideoPlayer: Error seeking after quality change:', error);
-              
-              // Clear the safety timeout since we're handling the error
-              if (qualityChangeSafetyTimeout) {
-                clearTimeout(qualityChangeSafetyTimeout);
-                qualityChangeSafetyTimeout = null;
-              }
-              
-              setIsQualityChanging(false);
-            }
-          }
-        }
-        else if (initialPositionRef.current > 0 && !isReady) {
-          if (videoRef.current) {
-            console.log(`[DEBUG] VideoPlayer: Initial load: seeking to ${initialPositionRef.current} seconds`);
-            try {
-              if (initialPositionRef.current > videoDuration - 10) {
-                console.log(`[DEBUG] VideoPlayer: Initial position ${initialPositionRef.current} is too close to the end, starting from beginning`);
-                await videoRef.current.pauseAsync();
-                await new Promise(resolve => setTimeout(resolve, 200));
-                await videoRef.current.setPositionAsync(0);
-              } else {
-                await videoRef.current.pauseAsync();
-                await new Promise(resolve => setTimeout(resolve, 200));
-                await videoRef.current.setPositionAsync(initialPositionRef.current * 1000);
-              }
-              
-              await new Promise(resolve => setTimeout(resolve, 100));
-              
-              if (isPlaying) {
-                await videoRef.current.playAsync();
-              }
-              
-              setIsReady(true);
-              console.log(`[DEBUG] VideoPlayer: Initial position restored to ${initialPositionRef.current}`);
-            } catch (error) {
-              console.error('[DEBUG] VideoPlayer: Error setting resume position:', error);
-              setIsReady(true);
-            }
-          } else {
-            setIsPlaying(true);
-            setIsReady(true);
-          }
+      if (!status.isLoaded) return;
+      
+      const videoDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
+      setDuration(videoDuration);
+      
+      isAtEndRef.current = false;
+      
+      // Fast path for normal loads - avoid unnecessary operations
+      if (!isQualityChanging && initialPositionRef.current <= 0 && isReady) {
+        if (isPlaying && videoRef.current) {
+          videoRef.current.playAsync().catch(() => {});
         }
         
         if (onLoad) {
           onLoad(status);
         }
+        return;
+      }
+      
+      // Handle quality change
+      if (isQualityChanging && savedPosition > 0) {
+        // Set safety timeout to ensure we don't get stuck in quality changing state
+        const qualityChangeSafetyTimeout = setTimeout(() => {
+          if (isQualityChanging) {
+            setIsQualityChanging(false);
+            
+            if (isPlaying && videoRef.current) {
+              videoRef.current.playAsync().catch(() => {});
+            }
+          }
+        }, 2000); // Reduced from 2500ms
+        
+        if (videoRef.current) {
+          try {
+            // Seek to saved position
+            const targetPosition = savedPosition > videoDuration - 10 ? 0 : savedPosition;
+            await videoRef.current.setPositionAsync(targetPosition * 1000);
+            
+            // Play if needed
+            if (wasPlayingBeforeQualityChange.current || isPlaying) {
+              await videoRef.current.playAsync();
+              setIsPlaying(true);
+            }
+            
+            clearTimeout(qualityChangeSafetyTimeout);
+            setIsQualityChanging(false);
+          } catch (error) {
+            console.error('[DEBUG] VideoPlayer: Error seeking after quality change:', error);
+            clearTimeout(qualityChangeSafetyTimeout);
+            setIsQualityChanging(false);
+            
+            if (isPlaying && videoRef.current) {
+              videoRef.current.playAsync().catch(() => {});
+            }
+          }
+        }
+      }
+      // Handle initial position
+      else if (initialPositionRef.current > 0 && !isReady) {
+        if (videoRef.current) {
+          try {
+            // Seek to initial position
+            const targetPosition = initialPositionRef.current > videoDuration - 10 ? 0 : initialPositionRef.current;
+            await videoRef.current.setPositionAsync(targetPosition * 1000);
+            
+            // Play if needed
+            if (isPlaying) {
+              await videoRef.current.playAsync();
+            }
+            
+            setIsReady(true);
+          } catch (error) {
+            console.error('[DEBUG] VideoPlayer: Error setting resume position:', error);
+            setIsReady(true);
+            
+            if (isPlaying && videoRef.current) {
+              videoRef.current.playAsync().catch(() => {});
+            }
+          }
+        } else {
+          setIsPlaying(true);
+          setIsReady(true);
+        }
+      } else {
+        // For normal loads with no position to restore
+        if (isPlaying && videoRef.current) {
+          videoRef.current.playAsync().catch(() => {});
+        }
+      }
+      
+      if (onLoad) {
+        onLoad(status);
       }
     } catch (error) {
       console.error('[DEBUG] VideoPlayer: Error in handleLoad:', error);
       setIsQualityChanging(false);
       setIsReady(true);
+      
+      if (isPlaying && videoRef.current) {
+        videoRef.current.playAsync().catch(() => {});
+      }
     }
   };
 
   useEffect(() => {
     // Only log if the rate has actually changed from what we last logged
     if (rate !== lastRateLoggedRef.current) {
-      console.log(`[DEBUG] VideoPlayer: Setting playback rate to ${rate}x`);
+      //console.log(`[DEBUG] VideoPlayer: Setting playback rate to ${rate}x`);
       lastRateLoggedRef.current = rate;
     }
     
     if (videoRef.current) {
       videoRef.current.setRateAsync(rate, true);
-      currentRateRef.current = rate;
     }
   }, [rate]);
 
@@ -777,10 +923,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   useEffect(() => {
     // Only set the rate if it's different from the current rate
     if (videoRef.current && currentRateRef.current !== rate) {
-      console.log(`[DEBUG] VideoPlayer: Setting playback rate to ${rate}x`);
+      //console.log(`[DEBUG] VideoPlayer: Setting playback rate to ${rate}x`);
       videoRef.current.setRateAsync(rate, true)
         .then(() => {
-          console.log(`[DEBUG] VideoPlayer: Successfully set playback rate to ${rate}x`);
+          //console.log(`[DEBUG] VideoPlayer: Successfully set playback rate to ${rate}x`);
           currentRateRef.current = rate; // Update the ref after successful change
           if (onPlaybackRateChange) {
             onPlaybackRateChange(rate);
@@ -835,6 +981,31 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, []);
 
+  // Add a periodic check to ensure the video keeps playing during buffering
+  useEffect(() => {
+    if (!isPlaying) return; // Only run this effect when we want to be playing
+    
+    // Create an interval to check if the video should be playing but has paused
+    const playCheckInterval = setInterval(() => {
+      if (isPlaying && videoRef.current && !isInPlayPauseOperationRef.current && !isSeeking && !isQualityChanging) {
+        // Force play to ensure we don't stay paused during buffering
+        videoRef.current.getStatusAsync().then(status => {
+          if (status.isLoaded && !status.isPlaying && status.isBuffering) {
+            videoRef.current?.playAsync().catch(() => {
+              // Ignore errors - this is just a periodic check
+            });
+          }
+        }).catch(() => {
+          // Ignore errors in status check
+        });
+      }
+    }, 2000); // Check less frequently (every 2 seconds instead of every 1 second)
+    
+    return () => {
+      clearInterval(playCheckInterval);
+    };
+  }, [isPlaying, isSeeking, isQualityChanging]);
+
   return (
     <View style={[
       styles.container,
@@ -846,209 +1017,44 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         backgroundColor: '#000'
       }
     ]}>
-      <Pressable style={[styles.videoWrapper, { backgroundColor: '#000' }]} onPress={handleScreenTap}>
+      <Pressable 
+        style={[styles.videoWrapper, { backgroundColor: '#000' }]} 
+        onPress={handleScreenTap}
+        onTouchStart={(e) => {
+          // Store initial touch position for gesture detection
+          lastTapXRef.current = e.nativeEvent.locationX;
+        }}
+      >
         <Video
           ref={videoRef}
           source={source.uri ? source : undefined}
-          style={[
-            styles.video, 
-            isFullscreen && { 
-              width: dimensions.width, 
-              height: dimensions.height,
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0
-            }
-          ]}
+          style={videoStyle}
           resizeMode={ResizeMode.CONTAIN}
           shouldPlay={isPlaying}
           onPlaybackStatusUpdate={onPlaybackStatusUpdate}
           useNativeControls={false}
           onFullscreenUpdate={handleFullscreenUpdate}
           onLoad={handleLoad}
-          progressUpdateIntervalMillis={500}
+          progressUpdateIntervalMillis={250}
           positionMillis={isQualityChanging ? savedPosition * 1000 : undefined}
           rate={rate}
           shouldCorrectPitch={true}
           isMuted={false}
         />
         
-        {showBufferingIndicator && (
-          <View style={styles.bufferingContainer}>
-            <ActivityIndicator size="large" color="#f4511e" />
-          </View>
-        )}
-        
         {showControls && (
-          <View 
-            style={styles.controlsOverlay}
-            onTouchEnd={(e) => e.stopPropagation()}
-          >
-            <LinearGradient
-              colors={['rgba(0,0,0,0.7)', 'transparent']}
-              style={styles.topBar}
-            >
-              <View>
-                <Text style={styles.titleText} numberOfLines={1}>
-                  {title}
-                </Text>
-              </View>
-            </LinearGradient>
-
-            <View style={styles.centerControls}>
-              <TouchableOpacity 
-                style={styles.skipBackwardButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  skipBackward();
-                }}
-              >
-                <MaterialIcons
-                  name="replay-5"
-                  size={28}
-                  color="white"
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.playPauseButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  togglePlayPause();
-                }}
-              >
-                <MaterialIcons
-                  name={isPlaying ? 'pause' : 'play-arrow'}
-                  size={32}
-                  color="white"
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.skipForwardButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  skipForward();
-                }}
-              >
-                <MaterialIcons
-                  name="forward-5"
-                  size={28}
-                  color="white"
-                />
-              </TouchableOpacity>
-            </View>
-
-            <LinearGradient
-              colors={['transparent', 'rgba(0,0,0,0.7)']}
-              style={styles.bottomControls}
-            >
-              <View style={styles.progressContainer}>
-                <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
-                <Slider
-                  style={styles.slider}
-                  minimumValue={0}
-                  maximumValue={duration > 0 ? duration : 1}
-                  value={currentTime}
-                  onValueChange={(value) => {
-                    if (isSeeking) {
-                      setCurrentTime(value);
-                    }
-                  }}
-                  onSlidingStart={(value) => {
-                    setIsSeeking(true);
-                  }}
-                  onSlidingComplete={(value) => {
-                    handleSeek(value);
-                  }}
-                  minimumTrackTintColor="#f4511e"
-                  maximumTrackTintColor="rgba(255, 255, 255, 0.3)"
-                  thumbTintColor="#f4511e"
-                />
-                <Text style={styles.timeText}>{formatTime(duration)}</Text>
-              </View>
-
-              <View style={styles.controlsRow}>
-                <TouchableOpacity 
-                  style={styles.controlButton}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    togglePlayPause();
-                  }}
-                >
-                  <MaterialIcons
-                    name={isPlaying ? 'pause' : 'play-arrow'}
-                    size={20}
-                    color="white"
-                  />
-                </TouchableOpacity>
-
-                <View style={styles.rightControls}>
-                  <TouchableOpacity 
-                    style={styles.controlButton}
-                    onPress={(e) => {
-                      e.stopPropagation();
-                      toggleFullscreen();
-                    }}
-                  >
-                    <MaterialIcons
-                      name={isFullscreen ? 'fullscreen-exit' : 'fullscreen'}
-                      size={20}
-                      color="white"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </LinearGradient>
-
-            {showSkipIntro && (
-              <TouchableOpacity 
-                style={styles.skipButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  if (videoRef.current && intro) {
-                    videoRef.current.setPositionAsync(intro.end * 1000)
-                      .then(() => {
-                        if (isPlaying) {
-                          return videoRef.current?.playAsync();
-                        }
-                      })
-                      .catch(err => console.error('Error skipping intro:', err));
-                  }
-                  if (onSkipIntro) {
-                    onSkipIntro();
-                  }
-                }}
-              >
-                <Text style={styles.skipButtonText}>Skip Intro</Text>
-              </TouchableOpacity>
-            )}
-
-            {showSkipOutro && (
-              <TouchableOpacity 
-                style={styles.skipButton}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  if (videoRef.current && outro) {
-                    videoRef.current.setPositionAsync(outro.end * 1000)
-                      .then(() => {
-                        if (isPlaying) {
-                          return videoRef.current?.playAsync();
-                        }
-                      })
-                      .catch(err => console.error('Error skipping outro:', err));
-                  }
-                  if (onSkipOutro) {
-                    onSkipOutro();
-                  }
-                }}
-              >
-                <Text style={styles.skipButtonText}>Skip Outro</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+          <ControlsOverlay
+            showControls={showControls}
+            isPlaying={isPlaying}
+            isFullscreen={isFullscreen}
+            currentTime={currentTime}
+            duration={duration}
+            isBuffering={false}
+            title={title}
+            onPlayPress={togglePlayPause}
+            onFullscreenPress={toggleFullscreen}
+            onSeek={handleSeek}
+          />
         )}
       </Pressable>
     </View>
@@ -1177,27 +1183,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginHorizontal: 3,
-  },
-  bufferingContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    pointerEvents: 'none',
-  },
-  skipButton: {
-    position: 'absolute',
-    right: 20,
-    bottom: 100,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 4,
-  },
-  skipButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
   },
 });
 

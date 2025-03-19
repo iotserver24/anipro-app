@@ -641,7 +641,7 @@ export default function WatchEpisode() {
     // If resumeTime is provided, use it directly and skip getting from history
     if (resumeTime) {
       const parsedTime = parseFloat(resumeTime as string);
-      console.log(`[DEBUG] Setting resume position from resumeTime param: ${parsedTime}`);
+      //console.log(`[DEBUG] Setting resume position from resumeTime param: ${parsedTime}`);
       setResumePosition(parsedTime);
       return;
     }
@@ -651,7 +651,7 @@ export default function WatchEpisode() {
         const history = await useWatchHistoryStore.getState().getHistory();
         const lastWatch = history.find(item => item.episodeId === episodeId);
         if (lastWatch?.progress && lastWatch.progress > 0) {
-          console.log(`[DEBUG] Setting resume position from history: ${lastWatch.progress}`);
+          //console.log(`[DEBUG] Setting resume position from history: ${lastWatch.progress}`);
           setResumePosition(lastWatch.progress);
         }
       } catch (err) {
@@ -664,7 +664,7 @@ export default function WatchEpisode() {
   useEffect(() => {
     // Only use savedProgress if resumeTime wasn't provided
     if (!resumeTime && savedProgress > 0) {
-      console.log(`[DEBUG] Setting resume position from savedProgress: ${savedProgress}`);
+      //console.log(`[DEBUG] Setting resume position from savedProgress: ${savedProgress}`);
       setResumePosition(savedProgress); // Keep in seconds
     }
   }, [savedProgress, resumeTime]);
@@ -734,7 +734,7 @@ export default function WatchEpisode() {
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         return await response.json();
       } catch (error) {
-        console.log(`Attempt ${i + 1} failed:`, error);
+        //console.log(`Attempt ${i + 1} failed:`, error);
         if (i === retries - 1) throw error;
         await new Promise(resolve => setTimeout(resolve, delay));
       }
@@ -745,17 +745,17 @@ export default function WatchEpisode() {
   const shouldUseResumePosition = (resumePos: number, duration: number): boolean => {
     // If resume position is very close to the end (within 10 seconds of the end), don't use it
     if (duration > 0 && resumePos > 0 && duration - resumePos < 10) {
-      console.log(`[DEBUG] Ignoring resume position ${resumePos} because it's too close to the end of ${duration}`);
+      //console.log(`[DEBUG] Ignoring resume position ${resumePos} because it's too close to the end of ${duration}`);
       return false;
     }
     // If resume position is greater than duration, don't use it
     if (duration > 0 && resumePos > duration) {
-      console.log(`[DEBUG] Ignoring resume position ${resumePos} because it's greater than duration ${duration}`);
+      //console.log(`[DEBUG] Ignoring resume position ${resumePos} because it's greater than duration ${duration}`);
       return false;
     }
     // If resume position is very small (less than 10 seconds), don't use it for auto-navigation
     if (resumePos < 10 && isNavigating.current) {
-      console.log(`[DEBUG] Ignoring small resume position ${resumePos} after navigation`);
+      //console.log(`[DEBUG] Ignoring small resume position ${resumePos} after navigation`);
       return false;
     }
     return true;
@@ -777,7 +777,7 @@ export default function WatchEpisode() {
       
       // Reset resume position if we just navigated from another episode
       if (isNavigating.current) {
-        console.log(`[DEBUG] Resetting resume position after navigation`);
+        //console.log(`[DEBUG] Resetting resume position after navigation`);
         setResumePosition(0);
         isNavigating.current = false;
       }
@@ -787,7 +787,7 @@ export default function WatchEpisode() {
         // Extract animeId from episodeId format: animeId$ep=number$token=xyz
         const extractedAnimeId = episodeId.split('$')[0];
         if (extractedAnimeId) {
-          console.log(`[DEBUG] Extracted animeId from episodeId: ${extractedAnimeId}`);
+          //console.log(`[DEBUG] Extracted animeId from episodeId: ${extractedAnimeId}`);
           // Fetch anime info with the extracted ID
           const animeData = await animeAPI.getAnimeDetails(extractedAnimeId);
           
@@ -905,7 +905,7 @@ export default function WatchEpisode() {
   const handleVideoLoad = async () => {
     if (videoRef.current && resumePosition > 0 && !isVideoReady) {
       try {
-        console.log(`handleVideoLoad: seeking to ${resumePosition} seconds`);
+        //console.log(`handleVideoLoad: seeking to ${resumePosition} seconds`);
         // Add a delay to ensure the video is ready
         await new Promise(resolve => setTimeout(resolve, 500));
         
@@ -919,7 +919,7 @@ export default function WatchEpisode() {
         await videoRef.current.playAsync();
         
         setIsVideoReady(true);
-        console.log('Video successfully seeked to resume position');
+        //console.log('Video successfully seeked to resume position');
       } catch (err) {
         logger.error('Error seeking to position:', err);
         // Try again with a longer delay if it failed
@@ -956,7 +956,7 @@ export default function WatchEpisode() {
           (now - lastProgressUpdateRef.current >= 2000 || 
            Math.abs(newTime - lastProgressValueRef.current) > 5)) {
         
-        console.log(`[DEBUG] Saving progress - Time: ${newTime}, Duration: ${newDuration}`);
+        //console.log(`[DEBUG] Saving progress - Time: ${newTime}, Duration: ${newDuration}`);
         
         lastProgressUpdateRef.current = now;
         lastProgressValueRef.current = newTime;
@@ -985,7 +985,7 @@ export default function WatchEpisode() {
     return () => {
       // Save progress when component unmounts
       if (currentTime > 0 && duration > 0 && animeInfo) {
-        console.log(`[DEBUG] Saving final progress - Time: ${currentTime}, Duration: ${duration}`);
+        //console.log(`[DEBUG] Saving final progress - Time: ${currentTime}, Duration: ${duration}`);
         const now = Date.now();
         addToHistory({
           id: animeId as string,
@@ -1044,12 +1044,12 @@ export default function WatchEpisode() {
   const onVideoEnd = () => {
     // Add a check to prevent auto-shifting if we're already navigating
     if (isNavigating.current) {
-      console.log(`[DEBUG] Already navigating, ignoring onVideoEnd`);
+      //console.log(`[DEBUG] Already navigating, ignoring onVideoEnd`);
       return;
     }
     
     if (currentEpisodeIndex < episodes.length - 1) {
-      console.log(`[DEBUG] Video ended, navigating to next episode`);
+      //console.log(`[DEBUG] Video ended, navigating to next episode`);
       isNavigating.current = true;
       const nextEpisode = episodes[currentEpisodeIndex + 1];
       router.push({
@@ -1080,7 +1080,7 @@ export default function WatchEpisode() {
   const handlePlaybackSpeedChange = (speed: number) => {
     // Only update if the speed is actually changing
     if (speed !== playbackSpeed) {
-      console.log(`[DEBUG] Changing playback speed to ${speed}x`);
+      //console.log(`[DEBUG] Changing playback speed to ${speed}x`);
       setPlaybackSpeed(speed);
       // The VideoPlayer component will handle the actual speed change
       // through the rate prop and useEffect
@@ -1088,7 +1088,7 @@ export default function WatchEpisode() {
   };
 
   const handleVideoError = (error: any) => {
-    console.log('Video playback error:', error);
+    //console.log('Video playback error:', error);
     setError('Video playback failed. Please try refreshing the page.');
   };
 
@@ -1166,7 +1166,7 @@ export default function WatchEpisode() {
         if (now - lastProgressUpdateRef.current >= 2000 || 
             Math.abs(currentTime - lastProgressValueRef.current) > 5) {
           
-          console.log(`[DEBUG] Saving progress - Time: ${currentTime}, Duration: ${videoDuration}`);
+          //console.log(`[DEBUG] Saving progress - Time: ${currentTime}, Duration: ${videoDuration}`);
           
           lastProgressUpdateRef.current = now;
           lastProgressValueRef.current = currentTime;
@@ -1282,7 +1282,7 @@ export default function WatchEpisode() {
       try {
         // Don't change quality if it's already selected
         if (selectedQuality === quality) {
-          console.log(`[DEBUG] Quality ${quality} already selected, skipping change`);
+          //console.log(`[DEBUG] Quality ${quality} already selected, skipping change`);
           return;
         }
         
@@ -1290,7 +1290,7 @@ export default function WatchEpisode() {
         const currentPos = currentTime;
         const wasPlaying = isPlaying;
         
-        console.log(`[DEBUG] Quality change: Saving position ${currentPos} and playback state ${wasPlaying}`);
+        //console.log(`[DEBUG] Quality change: Saving position ${currentPos} and playback state ${wasPlaying}`);
         
         // Set quality changing state first
         setIsQualityChanging(true);
@@ -1312,14 +1312,14 @@ export default function WatchEpisode() {
         await new Promise(resolve => setTimeout(resolve, 50));
         
         // Update video URL - this will trigger the VideoPlayer to reload
-        console.log(`[DEBUG] Quality change: Changing URL to ${selectedSource.url}`);
+        //console.log(`[DEBUG] Quality change: Changing URL to ${selectedSource.url}`);
         setVideoUrl(selectedSource.url);
         setStreamingUrl(selectedSource.url);
         
         // Always reset quality changing state after 2.9 seconds to ensure button becomes clickable again
         // regardless of whether the quality change was successful or not
         setTimeout(() => {
-          console.log('[DEBUG] Quality change: 2.9 second timeout reached, making button clickable again');
+          //console.log('[DEBUG] Quality change: 2.9 second timeout reached, making button clickable again');
           setIsQualityChanging(false);
         }, 2900);
       } catch (error) {
@@ -1501,11 +1501,11 @@ export default function WatchEpisode() {
     const videoDuration = status.seekableDuration;
     setDuration(videoDuration);
     
-    console.log(`[DEBUG] VideoPlayer: Video loaded, duration: ${videoDuration}`);
+    //console.log(`[DEBUG] VideoPlayer: Video loaded, duration: ${videoDuration}`);
     
     // Only use resume position if it makes sense
     if (resumePosition > 0 && !isVideoReady && shouldUseResumePosition(resumePosition, videoDuration)) {
-      console.log(`[DEBUG] VideoPlayer: Seeking to resumePosition: ${resumePosition}`);
+      //console.log(`[DEBUG] VideoPlayer: Seeking to resumePosition: ${resumePosition}`);
       // Use a timeout to ensure the video is ready
       setTimeout(() => {
         handleSeek(resumePosition);
@@ -1514,7 +1514,7 @@ export default function WatchEpisode() {
     } else if (isPlaying) {
       // Start from beginning
       if (resumePosition > 0 && !shouldUseResumePosition(resumePosition, videoDuration)) {
-        console.log(`[DEBUG] VideoPlayer: Starting from beginning instead of resume position`);
+        //console.log(`[DEBUG] VideoPlayer: Starting from beginning instead of resume position`);
         handleSeek(0);
       }
       // Ensure we're playing if we should be

@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, View, Text, TouchableOpacity, StyleSheet, Alert, Linking } from 'react-native';
 import { checkDownloaderAvailability, downloadWithExternalApp, SUPPORTED_DOWNLOADERS, openWithADM, openWithSplayer } from '../utils/downloadManager';
+import { Episode } from '../services/api';
+import { APIEpisode } from './EpisodeItem';
 
 interface DownloadOptionsModalProps {
   isVisible: boolean;
   onClose: () => void;
   sourceData: any | null;
-  episodeInfo: Episode | null;
+  episodeInfo: APIEpisode | Episode | null;
 }
 
 export const DownloadOptionsModal = ({ isVisible, onClose, sourceData, episodeInfo }: DownloadOptionsModalProps) => {

@@ -65,7 +65,7 @@ export const ContinueWatching = () => {
     const resumeTimeParam = item.progress && item.progress > 0 ? 
       item.progress.toString() : undefined;
     
-    console.log(`[DEBUG] ContinueWatching: Navigating to episode with resumeTime: ${resumeTimeParam}, progress: ${item.progress}`);
+    //console.log(`[DEBUG] ContinueWatching: Navigating to episode with resumeTime: ${resumeTimeParam}, progress: ${item.progress}`);
     
     // Force a small delay to ensure the navigation works properly
     setTimeout(() => {

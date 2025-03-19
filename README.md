@@ -58,6 +58,27 @@ The configuration includes:
 - **External Links**: Website and download URLs
 - **Cache Keys**: Keys used for caching data
 
+## Avatar System
+
+The app includes a user avatar system that allows users to select profile pictures from a predefined set of avatars. 
+
+### How It Works
+
+1. **Remote Avatar Management**: Avatars are stored and managed through the companion website at https://app.animeverse.cc/admin/avatars
+2. **API Integration**: The mobile app fetches available avatars from the API endpoint at `/api/avatars/list`
+3. **Default Fallbacks**: If the API can't be reached, the app uses a set of default avatars
+
+### For Developers
+
+- Avatars are defined in `anipro/constants/avatars.ts`
+- The avatar selection UI is in `anipro/components/AvatarSelectionModal.tsx`
+- Users can change their avatar from the profile screen at `anipro/app/profile.tsx`
+- Avatar IDs are stored in Firestore under the user document
+
+### Adding New Avatars
+
+To add new avatars, use the admin panel at https://app.animeverse.cc/admin/avatars. All users will automatically get access to new avatars without needing to update the app.
+
 ## Development
 
 ### Prerequisites

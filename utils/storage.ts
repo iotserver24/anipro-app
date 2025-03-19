@@ -13,7 +13,7 @@ try {
   });
   console.log('[DEBUG] Storage: MMKV initialized successfully');
 } catch (error) {
-  console.error('[DEBUG] Storage: Failed to initialize MMKV, falling back to AsyncStorage', error);
+  //console.error('[DEBUG] Storage: Failed to initialize MMKV, falling back to AsyncStorage', error);
   usingFallback = true;
 }
 
