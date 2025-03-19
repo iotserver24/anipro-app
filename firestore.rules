@@ -1,6 +1,16 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Function to check if a user's email is verified
+    function isEmailVerified() {
+      return request.auth.token.email_verified;
+    }
+
+    // Function to check if user is authenticated with verified email
+    function isAuthenticatedAndVerified() {
+      return request.auth != null && isEmailVerified();
+    }
+
     match /users/{userId} {
       // Allow reading all user documents for username checks
       allow read: if true;
@@ -16,11 +26,15 @@ service cloud.firestore {
     
     match /comments/{commentId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      
+      // Require email verification to create new comments
+      allow create: if isAuthenticatedAndVerified();
+      
+      // Allow deletion of own comments regardless of verification
       allow delete: if request.auth != null 
                    && resource.data.userId == request.auth.uid;
       
-      // Allow updating likes count
+      // Allow updating likes count without verification
       allow update: if request.auth != null
                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']);
     }
@@ -29,19 +43,24 @@ service cloud.firestore {
       // Allow reading like status
       allow read: if true;
       
-      // Allow authenticated users to create and delete their own likes
-      allow create, delete: if request.auth != null
+      // Require email verification for liking comments
+      allow create, delete: if isAuthenticatedAndVerified()
                            && likeId.matches(request.auth.uid + '_.*');
     }
 
     // User data collection (watch history and watchlist)
     match /user_data/{userId} {
-      // Allow users to read and write their own data
-      allow read, write: if request.auth != null 
-                        && request.auth.uid == userId;
+      // Allow users to read their own data even without verification
+      allow read: if request.auth != null 
+                 && request.auth.uid == userId;
       
-      // Allow users to update only specific fields
-      allow update: if request.auth != null 
+      // Specifically allow reading and creating initial data without verification
+      // This ensures new users can start with a fresh watch history and watchlist
+      allow create: if request.auth != null
+                   && request.auth.uid == userId;
+      
+      // Require email verification for updating existing data
+      allow update: if isAuthenticatedAndVerified() 
                    && request.auth.uid == userId
                    && (
                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['watchHistory', 'watchlist', 'lastSync'])

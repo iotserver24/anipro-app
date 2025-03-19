@@ -179,7 +179,7 @@ export const migrateCommentsWithAvatars = async () => {
     // Fetch all available avatars from the API
     let avatarsMap = new Map();
     try {
-      const avatarsResponse = await fetch('https://app.animeverse.cc/api/avatars/list');
+      const avatarsResponse = await fetch('https://anisurge.me/api/avatars/list');
       if (avatarsResponse.ok) {
         const avatars = await avatarsResponse.json();
         // Create a map for quick lookups

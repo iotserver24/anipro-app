@@ -144,7 +144,7 @@ interface UpdateInfo {
 
 const countUser = async () => {
   try {
-    const response = await fetch('https://app.animeverse.cc/api/count', {
+    const response = await fetch('https://anisurge.me/api/count', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -212,7 +212,7 @@ TaskManager.defineTask(AIRING_NOTIFICATION_TASK, async () => {
     });
 
     // Fetch today's schedule
-    const response = await fetch(`https://conapi.anipro.site/anime/animekai/schedule/${today}`);
+    const response = await fetch(`https://con.anisurge.me/anime/animekai/schedule/${today}`);
     if (!response.ok) {
       throw new Error('Failed to fetch schedule');
     }

@@ -12,7 +12,7 @@ export const APP_CONFIG = {
   VERSION_CODE: 2,
   
   // API Endpoints
-  API_BASE_URL: 'https://app.animeverse.cc/api',
+  API_BASE_URL: 'https://anisurge.me/api',
   
   // Branding
   PRIMARY_COLOR: '#f4511e',
@@ -22,8 +22,8 @@ export const APP_CONFIG = {
   SUPPORT_EMAIL: 'support@animeverse.cc',
   
   // External Links
-  WEBSITE_URL: 'https://app.animeverse.cc',
-  DOWNLOAD_URL: 'https://app.animeverse.cc',
+  WEBSITE_URL: 'https://anisurge.me',
+  DOWNLOAD_URL: 'https://anisurge.me',
   
   // Cache Keys
   CACHE_KEYS: {

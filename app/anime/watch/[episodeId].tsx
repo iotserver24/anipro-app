@@ -677,7 +677,7 @@ export default function WatchEpisode() {
 
     // Count anime episode when page loads
     try {
-      fetch('https://app.animeverse.cc/api/anime-count', {
+      fetch('https://anisurge.me/api/anime-count', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

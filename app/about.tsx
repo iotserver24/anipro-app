@@ -519,7 +519,7 @@ export default function AboutScreen() {
               <View style={styles.socialButtons}>
                 <TouchableOpacity 
                   style={styles.discordButton}
-                  onPress={() => openLink('https://app.animeverse.cc/discord')}
+                  onPress={() => openLink('https://anisurge.me/discord')}
                 >
                   <Image 
                     source={require('../assets/discord-white.png')}
@@ -551,7 +551,7 @@ export default function AboutScreen() {
               <View style={styles.socialButtons}>
                 <TouchableOpacity 
                   style={styles.discordButton}
-                  onPress={() => openLink('https://app.animeverse.cc/discord')}
+                  onPress={() => openLink('https://anisurge.me/discord')}
                 >
                   <Image 
                     source={require('../assets/discord-white.png')}
@@ -732,7 +732,7 @@ export default function AboutScreen() {
           <View style={styles.socialButtonsContainer}>
             <TouchableOpacity 
               style={styles.discordButton}
-              onPress={() => openLink('https://app.animeverse.cc/discord')}
+              onPress={() => openLink('https://anisurge.me/discord')}
             >
               <Image 
                 source={require('../assets/discord-white.png')}
@@ -743,7 +743,7 @@ export default function AboutScreen() {
             </TouchableOpacity>
             <TouchableOpacity 
               style={styles.telegramButton}
-              onPress={() => openLink('https://app.animeverse.cc/telegram')}
+              onPress={() => openLink('https://anisurge.me/telegram')}
             >
               <Image 
                 source={require('../assets/telegram-white.png')}

@@ -634,9 +634,30 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         // Small delay to ensure the seek completes
         await new Promise(resolve => setTimeout(resolve, 50));
         
-        // Resume playback if it was playing before
-        if (wasPlaying) {
-          await videoRef.current.playAsync();
+        // Resume playback if it was playing before or if isPlaying is true
+        // This ensures we always try to keep playing
+        if (wasPlaying || isPlaying) {
+          try {
+            await videoRef.current.playAsync();
+            // Ensure isPlaying state is set to true
+            if (!isPlaying) {
+              setIsPlaying(true);
+            }
+          } catch (playError) {
+            // If play fails, try again after a short delay
+            setTimeout(async () => {
+              if (videoRef.current) {
+                try {
+                  await videoRef.current.playAsync();
+                  if (!isPlaying) {
+                    setIsPlaying(true);
+                  }
+                } catch {
+                  // Ignore errors in retry
+                }
+              }
+            }, 300);
+          }
         }
       }
     } catch (error) {
@@ -691,22 +712,24 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         setDuration(status.durationMillis / 1000);
       }
       
-      // Ensure video keeps playing during buffering - optimized to reduce unnecessary calls
-      if (isPlaying && !status.isPlaying && status.isBuffering && !isSeeking && !isQualityChanging && !isInPlayPauseOperationRef.current) {
-        isInPlayPauseOperationRef.current = true;
-        
-        // Try to resume playback
+      // Ensure video keeps playing during buffering - CRITICAL: Always try to keep playing
+      if (isPlaying && !status.isPlaying && !isSeeking && !isQualityChanging && !isInPlayPauseOperationRef.current) {
+        // Try to resume playback immediately
         videoRef.current?.playAsync()
-          .catch(err => console.error('Error resuming playback during buffering:', err))
-          .finally(() => {
+          .catch(err => {
+            // If play fails, try again after a short delay
             setTimeout(() => {
-              isInPlayPauseOperationRef.current = false;
-            }, 100);
+              if (isPlaying && videoRef.current) {
+                videoRef.current.playAsync().catch(() => {});
+              }
+            }, 300);
           });
       }
-      // Only update playing state from video if we're not buffering and it actually changed
-      else if (!status.isBuffering && !isSeeking && !isQualityChanging && isPlaying !== status.isPlaying) {
-        setIsPlaying(status.isPlaying);
+      // Only update playing state from video if it actually changed and user intended it
+      else if (!status.isBuffering && !isSeeking && !isQualityChanging && 
+              isPlaying && !status.isPlaying && !isInPlayPauseOperationRef.current) {
+        // Instead of accepting the paused state, try to resume playback
+        videoRef.current?.playAsync().catch(() => {});
       }
       
       // Handle intro/outro skipping - only update state when needed
@@ -864,7 +887,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       // Fast path for normal loads - avoid unnecessary operations
       if (!isQualityChanging && initialPositionRef.current <= 0 && isReady) {
         if (isPlaying && videoRef.current) {
-          videoRef.current.playAsync().catch(() => {});
+          // Make multiple attempts to ensure playback starts
+          videoRef.current.playAsync().catch(() => {
+            setTimeout(() => {
+              if (isPlaying && videoRef.current) {
+                videoRef.current.playAsync().catch(() => {});
+              }
+            }, 300);
+          });
         }
         
         if (onLoad) {
@@ -881,7 +911,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             setIsQualityChanging(false);
             
             if (isPlaying && videoRef.current) {
-              videoRef.current.playAsync().catch(() => {});
+              // Make multiple attempts to ensure playback starts
+              videoRef.current.playAsync().catch(() => {
+                setTimeout(() => {
+                  if (isPlaying && videoRef.current) {
+                    videoRef.current.playAsync().catch(() => {});
+                  }
+                }, 300);
+              });
             }
           }
         }, 2000); // Reduced from 2500ms
@@ -892,10 +929,24 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             const targetPosition = savedPosition > videoDuration - 10 ? 0 : savedPosition;
             await videoRef.current.setPositionAsync(targetPosition * 1000);
             
-            // Play if needed
+            // Play if needed - with retry mechanism
             if (wasPlayingBeforeQualityChange.current || isPlaying) {
-              await videoRef.current.playAsync();
-              setIsPlaying(true);
+              try {
+                await videoRef.current.playAsync();
+                setIsPlaying(true);
+              } catch (playError) {
+                // If play fails, try again after a short delay
+                setTimeout(async () => {
+                  if (videoRef.current) {
+                    try {
+                      await videoRef.current.playAsync();
+                      setIsPlaying(true);
+                    } catch {
+                      // Ignore errors in retry
+                    }
+                  }
+                }, 300);
+              }
             }
             
             clearTimeout(qualityChangeSafetyTimeout);
@@ -906,7 +957,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             setIsQualityChanging(false);
             
             if (isPlaying && videoRef.current) {
-              videoRef.current.playAsync().catch(() => {});
+              // Make multiple attempts to ensure playback starts
+              videoRef.current.playAsync().catch(() => {
+                setTimeout(() => {
+                  if (isPlaying && videoRef.current) {
+                    videoRef.current.playAsync().catch(() => {});
+                  }
+                }, 300);
+              });
             }
           }
         }
@@ -919,9 +977,22 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             const targetPosition = initialPositionRef.current > videoDuration - 10 ? 0 : initialPositionRef.current;
             await videoRef.current.setPositionAsync(targetPosition * 1000);
             
-            // Play if needed
+            // Play if needed - with retry mechanism
             if (isPlaying) {
-              await videoRef.current.playAsync();
+              try {
+                await videoRef.current.playAsync();
+              } catch (playError) {
+                // If play fails, try again after a short delay
+                setTimeout(async () => {
+                  if (videoRef.current) {
+                    try {
+                      await videoRef.current.playAsync();
+                    } catch {
+                      // Ignore errors in retry
+                    }
+                  }
+                }, 300);
+              }
             }
             
             setIsReady(true);
@@ -930,7 +1001,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             setIsReady(true);
             
             if (isPlaying && videoRef.current) {
-              videoRef.current.playAsync().catch(() => {});
+              // Make multiple attempts to ensure playback starts
+              videoRef.current.playAsync().catch(() => {
+                setTimeout(() => {
+                  if (isPlaying && videoRef.current) {
+                    videoRef.current.playAsync().catch(() => {});
+                  }
+                }, 300);
+              });
             }
           }
         } else {
@@ -940,7 +1018,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       } else {
         // For normal loads with no position to restore
         if (isPlaying && videoRef.current) {
-          videoRef.current.playAsync().catch(() => {});
+          // Make multiple attempts to ensure playback starts
+          videoRef.current.playAsync().catch(() => {
+            setTimeout(() => {
+              if (isPlaying && videoRef.current) {
+                videoRef.current.playAsync().catch(() => {});
+              }
+            }, 300);
+          });
         }
       }
       
@@ -953,7 +1038,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       setIsReady(true);
       
       if (isPlaying && videoRef.current) {
-        videoRef.current.playAsync().catch(() => {});
+        // Make multiple attempts to ensure playback starts
+        videoRef.current.playAsync().catch(() => {
+          setTimeout(() => {
+            if (isPlaying && videoRef.current) {
+              videoRef.current.playAsync().catch(() => {});
+            }
+          }, 300);
+        });
       }
     }
   };
@@ -1034,7 +1126,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, []);
 
-  // Add a periodic check to ensure the video keeps playing during buffering
+  // Add a more aggressive periodic check to ensure the video keeps playing during buffering
   useEffect(() => {
     if (!isPlaying) return; // Only run this effect when we want to be playing
     
@@ -1043,16 +1135,21 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       if (isPlaying && videoRef.current && !isInPlayPauseOperationRef.current && !isSeeking && !isQualityChanging) {
         // Force play to ensure we don't stay paused during buffering
         videoRef.current.getStatusAsync().then(status => {
-          if (status.isLoaded && !status.isPlaying && status.isBuffering) {
+          if (status.isLoaded && !status.isPlaying) {
             videoRef.current?.playAsync().catch(() => {
-              // Ignore errors - this is just a periodic check
+              // If first attempt fails, try again after a short delay
+              setTimeout(() => {
+                if (isPlaying && videoRef.current) {
+                  videoRef.current.playAsync().catch(() => {});
+                }
+              }, 300);
             });
           }
         }).catch(() => {
           // Ignore errors in status check
         });
       }
-    }, 2000); // Check less frequently (every 2 seconds instead of every 1 second)
+    }, 1000); // Check more frequently (every 1 second)
     
     return () => {
       clearInterval(playCheckInterval);
@@ -1079,9 +1176,29 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         currentPositionRef.current = targetPosition;
         lastPositionRef.current = targetPosition;
         
-        // Resume playback
-        if (wasPlaying) {
-          await videoRef.current.playAsync();
+        // Resume playback - with retry mechanism
+        if (wasPlaying || isPlaying) {
+          try {
+            await videoRef.current.playAsync();
+            // Ensure isPlaying state is set to true
+            if (!isPlaying) {
+              setIsPlaying(true);
+            }
+          } catch (playError) {
+            // If play fails, try again after a short delay
+            setTimeout(async () => {
+              if (videoRef.current) {
+                try {
+                  await videoRef.current.playAsync();
+                  if (!isPlaying) {
+                    setIsPlaying(true);
+                  }
+                } catch {
+                  // Ignore errors in retry
+                }
+              }
+            }, 300);
+          }
         }
       } catch (error) {
         console.error('Error skipping intro:', error);
@@ -1111,9 +1228,29 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         currentPositionRef.current = targetPosition;
         lastPositionRef.current = targetPosition;
         
-        // Resume playback
-        if (wasPlaying) {
-          await videoRef.current.playAsync();
+        // Resume playback - with retry mechanism
+        if (wasPlaying || isPlaying) {
+          try {
+            await videoRef.current.playAsync();
+            // Ensure isPlaying state is set to true
+            if (!isPlaying) {
+              setIsPlaying(true);
+            }
+          } catch (playError) {
+            // If play fails, try again after a short delay
+            setTimeout(async () => {
+              if (videoRef.current) {
+                try {
+                  await videoRef.current.playAsync();
+                  if (!isPlaying) {
+                    setIsPlaying(true);
+                  }
+                } catch {
+                  // Ignore errors in retry
+                }
+              }
+            }, 300);
+          }
         }
       } catch (error) {
         console.error('Error skipping outro:', error);

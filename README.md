@@ -64,7 +64,7 @@ The app includes a user avatar system that allows users to select profile pictur
 
 ### How It Works
 
-1. **Remote Avatar Management**: Avatars are stored and managed through the companion website at https://app.animeverse.cc/admin/avatars
+1. **Remote Avatar Management**: Avatars are stored and managed through the companion website at https://anisurge.me/admin/avatars
 2. **API Integration**: The mobile app fetches available avatars from the API endpoint at `/api/avatars/list`
 3. **Default Fallbacks**: If the API can't be reached, the app uses a set of default avatars
 
@@ -77,7 +77,7 @@ The app includes a user avatar system that allows users to select profile pictur
 
 ### Adding New Avatars
 
-To add new avatars, use the admin panel at https://app.animeverse.cc/admin/avatars. All users will automatically get access to new avatars without needing to update the app.
+To add new avatars, use the admin panel at https://anisurge.me/admin/avatars. All users will automatically get access to new avatars without needing to update the app.
 
 ## Development
 

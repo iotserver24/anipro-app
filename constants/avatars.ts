@@ -47,9 +47,9 @@ export let AVATARS: Avatar[] = [...DEFAULT_AVATARS];
 export const fetchAvatars = async (): Promise<Avatar[]> => {
   try {
     console.log('Fetching avatars from API...');
-    // Use the app.animeverse.cc API endpoint to fetch avatars
+    // Use the anisurge.me API endpoint to fetch avatars
     // The /list endpoint is a special case handler in the [id]/route.ts file
-    const response = await fetch('https://app.animeverse.cc/api/avatars/list');
+    const response = await fetch('https://anisurge.me/api/avatars/list');
     
     if (!response.ok) {
       throw new Error(`Failed to fetch avatars: ${response.status}`);

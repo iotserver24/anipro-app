@@ -197,7 +197,7 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
       // Try to get the latest avatar URL from the API first
       if (userData.avatarId) {
         try {
-          const avatarsResponse = await fetch('https://app.animeverse.cc/api/avatars/list');
+          const avatarsResponse = await fetch('https://anisurge.me/api/avatars/list');
           if (avatarsResponse.ok) {
             const avatars = await avatarsResponse.json();
             const avatar = avatars.find((a: any) => a.id === userData.avatarId);

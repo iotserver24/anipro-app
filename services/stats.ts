@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DeviceInfo from 'react-native-device-info';
 
-const STATS_ENDPOINT = 'https://app.animeverse.cc/api/stats';
+const STATS_ENDPOINT = 'https://anisurge.me/api/stats';
 const INSTALL_KEY = '@anisurge_install_id';
 const LAST_ACTIVE_KEY = '@anisurge_last_active';
 

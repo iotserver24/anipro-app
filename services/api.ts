@@ -66,7 +66,7 @@ export interface StreamingResponse {
 }
 
 class AnimeAPI {
-  private baseUrl = 'https://conapi.anipro.site/anime/animekai';
+  private baseUrl = 'https://con.anisurge.me/anime/animekai';
 
   async searchAnime(query: string): Promise<AnimeResult[]> {
     const response = await fetch(`${this.baseUrl}/${query}`);

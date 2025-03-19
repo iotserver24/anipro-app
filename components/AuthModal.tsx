@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,9 +14,10 @@ import {
   Platform
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { registerUser, signInUser } from '../services/userService';
+import { registerUser, signInUser, isEmailVerified, getCurrentUser } from '../services/userService';
 import { collection, query, where, getDocs, doc, setDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../services/firebase';
+import EmailVerificationBanner from './EmailVerificationBanner';
 
 type AuthModalProps = {
   isVisible: boolean;
@@ -31,12 +32,25 @@ const AuthModal = ({ isVisible, onClose, onAuthSuccess }: AuthModalProps) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errors, setErrors] = useState<{
-    email?: string;
-    password?: string;
-    confirmPassword?: string;
-    username?: string;
-  }>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showVerificationBanner, setShowVerificationBanner] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+
+  // Check if user is authenticated but email not verified
+  useEffect(() => {
+    if (authenticated) {
+      const user = getCurrentUser();
+      if (user && !user.emailVerified) {
+        setShowVerificationBanner(true);
+      } else {
+        setShowVerificationBanner(false);
+        // If email is verified, complete auth process
+        if (authenticated && user?.emailVerified) {
+          handleAuthSuccess();
+        }
+      }
+    }
+  }, [authenticated]);
 
   // Reset form when modal closes or mode changes
   const resetForm = () => {
@@ -102,8 +116,13 @@ const AuthModal = ({ isVisible, onClose, onAuthSuccess }: AuthModalProps) => {
     try {
       setLoading(true);
       await signInUser(email.trim(), password);
-      onAuthSuccess();
-      onClose();
+      setAuthenticated(true);
+      
+      // Check if email is verified
+      if (isEmailVerified()) {
+        handleAuthSuccess();
+      }
+      // If not verified, the useEffect will show the verification banner
     } catch (error: any) {
       let errorMessage = 'Failed to sign in';
       
@@ -128,12 +147,14 @@ const AuthModal = ({ isVisible, onClose, onAuthSuccess }: AuthModalProps) => {
       setLoading(true);
       
       // First try to register the user
-      const userCredential = await registerUser(email.trim(), password, username.trim());
+      await registerUser(email.trim(), password, username.trim());
+      setAuthenticated(true);
       
-      // If registration is successful, show success message
-      Alert.alert('Success', 'Account created successfully!');
-      onAuthSuccess();
-      onClose();
+      // Show verification banner since new users need to verify email
+      setShowVerificationBanner(true);
+      
+      // Show success message but don't close modal yet
+      Alert.alert('Success', 'Account created successfully! Please verify your email to continue.');
     } catch (error: any) {
       let errorMessage = 'Failed to create account';
       
@@ -154,6 +175,13 @@ const AuthModal = ({ isVisible, onClose, onAuthSuccess }: AuthModalProps) => {
     }
   };
 
+  // Handle auth success after email verification
+  const handleAuthSuccess = () => {
+    setShowVerificationBanner(false);
+    onAuthSuccess();
+    onClose();
+  };
+
   return (
     <Modal
       visible={isVisible}
@@ -169,110 +197,124 @@ const AuthModal = ({ isVisible, onClose, onAuthSuccess }: AuthModalProps) => {
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {mode === 'login' ? 'Sign In' : 'Create Account'}
+                {!authenticated ? (mode === 'login' ? 'Sign In' : 'Create Account') : 'Email Verification'}
               </Text>
               <TouchableOpacity onPress={onClose} style={styles.closeButton}>
                 <MaterialIcons name="close" size={24} color="#fff" />
               </TouchableOpacity>
             </View>
             
-            <View style={styles.formContainer}>
-              {mode === 'register' && (
+            {!authenticated && (
+              <View style={styles.formContainer}>
+                {mode === 'register' && (
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Username</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Choose a unique username"
+                      placeholderTextColor="#666"
+                      value={username}
+                      onChangeText={(text) => setUsername(text.trim().toLowerCase())}
+                      autoCapitalize="none"
+                      maxLength={20}
+                    />
+                    {errors.username && (
+                      <Text style={styles.errorText}>{errors.username}</Text>
+                    )}
+                  </View>
+                )}
+                
+                {/* Email */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Username</Text>
+                  <Text style={styles.label}>Email</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="Choose a unique username"
+                    placeholder="Enter your email"
                     placeholderTextColor="#666"
-                    value={username}
-                    onChangeText={(text) => setUsername(text.trim().toLowerCase())}
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
                     autoCapitalize="none"
-                    maxLength={20}
                   />
-                  {errors.username && (
-                    <Text style={styles.errorText}>{errors.username}</Text>
+                  {errors.email && (
+                    <Text style={styles.errorText}>{errors.email}</Text>
                   )}
                 </View>
-              )}
-              
-              {/* Email */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Email</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your email"
-                  placeholderTextColor="#666"
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-                {errors.email && (
-                  <Text style={styles.errorText}>{errors.email}</Text>
-                )}
-              </View>
-              
-              {/* Password */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Password</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Enter your password"
-                  placeholderTextColor="#666"
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                />
-                {errors.password && (
-                  <Text style={styles.errorText}>{errors.password}</Text>
-                )}
-              </View>
-              
-              {/* Confirm Password (Register only) */}
-              {mode === 'register' && (
+                
+                {/* Password */}
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Confirm Password</Text>
+                  <Text style={styles.label}>Password</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="Confirm your password"
+                    placeholder="Enter your password"
                     placeholderTextColor="#666"
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
+                    value={password}
+                    onChangeText={setPassword}
                     secureTextEntry
                   />
-                  {errors.confirmPassword && (
-                    <Text style={styles.errorText}>{errors.confirmPassword}</Text>
+                  {errors.password && (
+                    <Text style={styles.errorText}>{errors.password}</Text>
                   )}
                 </View>
-              )}
-              
-              {/* Submit Button */}
-              <TouchableOpacity
-                style={styles.submitButton}
-                onPress={mode === 'login' ? handleLogin : handleRegister}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.submitButtonText}>
-                    {mode === 'login' ? 'Sign In' : 'Create Account'}
-                  </Text>
+                
+                {/* Confirm Password (Register only) */}
+                {mode === 'register' && (
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Confirm Password</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Confirm your password"
+                      placeholderTextColor="#666"
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      secureTextEntry
+                    />
+                    {errors.confirmPassword && (
+                      <Text style={styles.errorText}>{errors.confirmPassword}</Text>
+                    )}
+                  </View>
                 )}
-              </TouchableOpacity>
-              
-              {/* Toggle Mode */}
-              <View style={styles.toggleContainer}>
-                <Text style={styles.toggleText}>
-                  {mode === 'login' ? "Don't have an account?" : "Already have an account?"}
-                </Text>
-                <TouchableOpacity onPress={toggleMode}>
-                  <Text style={styles.toggleLink}>
-                    {mode === 'login' ? 'Register' : 'Sign In'}
-                  </Text>
+                
+                {/* Submit Button */}
+                <TouchableOpacity
+                  style={styles.submitButton}
+                  onPress={mode === 'login' ? handleLogin : handleRegister}
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.submitButtonText}>
+                      {mode === 'login' ? 'Sign In' : 'Create Account'}
+                    </Text>
+                  )}
                 </TouchableOpacity>
+                
+                {/* Toggle Mode */}
+                <View style={styles.toggleContainer}>
+                  <Text style={styles.toggleText}>
+                    {mode === 'login' ? "Don't have an account?" : "Already have an account?"}
+                  </Text>
+                  <TouchableOpacity onPress={toggleMode}>
+                    <Text style={styles.toggleLink}>
+                      {mode === 'login' ? 'Register' : 'Sign In'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
+            )}
+            
+            {/* Email Verification Banner */}
+            {showVerificationBanner && (
+              <View style={styles.verificationContainer}>
+                <EmailVerificationBanner 
+                  onVerificationComplete={handleAuthSuccess} 
+                />
+                <Text style={styles.verificationNote}>
+                  You'll be able to use the app once your email is verified.
+                </Text>
+              </View>
+            )}
           </View>
         </KeyboardAvoidingView>
       </TouchableWithoutFeedback>
@@ -363,6 +405,19 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginLeft: 4,
   },
+  verificationContainer: {
+    padding: 16,
+    paddingBottom: 24,
+    width: '100%',
+  },
+  verificationNote: {
+    color: '#999',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 8,
+    fontStyle: 'italic'
+  }
 });
 
 export default AuthModal; 

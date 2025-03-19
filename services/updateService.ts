@@ -22,7 +22,7 @@ interface VersionInfo {
 }
 
 const UPDATE_CHECK_KEY = '@anisurge_last_update_check';
-const UPDATE_ENDPOINT = 'https://app.animeverse.cc/api/updates';
+const UPDATE_ENDPOINT = 'https://anisurge.me/api/updates';
 
 class UpdateService {
   private currentVersion: string;
@@ -145,7 +145,7 @@ class UpdateService {
         [
           {
             text: 'Download',
-            onPress: () => Linking.openURL('https://app.animeverse.cc')
+            onPress: () => Linking.openURL('https://anisurge.me')
           },
           {
             text: 'Cancel',

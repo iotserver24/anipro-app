@@ -39,7 +39,7 @@ const AvatarSelectionModal = ({
   const fetchLatestAvatars = async () => {
     setLoading(true);
     try {
-      const response = await fetch('https://app.animeverse.cc/api/avatars/list');
+      const response = await fetch('https://anisurge.me/api/avatars/list');
       if (response.ok) {
         const data = await response.json();
         // Only update if we get valid data

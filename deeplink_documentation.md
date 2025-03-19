@@ -140,15 +140,15 @@ You can test deeplinks using:
 
 The app implements sharing functionality that generates web URLs which can be converted back to deeplinks:
 
-1. When a user shares anime content from the app, it creates a web URL: `https://app.animeverse.cc/share/{animeId}`
-2. When a user shares episode content, it creates a web URL: `https://app.animeverse.cc/share/{encodedEpisodeId}` where `encodedEpisodeId` is the URL-encoded full episode ID with token
+1. When a user shares anime content from the app, it creates a web URL: `https://anisurge.me/share/{animeId}`
+2. When a user shares episode content, it creates a web URL: `https://anisurge.me/share/{encodedEpisodeId}` where `encodedEpisodeId` is the URL-encoded full episode ID with token
 3. When these URLs are opened on a device with AniSurge installed, they redirect to the app using the `anisurge://` scheme
 
 ## Web to App Linking
 
 For users who receive a shared link via the web:
 
-1. The web page at `app.animeverse.cc` detects if the user is on a mobile device
+1. The web page at `anisurge.me` detects if the user is on a mobile device
 2. It offers an "Open in App" button
 3. When clicked, it attempts to open the corresponding `anisurge://` URL
 4. If the app isn't installed, it falls back to the Play Store

@@ -1,19 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView, ImageSourcePropType } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView, ImageSourcePropType, ToastAndroid, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { isAuthenticated, getCurrentUser, signOut, updateUserAvatar } from '../services/userService';
+import { 
+  isAuthenticated, 
+  getCurrentUser, 
+  signOut, 
+  updateUserAvatar, 
+  isEmailVerified,
+  reloadUser,
+  sendVerificationEmail
+} from '../services/userService';
 import AuthModal from '../components/AuthModal';
 import AvatarSelectionModal from '../components/AvatarSelectionModal';
-import { doc, getDoc } from 'firebase/firestore';
+import EmailVerificationBanner from '../components/EmailVerificationBanner';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { AVATARS, getAvatarById } from '../constants/avatars';
+import { logger } from '../utils/logger';
 
 type UserData = {
   username: string;
   email: string;
   createdAt: any;
   avatarId: string;
+  emailVerified?: boolean;
 };
 
 export default function ProfileScreen() {
@@ -25,6 +36,7 @@ export default function ProfileScreen() {
   const [updatingAvatar, setUpdatingAvatar] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarLoading, setAvatarLoading] = useState(false);
+  const [emailVerified, setEmailVerified] = useState(false);
 
   useEffect(() => {
     checkAuthStatus();
@@ -59,11 +71,22 @@ export default function ProfileScreen() {
     if (isAuth) {
       const currentUser = getCurrentUser();
       if (currentUser) {
+        // Set email verification status
+        setEmailVerified(currentUser.emailVerified);
+        
         try {
           // Fetch user data from Firestore
           const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
           if (userDoc.exists()) {
-            setUserData(userDoc.data() as UserData);
+            const data = userDoc.data() as UserData;
+            setUserData(data);
+            
+            // Update Firestore if auth email verification status has changed
+            if (data.emailVerified !== currentUser.emailVerified) {
+              await updateDoc(doc(db, 'users', currentUser.uid), {
+                emailVerified: currentUser.emailVerified
+              });
+            }
           }
         } catch (error) {
           console.error('Error fetching user data:', error);
@@ -72,6 +95,7 @@ export default function ProfileScreen() {
     } else {
       setUserData(null);
       setAvatarUrl(null);
+      setEmailVerified(false);
     }
   };
 
@@ -122,6 +146,42 @@ export default function ProfileScreen() {
     return { uri: AVATARS[0].url };
   };
 
+  const handleVerificationComplete = async () => {
+    // Reload the user to get the latest verification status
+    const isVerified = await reloadUser();
+    setEmailVerified(isVerified);
+    
+    // Update the UI
+    if (isVerified) {
+      Alert.alert('Success', 'Your email has been verified successfully!');
+      checkAuthStatus(); // Refresh user data
+      
+      // Show a toast message about enabled features
+      showToast('All app features are now enabled!');
+    }
+  };
+  
+  // Helper function to show toast or alert based on platform
+  const showToast = (message: string) => {
+    if (Platform.OS === 'android') {
+      ToastAndroid.show(message, ToastAndroid.LONG);
+    } else {
+      // For iOS use Alert as a fallback
+      Alert.alert('Notice', message);
+    }
+  };
+  
+  // Function to handle resending verification email
+  const handleResendVerificationEmail = async () => {
+    try {
+      await sendVerificationEmail();
+      showToast('Verification email sent. Please check your inbox.');
+    } catch (error) {
+      logger.error('Error sending verification email:', error);
+      showToast('Failed to send verification email. Please try again.');
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -152,14 +212,22 @@ export default function ProfileScreen() {
                   setAvatarUrl(AVATARS[0].url);
                 }}
               />
-            </View>
-          )}
-          {authenticated && (
-            <View style={styles.editOverlay}>
-              <MaterialIcons name="edit" size={24} color="#fff" />
+              {authenticated && (
+                <View style={styles.editOverlay}>
+                  <MaterialIcons name="edit" size={22} color="#fff" />
+                </View>
+              )}
             </View>
           )}
         </TouchableOpacity>
+
+        {/* Show email verification banner for authenticated but unverified users */}
+        {authenticated && !emailVerified && (
+          <View style={styles.verificationBannerContainer}>
+            <EmailVerificationBanner onVerificationComplete={handleVerificationComplete} />
+          </View>
+        )}
+
         <Text style={styles.title}>User Profile</Text>
       </View>
 
@@ -218,6 +286,24 @@ export default function ProfileScreen() {
         </View>
       </View>
 
+      {/* Add an extra info section about email verification if not verified */}
+      {authenticated && !emailVerified && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Limited Access Mode</Text>
+          <Text style={styles.infoText}>
+            Your email is not verified yet. Some features like syncing watch history and
+            watchlist across devices, commenting, and liking comments require email verification.
+          </Text>
+          <TouchableOpacity 
+            style={styles.verifyButton} 
+            onPress={handleResendVerificationEmail}
+          >
+            <MaterialIcons name="email" size={20} color="#fff" />
+            <Text style={styles.buttonText}>Resend Verification Email</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <AuthModal 
         isVisible={showAuthModal}
         onClose={() => setShowAuthModal(false)}
@@ -260,6 +346,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#222',
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'visible',
   },
   avatarWrapper: {
     width: 120,
@@ -267,6 +354,7 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     overflow: 'hidden',
     backgroundColor: '#333',
+    position: 'relative',
   },
   avatar: {
     width: 120,
@@ -277,14 +365,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 0,
     right: 0,
-    backgroundColor: '#f4511e',
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 20,
     width: 36,
     height: 36,
-    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#121212',
+    elevation: 4,
   },
   title: {
     fontSize: 24,
@@ -363,5 +452,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#ccc',
     marginLeft: 12,
+  },
+  verificationBannerContainer: {
+    width: '100%',
+    marginBottom: 16,
+    marginTop: 8,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#ccc',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  verifyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2196F3', // Blue to differentiate from other buttons
+    padding: 12,
+    borderRadius: 8,
+    justifyContent: 'center',
+    marginBottom: 16,
   },
 }); 

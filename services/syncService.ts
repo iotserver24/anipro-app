@@ -14,6 +14,7 @@ import { WatchHistoryItem } from '../store/watchHistoryStore';
 import { MyListAnime } from '../utils/myList';
 import { trimWatchHistoryIfNeeded, trimWatchlistIfNeeded } from '../utils/firebaseUtils';
 import { logger } from '../utils/logger';
+import { isEmailVerified } from './userService'; // Import to check email verification status
 
 // Collection names
 const COLLECTIONS = {
@@ -40,6 +41,7 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 // Add performance optimization flags
 let isSyncing = false;
 let pendingSync = false;
+let verificationFailed = false; // Flag to avoid repeated checks if verification failed
 
 // Add this helper function at the top
 function mergeWatchHistoryItems(local: WatchHistoryItem[], cloud: WatchHistoryItem[]): WatchHistoryItem[] {
@@ -94,6 +96,31 @@ function mergeWatchlistItems(local: MyListAnime[], cloud: MyListAnime[]): MyList
     .sort((a, b) => b.addedAt - a.addedAt);
 }
 
+// Helper function to check if cloud operations are likely to succeed
+// This is a quick check that avoids expensive Firestore operations when they would fail
+const shouldAttemptCloudOperations = (): boolean => {
+  // Skip if no user or if we already know verification has failed
+  if (!auth.currentUser || verificationFailed) {
+    return false;
+  }
+  
+  // Check email verification status
+  const verified = isEmailVerified();
+  
+  // If not verified, set the flag to avoid checking again
+  if (!verified) {
+    verificationFailed = true;
+  }
+  
+  return verified;
+};
+
+// Reset verification flag when user changes
+auth.onAuthStateChanged((user) => {
+  // Reset verification failed flag when user changes
+  verificationFailed = false;
+});
+
 export const syncService = {
   // Initialize user data document
   async initializeUserData() {
@@ -115,8 +142,14 @@ export const syncService = {
         });
         logger.info('User data document initialized in Firestore');
       }
-    } catch (error) {
-      logger.error('Error initializing user data:', error);
+    } catch (error: any) {
+      if (error.code === 'permission-denied') {
+        logger.warn('Permission denied when initializing user data - user may need to verify email');
+        verificationFailed = true; // Set flag to avoid future attempts
+      } else {
+        logger.error('Error initializing user data:', error);
+      }
+      throw error;
     }
   },
 
@@ -128,8 +161,8 @@ export const syncService = {
 
   // Optimize queue sync operation
   queueSync(key: string, operation: () => Promise<void>) {
-    // Skip if no authenticated user
-    if (!auth.currentUser) {
+    // Skip if no authenticated user or if we already know write operations will fail
+    if (!auth.currentUser || verificationFailed) {
       return;
     }
 
@@ -174,12 +207,17 @@ export const syncService = {
     });
     // Also clear cache
     userDataCache = {};
+    // Reset verification flag
+    verificationFailed = false;
   },
 
   // Optimize sync watch history
   async syncWatchHistory(history: WatchHistoryItem[]) {
+    // Quick check to avoid unnecessary operations
     const userId = auth.currentUser?.uid;
-    if (!userId) return;
+    if (!userId || !shouldAttemptCloudOperations()) {
+      return;
+    }
 
     this.queueSync('watchHistory', async () => {
       try {
@@ -212,7 +250,10 @@ export const syncService = {
             timestamp: Date.now()
           };
         }
-      } catch (error) {
+      } catch (error: any) {
+        if (error.code === 'permission-denied') {
+          verificationFailed = true; // Set flag to avoid future attempts
+        }
         logger.error('Error syncing watch history:', error);
       }
     });
@@ -220,8 +261,11 @@ export const syncService = {
 
   // Optimize sync watchlist
   async syncWatchlist(watchlist: MyListAnime[]) {
+    // Quick check to avoid unnecessary operations
     const userId = auth.currentUser?.uid;
-    if (!userId) return;
+    if (!userId || !shouldAttemptCloudOperations()) {
+      return;
+    }
 
     this.queueSync('watchlist', async () => {
       try {
@@ -254,13 +298,16 @@ export const syncService = {
             timestamp: Date.now()
           };
         }
-      } catch (error) {
+      } catch (error: any) {
+        if (error.code === 'permission-denied') {
+          verificationFailed = true; // Set flag to avoid future attempts
+        }
         logger.error('Error syncing watchlist:', error);
       }
     });
   },
 
-  // Optimize fetch user data
+  // Optimize fetch user data - only try cloud fetch if we think it will succeed
   async fetchUserData(): Promise<UserData | null> {
     const userId = auth.currentUser?.uid;
     if (!userId) return null;
@@ -272,6 +319,11 @@ export const syncService = {
         // Return cached data immediately without network requests
         logger.info('Using cached user data');
         return cached.data;
+      }
+
+      // Skip cloud fetch if we know it will fail
+      if (!shouldAttemptCloudOperations()) {
+        return null;
       }
 
       logger.info('Fetching user data from Firestore');
@@ -306,8 +358,13 @@ export const syncService = {
       };
       
       return initialData;
-    } catch (error) {
-      logger.error('Error fetching user data:', error);
+    } catch (error: any) {
+      if (error.code === 'permission-denied') {
+        verificationFailed = true; // Set flag to avoid future attempts
+        logger.warn('Permission denied when fetching user data - email verification may be required');
+      } else {
+        logger.error('Error fetching user data:', error);
+      }
       return null;
     }
   },
@@ -512,7 +569,17 @@ export const syncService = {
     const userId = auth.currentUser?.uid;
     if (!userId) {
       logger.info('No authenticated user, skipping initial sync');
-      return null;
+      return { watchHistory: localHistory, watchlist: localWatchlist };
+    }
+
+    // Reset verification flag on new sync
+    verificationFailed = false;
+
+    // Skip cloud sync if user isn't verified (to avoid slowdowns)
+    if (!isEmailVerified()) {
+      logger.info('Email not verified, skipping cloud sync');
+      verificationFailed = true;
+      return { watchHistory: localHistory, watchlist: localWatchlist };
     }
 
     try {
@@ -543,35 +610,54 @@ export const syncService = {
       const trimmedWatchlist = trimWatchlistIfNeeded(mergedWatchlist);
       
       // Save merged data back to Firestore
-      const batch = writeBatch(db);
-      batch.update(userDataRef, {
-        watchHistory: trimmedHistory,
-        watchlist: trimmedWatchlist,
-        lastSync: Timestamp.now()
-      });
-      
-      await batch.commit();
-      
-      // Update cache
-      userDataCache[userId] = {
-        data: {
-          lastSync: Timestamp.now(),
+      try {
+        const batch = writeBatch(db);
+        batch.update(userDataRef, {
           watchHistory: trimmedHistory,
-          watchlist: trimmedWatchlist
-        },
-        timestamp: Date.now()
-      };
-      
-      logger.info(`Initial sync completed: ${trimmedHistory.length} history items, ${trimmedWatchlist.length} watchlist items`);
+          watchlist: trimmedWatchlist,
+          lastSync: Timestamp.now()
+        });
+        
+        await batch.commit();
+        
+        // Update cache
+        userDataCache[userId] = {
+          data: {
+            lastSync: Timestamp.now(),
+            watchHistory: trimmedHistory,
+            watchlist: trimmedWatchlist
+          },
+          timestamp: Date.now()
+        };
+        
+        logger.info(`Initial sync completed: ${trimmedHistory.length} history items, ${trimmedWatchlist.length} watchlist items`);
+      } catch (writeError: any) {
+        if (writeError.code === 'permission-denied') {
+          verificationFailed = true;
+          logger.warn('Permission denied when writing data - email verification required');
+        } else {
+          logger.error('Error writing synced data:', writeError);
+        }
+      }
       
       // Return merged data for stores to update
       return {
         watchHistory: trimmedHistory,
         watchlist: trimmedWatchlist
       };
-    } catch (error) {
-      logger.error('Error during initial sync:', error);
-      return null;
+    } catch (error: any) {
+      if (error.code === 'permission-denied') {
+        verificationFailed = true;
+        logger.warn('Permission denied during sync - email verification required');
+      } else {
+        logger.error('Error during initial sync:', error);
+      }
+      
+      // Even if sync fails, return local data so user can still use the app
+      return {
+        watchHistory: localHistory,
+        watchlist: localWatchlist
+      };
     }
   }
 }; 

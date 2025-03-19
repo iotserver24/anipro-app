@@ -9,7 +9,8 @@ import {
   signInWithCustomToken,
   getAuth,
   setPersistence,
-  browserLocalPersistence
+  browserLocalPersistence,
+  sendEmailVerification
 } from 'firebase/auth';
 import { doc, setDoc, collection, query, where, getDocs, Timestamp, updateDoc, writeBatch, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
@@ -149,8 +150,13 @@ export const registerUser = async (email: string, password: string, username: st
         email: user.email,
         username: username.toLowerCase(),
         createdAt: Timestamp.now(),
-        avatarId: 'default' // Set default avatar
+        avatarId: 'default', // Set default avatar
+        emailVerified: false // Track email verification status
       });
+      
+      // Send verification email
+      await sendEmailVerification(user);
+      
     } catch (error) {
       // If saving to Firestore fails, delete the auth user
       await user.delete();
@@ -179,7 +185,7 @@ export const updateUserAvatar = async (avatarId: string): Promise<void> => {
     let avatarUrl = '';
     try {
       // Find the avatar in the AVATARS array
-      const avatarResponse = await fetch('https://app.animeverse.cc/api/avatars/list');
+      const avatarResponse = await fetch('https://anisurge.me/api/avatars/list');
       if (avatarResponse.ok) {
         const avatars = await avatarResponse.json();
         const avatar = avatars.find((a: any) => a.id === avatarId);
@@ -253,6 +259,25 @@ export const signInUser = async (email: string, password: string): Promise<User>
     // Store session with credentials for auto-login
     await storeUserSession(user, { email, password });
     
+    // Check if email is verified
+    if (!user.emailVerified) {
+      // Update Firestore to match auth verification status
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        emailVerified: false
+      });
+      
+      // Option: Send a new verification email if not verified
+      // Uncomment below if you want to always send a new verification email on login
+      // await sendEmailVerification(user);
+    } else {
+      // Update Firestore to match auth verification status
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        emailVerified: true
+      });
+    }
+    
     // Initialize stores and sync data
     const { useWatchHistoryStore } = await import('../store/watchHistoryStore');
     const { useMyListStore } = await import('../store/myListStore');
@@ -322,4 +347,51 @@ export const getCurrentUser = (): User | null => {
 // Check if user is authenticated
 export const isAuthenticated = (): boolean => {
   return auth.currentUser !== null;
+};
+
+// Send email verification
+export const sendVerificationEmail = async (): Promise<void> => {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error('No user is currently signed in');
+    }
+    
+    await sendEmailVerification(currentUser);
+    logger.info('Verification email sent successfully');
+  } catch (error) {
+    logger.error('Error sending verification email:', error);
+    throw error;
+  }
+};
+
+// Check if email is verified
+export const isEmailVerified = (): boolean => {
+  const currentUser = auth.currentUser;
+  return currentUser?.emailVerified || false;
+};
+
+// Reload user to check for updated verification status
+export const reloadUser = async (): Promise<boolean> => {
+  try {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error('No user is currently signed in');
+    }
+    
+    await currentUser.reload();
+    
+    // If email is now verified, update Firestore
+    if (currentUser.emailVerified) {
+      const userRef = doc(db, 'users', currentUser.uid);
+      await updateDoc(userRef, {
+        emailVerified: true
+      });
+    }
+    
+    return currentUser.emailVerified;
+  } catch (error) {
+    logger.error('Error reloading user:', error);
+    throw error;
+  }
 }; 

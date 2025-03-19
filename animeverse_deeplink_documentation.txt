@@ -2,14 +2,14 @@
 
 ## Overview
 
-This document outlines how to implement deep linking between the app.animeverse.cc website (built with Nuxt) and the AniSurge Android app. The website serves as a landing page for shared content from the app, and deep linking allows users to be redirected from the website to the specific content within the app.
+This document outlines how to implement deep linking between the anisurge.me website (built with Nuxt) and the AniSurge Android app. The website serves as a landing page for shared content from the app, and deep linking allows users to be redirected from the website to the specific content within the app.
 
 ## Share URL Structure
 
 Based on the app's code, there are two types of share URLs:
 
-1. **Anime Share**: `https://app.animeverse.cc/share/{animeId}`
-2. **Episode Share**: `https://app.animeverse.cc/share/{animeId}/{episodeNumber}`
+1. **Anime Share**: `https://anisurge.me/share/{animeId}`
+2. **Episode Share**: `https://anisurge.me/share/{animeId}/{episodeNumber}`
 
 ## Deep Linking Components
 
@@ -37,7 +37,7 @@ The Android app needs to declare intent filters in the AndroidManifest.xml to ha
         <!-- URI scheme for deep linking -->
         <data
             android:scheme="https"
-            android:host="app.animeverse.cc"
+            android:host="anisurge.me"
             android:pathPrefix="/share" />
     </intent-filter>
 </activity>
@@ -71,7 +71,7 @@ Each page should:
 For Android deep linking, use the following format:
 
 ```
-intent://app.animeverse.cc/share/{params}#Intent;scheme=https;package=com.anisurge.app;S.browser_fallback_url=https://app.animeverse.cc/share/{params};end
+intent://anisurge.me/share/{params}#Intent;scheme=https;package=com.anisurge.app;S.browser_fallback_url=https://anisurge.me/share/{params};end
 ```
 
 Where:
@@ -113,7 +113,7 @@ Include proper Open Graph and Twitter Card metadata for better sharing experienc
 <meta property="og:title" content="[Anime/Episode Title]">
 <meta property="og:description" content="[Description]">
 <meta property="og:image" content="[Image URL]">
-<meta property="og:url" content="https://app.animeverse.cc/share/[params]">
+<meta property="og:url" content="https://anisurge.me/share/[params]">
 ```
 
 ## Technical Implementation Guide
@@ -138,9 +138,9 @@ const createIntentUrl = (animeId, episodeNumber = null) => {
   const path = episodeNumber 
     ? `/share/${animeId}/${episodeNumber}` 
     : `/share/${animeId}`;
-  const fallbackUrl = `https://app.animeverse.cc${path}`;
+  const fallbackUrl = `https://anisurge.me${path}`;
   
-  return `intent://app.animeverse.cc${path}#Intent;scheme=https;package=${packageName};S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
+  return `intent://anisurge.me${path}#Intent;scheme=https;package=${packageName};S.browser_fallback_url=${encodeURIComponent(fallbackUrl)};end`;
 };
 ```
 
@@ -173,7 +173,7 @@ If the app isn't installed, the user should be redirected to:
 Test deep links using ADB with the following command:
 
 ```
-adb shell am start -a android.intent.action.VIEW -d "https://app.animeverse.cc/share/ANIME_ID/EPISODE_NUMBER" com.anisurge.app
+adb shell am start -a android.intent.action.VIEW -d "https://anisurge.me/share/ANIME_ID/EPISODE_NUMBER" com.anisurge.app
 ```
 
 ### 2. Browser Testing
@@ -186,7 +186,7 @@ Test by opening the website on an Android device and clicking the "Open in App" 
 
 For app links to work properly (without the disambiguation dialog), set up Digital Asset Links:
 
-1. Create an `assetlinks.json` file and place it at `https://app.animeverse.cc/.well-known/assetlinks.json`
+1. Create an `assetlinks.json` file and place it at `https://anisurge.me/.well-known/assetlinks.json`
 2. The file should contain:
 
 ```json
@@ -211,8 +211,8 @@ Design a compelling experience for users who don't have the app installed:
 
 The app currently implements sharing in `app/anime/[id].tsx` with two methods:
 
-1. `handleShare()` - Shares anime details with URL format: `https://app.animeverse.cc/share/${id}`
-2. `handleEpisodeShare(episode)` - Shares episode with URL format: `https://app.animeverse.cc/share/${id}/${episode.number}`
+1. `handleShare()` - Shares anime details with URL format: `https://anisurge.me/share/${id}`
+2. `handleEpisodeShare(episode)` - Shares episode with URL format: `https://anisurge.me/share/${id}/${episode.number}`
 
 The website needs to handle both these URL formats and provide deep linking back to the appropriate screens in the app.
 

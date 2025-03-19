@@ -2,7 +2,7 @@ import { Stack, router, usePathname } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { View, BackHandler, Alert } from 'react-native';
+import { View, BackHandler, Alert, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, DarkTheme } from '@react-navigation/native';
 import SearchBar from '../components/SearchBar';
@@ -11,9 +11,10 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import BottomTabBar from '../components/BottomTabBar';
 import { migrateCommentsWithAvatars } from '../services/commentService';
 import { fetchAvatars } from '../constants/avatars';
-import { restoreUserSession } from '../services/userService';
+import { restoreUserSession, isEmailVerified, getCurrentUser } from '../services/userService';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../services/firebase';
+import { useGlobalStore } from '../store/globalStore';
 // These imports are commented out because we're removing the auth button from the header
 // import { useGlobalStore } from '../store/globalStore';
 // import AuthButton from '../components/AuthButton';
@@ -47,6 +48,10 @@ export default function RootLayout() {
 
   const initializeHistory = useWatchHistoryStore(state => state.initializeHistory);
   const [authInitialized, setAuthInitialized] = useState(false);
+  const [verificationChecked, setVerificationChecked] = useState(false);
+  
+  // Store email verification status in global store
+  const setEmailVerificationStatus = useGlobalStore(state => state.setEmailVerificationStatus);
   
   // Handle authentication state
   useEffect(() => {
@@ -59,11 +64,39 @@ export default function RootLayout() {
         const restored = await restoreUserSession();
         if (restored) {
           console.log('[DEBUG] App: Successfully restored auth session');
+          
+          // Check email verification status
+          const user = getCurrentUser();
+          if (user) {
+            const verified = isEmailVerified();
+            console.log('[DEBUG] App: Email verification status:', verified);
+            setEmailVerificationStatus(verified);
+            
+            // If not verified, navigate to profile page to show verification banner
+            if (!verified) {
+              // Use setTimeout to ensure navigation happens after app is fully loaded
+              setTimeout(() => {
+                Alert.alert(
+                  "Email Verification Required",
+                  "Please verify your email to access all app features. A verification link has been sent to your email.",
+                  [
+                    { text: "Later", style: "cancel" },
+                    { 
+                      text: "Go to Profile", 
+                      onPress: () => router.push('/profile')
+                    }
+                  ]
+                );
+              }, 1000);
+            }
+          }
         } else {
           console.log('[DEBUG] App: No session to restore or restoration failed');
         }
+        setVerificationChecked(true);
       } catch (error) {
         console.error('[DEBUG] App: Error during auth restoration:', error);
+        setVerificationChecked(true);
       } finally {
         // Mark auth as initialized regardless of outcome
         setAuthInitialized(true);
@@ -76,8 +109,11 @@ export default function RootLayout() {
     const unsubscribe = onAuthStateChanged(auth, user => {
       if (user) {
         console.log('[DEBUG] App: User is signed in:', user.uid);
+        // Update verification status when auth state changes
+        setEmailVerificationStatus(user.emailVerified);
       } else {
         console.log('[DEBUG] App: User is signed out');
+        setEmailVerificationStatus(false);
       }
     });
     

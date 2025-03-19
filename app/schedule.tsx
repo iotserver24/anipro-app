@@ -304,7 +304,7 @@ export default function Schedule() {
       // Fetch schedule for each date
       for (const date of weekDates) {
         console.log(`Fetching schedule for ${date}...`);
-        const response = await fetch(`https://conapi.anipro.site/anime/animekai/schedule/${date}`);
+        const response = await fetch(`https://con.anisurge.me/anime/animekai/schedule/${date}`);
         
         if (!response.ok) {
           throw new Error(`API Error: ${response.status}`);

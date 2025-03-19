@@ -309,7 +309,7 @@ export default function AnimeDetails() {
     if (!animeData) return;
     
     try {
-      const shareUrl = `https://app.animeverse.cc/share/${encodeURIComponent(id as string)}`;
+      const shareUrl = `https://anisurge.me/share/${encodeURIComponent(id as string)}`;
       const episodeInfo = `${animeData.info.episodes.sub > 0 ? `🗣️ ${animeData.info.episodes.sub} Sub Episodes` : ''}${animeData.info.episodes.dub > 0 ? `\n🎙️ ${animeData.info.episodes.dub} Dub Episodes` : ''}`;
       const message = `📺 ${animeData.info.name}\n\n${episodeInfo}\n\n${animeData.info.description?.slice(0, 150)}...\n\n🔥 Watch now on AniSurge!\n\n${shareUrl}`;
       
@@ -327,7 +327,7 @@ export default function AnimeDetails() {
     if (!animeData) return;
     
     try {
-      const shareUrl = `https://app.animeverse.cc/share/${encodeURIComponent(episode.id)}$category=${selectedMode}`;
+      const shareUrl = `https://anisurge.me/share/${encodeURIComponent(episode.id)}$category=${selectedMode}`;
       const emojiType = selectedMode === 'sub' ? '🗣️' : '🎙️';
       const message = `📺 ${animeData.info.name}\n${emojiType} Episode ${episode.number}${episode.title ? `: ${episode.title}` : ''}\n\n${episode.isFiller ? '⚠️ Filler Episode\n\n' : ''}🔥 Watch now on AniSurge!\n\n${shareUrl}`;
       
