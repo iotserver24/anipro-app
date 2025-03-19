@@ -92,7 +92,7 @@ android {
         applicationId 'com.anisurge.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 6
+        versionCode 1
         versionName "2.9.9"
     }
     signingConfigs {

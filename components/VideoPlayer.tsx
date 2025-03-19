@@ -52,6 +52,23 @@ interface APIEpisode {
   isFiller: boolean;
 }
 
+interface ControlsOverlayProps {
+  showControls: boolean;
+  isPlaying: boolean;
+  isFullscreen: boolean;
+  currentTime: number;
+  duration: number;
+  isBuffering: boolean;
+  title: string;
+  onPlayPress: () => void;
+  onFullscreenPress: () => void;
+  onSeek: (value: number) => void;
+  intro?: { start: number; end: number };
+  outro?: { start: number; end: number };
+  onSkipIntro?: () => void;
+  onSkipOutro?: () => void;
+}
+
 // Memoize the controls overlay component
 const ControlsOverlay = React.memo(({
   showControls,
@@ -63,7 +80,11 @@ const ControlsOverlay = React.memo(({
   title,
   onPlayPress,
   onFullscreenPress,
-  onSeek
+  onSeek,
+  intro,
+  outro,
+  onSkipIntro,
+  onSkipOutro
 }: ControlsOverlayProps) => {
   // Memoize formatTime function
   const formatTime = useCallback((seconds: number) => {
@@ -104,6 +125,15 @@ const ControlsOverlay = React.memo(({
     onSeek(value);
   }, [onSeek]);
 
+  // Add these helper functions
+  const shouldShowIntroButton = useCallback(() => {
+    return intro && currentTime >= intro.start && currentTime < intro.end;
+  }, [intro, currentTime]);
+
+  const shouldShowOutroButton = useCallback(() => {
+    return outro && currentTime >= outro.start && currentTime < outro.end;
+  }, [outro, currentTime]);
+
   if (!showControls) return null;
 
   return (
@@ -115,10 +145,30 @@ const ControlsOverlay = React.memo(({
         colors={['rgba(0,0,0,0.7)', 'transparent']}
         style={styles.topBar}
       >
-        <View>
+        <View style={styles.topBarContent}>
           <Text style={styles.titleText} numberOfLines={1}>
             {title}
           </Text>
+          
+          {/* Add Skip Intro/Outro buttons */}
+          <View style={styles.skipButtonsContainer}>
+            {shouldShowIntroButton() && (
+              <TouchableOpacity
+                style={styles.skipButton}
+                onPress={onSkipIntro}
+              >
+                <Text style={styles.skipButtonText}>Skip Intro</Text>
+              </TouchableOpacity>
+            )}
+            {shouldShowOutroButton() && (
+              <TouchableOpacity
+                style={styles.skipButton}
+                onPress={onSkipOutro}
+              >
+                <Text style={styles.skipButtonText}>Skip Outro</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </LinearGradient>
 
@@ -555,18 +605,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       return;
     }
     
-    // Reduce the throttling time for more responsive seeking
     const now = Date.now();
-    if (now - lastSeekTimeRef.current < 100) { // Reduced from 150ms to 100ms
+    if (now - lastSeekTimeRef.current < 100) {
       return;
     }
     
     lastSeekTimeRef.current = now;
     isInSeekOperationRef.current = true;
-    
-    // Set seeking state and update time immediately for better UI feedback
-    setIsSeeking(true);
-    setCurrentTime(value);
     
     try {
       if (videoRef.current) {
@@ -577,22 +622,30 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         currentPositionRef.current = validPosition;
         lastPositionRef.current = validPosition;
         
-        // Perform the seek operation without pausing first for faster response
+        // Set seeking state to prevent other operations
+        setIsSeeking(true);
+        
+        // Update time immediately for UI feedback
+        setCurrentTime(validPosition);
+        
+        // Perform the seek operation
         await videoRef.current.setPositionAsync(validPosition * 1000);
+        
+        // Small delay to ensure the seek completes
+        await new Promise(resolve => setTimeout(resolve, 50));
         
         // Resume playback if it was playing before
         if (wasPlaying) {
-          videoRef.current.playAsync().catch(() => {});
+          await videoRef.current.playAsync();
         }
       }
     } catch (error) {
       console.error('Error seeking:', error);
     } finally {
       setIsSeeking(false);
-      // Use a shorter timeout to reset the operation flag
       setTimeout(() => {
         isInSeekOperationRef.current = false;
-      }, 50); // Reduced from 100ms to 50ms
+      }, 50);
     }
   };
 
@@ -601,7 +654,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     // Reduce update frequency for better performance
     const now = Date.now();
-    if (now - lastUpdateTimeRef.current < 100 && !status.didJustFinish) { // Reduced from 200ms to 100ms
+    if (now - lastUpdateTimeRef.current < 100 && !status.didJustFinish) {
       return;
     }
     
@@ -611,11 +664,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       const newPosition = status.positionMillis / 1000;
       const videoDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
       
-      // Update current position reference
-      currentPositionRef.current = newPosition;
-      
-      // Only update UI when not seeking to avoid jitter
-      if (!isSeeking) {
+      // Don't update position if we're seeking or in a skip operation
+      if (!isSeeking && !isInSeekOperationRef.current) {
+        currentPositionRef.current = newPosition;
+        
+        // Only update UI when not seeking to avoid jitter
         setCurrentTime(newPosition);
       }
       
@@ -1006,6 +1059,70 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [isPlaying, isSeeking, isQualityChanging]);
 
+  const handleSkipIntro = useCallback(async () => {
+    if (intro && videoRef.current && !isInSeekOperationRef.current) {
+      try {
+        isInSeekOperationRef.current = true;
+        const wasPlaying = isPlaying;
+        
+        // Pause temporarily to ensure smooth seeking
+        if (wasPlaying) {
+          await videoRef.current.pauseAsync();
+        }
+        
+        // Set the position
+        const targetPosition = intro.end;
+        await videoRef.current.setPositionAsync(targetPosition * 1000);
+        
+        // Update state
+        setCurrentTime(targetPosition);
+        currentPositionRef.current = targetPosition;
+        lastPositionRef.current = targetPosition;
+        
+        // Resume playback
+        if (wasPlaying) {
+          await videoRef.current.playAsync();
+        }
+      } catch (error) {
+        console.error('Error skipping intro:', error);
+      } finally {
+        isInSeekOperationRef.current = false;
+      }
+    }
+  }, [intro, isPlaying]);
+
+  const handleSkipOutro = useCallback(async () => {
+    if (outro && videoRef.current && !isInSeekOperationRef.current) {
+      try {
+        isInSeekOperationRef.current = true;
+        const wasPlaying = isPlaying;
+        
+        // Pause temporarily to ensure smooth seeking
+        if (wasPlaying) {
+          await videoRef.current.pauseAsync();
+        }
+        
+        // Set the position
+        const targetPosition = outro.end;
+        await videoRef.current.setPositionAsync(targetPosition * 1000);
+        
+        // Update state
+        setCurrentTime(targetPosition);
+        currentPositionRef.current = targetPosition;
+        lastPositionRef.current = targetPosition;
+        
+        // Resume playback
+        if (wasPlaying) {
+          await videoRef.current.playAsync();
+        }
+      } catch (error) {
+        console.error('Error skipping outro:', error);
+      } finally {
+        isInSeekOperationRef.current = false;
+      }
+    }
+  }, [outro, isPlaying]);
+
   return (
     <View style={[
       styles.container,
@@ -1054,6 +1171,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             onPlayPress={togglePlayPause}
             onFullscreenPress={toggleFullscreen}
             onSeek={handleSeek}
+            intro={intro}
+            outro={outro}
+            onSkipIntro={handleSkipIntro}
+            onSkipOutro={handleSkipOutro}
           />
         )}
       </Pressable>
@@ -1100,6 +1221,11 @@ const styles = StyleSheet.create({
     paddingTop: 32,
     paddingBottom: 16,
   },
+  topBarContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   titleText: {
     color: 'white',
     fontSize: 18,
@@ -1107,6 +1233,21 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.8)',
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 3,
+  },
+  skipButtonsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  skipButton: {
+    backgroundColor: '#f4511e',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 4,
+  },
+  skipButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '600',
   },
   centerControls: {
     flex: 1,

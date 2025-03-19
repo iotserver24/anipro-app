@@ -775,20 +775,30 @@ export default function WatchEpisode() {
       setIsBuffering(false);
       setIsPlaying(true);
       
-      // Reset resume position if we just navigated from another episode
+      // Reset resume position if we just navigated
       if (isNavigating.current) {
-        //console.log(`[DEBUG] Resetting resume position after navigation`);
         setResumePosition(0);
         isNavigating.current = false;
       }
       
-      // If animeId is not provided (e.g., from a shared URL), extract it from episodeId
+      let currentCategory = categoryAsSubOrDub; // Use the initial category
+      
+      // If animeId is not provided (e.g., from a shared URL), parse the full URL
       if (!animeId && typeof episodeId === 'string') {
-        // Extract animeId from episodeId format: animeId$ep=number$token=xyz
-        const extractedAnimeId = episodeId.split('$')[0];
+        // Parse all parameters from the episodeId
+        const parts = episodeId.split('$');
+        const extractedAnimeId = parts[0];
+        
+        // Extract category if present
+        const categoryParam = parts.find(part => part.startsWith('category='));
+        if (categoryParam) {
+          const extractedCategory = categoryParam.split('=')[1];
+          if (extractedCategory === 'sub' || extractedCategory === 'dub') {
+            currentCategory = extractedCategory;
+          }
+        }
+        
         if (extractedAnimeId) {
-          //console.log(`[DEBUG] Extracted animeId from episodeId: ${extractedAnimeId}`);
-          // Fetch anime info with the extracted ID
           const animeData = await animeAPI.getAnimeDetails(extractedAnimeId);
           
           // Set anime info
@@ -806,24 +816,40 @@ export default function WatchEpisode() {
           // Set episodes
           if (animeData.episodes) {
             setEpisodes(animeData.episodes as APIEpisode[]);
-            const index = animeData.episodes.findIndex(ep => ep.id === episodeId);
+            // Find the episode index without the category parameter
+            const cleanEpisodeId = episodeId.split('$category=')[0];
+            const index = animeData.episodes.findIndex(ep => ep.id === cleanEpisodeId);
             setCurrentEpisodeIndex(index);
           }
         }
       }
       
-      // Rest of the function remains the same
+      // Get episode sources with the correct category
+      const cleanEpisodeId = (episodeId as string).split('$category=')[0]; // Remove category from episodeId if present
       const sources = await animeAPI.getEpisodeSources(
-        episodeId as string, 
-        category === 'dub'
+        cleanEpisodeId,
+        currentCategory === 'dub'
       );
       
       if (!sources || !sources.sources || sources.sources.length === 0) {
         throw new Error('No streaming sources available');
       }
 
+      // Transform the sources data to match VideoResponse type
+      const videoResponseData: VideoResponse = {
+        headers: sources.headers || {},
+        sources: sources.sources.map(source => ({
+          url: source.url,
+          isM3U8: source.isM3U8 || false
+        })),
+        subtitles: sources.subtitles || [],
+        intro: sources.intro,
+        outro: sources.outro,
+        download: sources.download
+      };
+
       // Set the full video data from the API response
-      setVideoData(sources);
+      setVideoData(videoResponseData);
       
       // Set download URL if available
       if (sources.download) {
@@ -832,7 +858,7 @@ export default function WatchEpisode() {
 
       // Get the m3u8 URL
       const videoSource = sources.sources[0];
-      setVideoHeaders(sources.headers);
+      setVideoHeaders(sources.headers || {});
 
       // Extract qualities from m3u8
       if (videoSource.url.includes('.m3u8')) {
