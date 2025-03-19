@@ -949,14 +949,12 @@ export default function WatchEpisode() {
       setCurrentTime(newTime);
       setDuration(newDuration);
       
-      // Save progress more frequently and with less restrictions
+      // Save progress less frequently - increased from 2s to 5s
       const now = Date.now();
-      // Save progress every 2 seconds or if position changed significantly
+      // Only save if significant time has passed or position changed significantly
       if (animeInfo && newTime > 0 && newDuration > 0 && 
-          (now - lastProgressUpdateRef.current >= 2000 || 
-           Math.abs(newTime - lastProgressValueRef.current) > 5)) {
-        
-        //console.log(`[DEBUG] Saving progress - Time: ${newTime}, Duration: ${newDuration}`);
+          (now - lastProgressUpdateRef.current >= 5000 || 
+           Math.abs(newTime - lastProgressValueRef.current) > 10)) {
         
         lastProgressUpdateRef.current = now;
         lastProgressValueRef.current = newTime;
@@ -970,13 +968,13 @@ export default function WatchEpisode() {
           episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
           episodeNumber: Number(episodeNumber),
           timestamp: now,
-          progress: Number(newTime), // Ensure it's a number
-          duration: Number(newDuration), // Ensure it's a number
+          progress: Number(newTime),
+          duration: Number(newDuration),
           lastWatched: now,
           subOrDub: (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub'
         });
       }
-    }, 500),
+    }, 1000), // Increased debounce from 500ms to 1000ms
     [animeInfo, animeId, episodeId, episodeNumber, category, addToHistory]
   );
 

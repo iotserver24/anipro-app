@@ -7,7 +7,8 @@ import {
   arrayUnion, 
   arrayRemove,
   Timestamp,
-  DocumentReference
+  DocumentReference,
+  writeBatch
 } from 'firebase/firestore';
 import { WatchHistoryItem } from '../store/watchHistoryStore';
 import { MyListAnime } from '../utils/myList';
@@ -28,11 +29,79 @@ interface UserData {
   watchlist: MyListAnime[];
 }
 
+// Add sync queue and debounce
+let syncQueue: { [key: string]: NodeJS.Timeout } = {};
+const SYNC_DELAY = 2000; // 2 seconds delay for batching
+
+// Add cache for user data
+let userDataCache: { [userId: string]: { data: UserData; timestamp: number } } = {};
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Add performance optimization flags
+let isSyncing = false;
+let pendingSync = false;
+
+// Add this helper function at the top
+function mergeWatchHistoryItems(local: WatchHistoryItem[], cloud: WatchHistoryItem[]): WatchHistoryItem[] {
+  const merged = new Map<string, WatchHistoryItem>();
+  
+  // First add all cloud items
+  cloud.forEach(item => {
+    merged.set(item.episodeId, item);
+  });
+  
+  // Then merge local items, keeping the one with higher progress or more recent lastWatched
+  local.forEach(localItem => {
+    const cloudItem = merged.get(localItem.episodeId);
+    if (!cloudItem) {
+      merged.set(localItem.episodeId, localItem);
+    } else {
+      // Keep the item with higher progress or more recent lastWatched
+      if (localItem.progress > cloudItem.progress || localItem.lastWatched > cloudItem.lastWatched) {
+        merged.set(localItem.episodeId, localItem);
+      }
+    }
+  });
+  
+  // Convert back to array and sort by lastWatched
+  return Array.from(merged.values())
+    .sort((a, b) => b.lastWatched - a.lastWatched);
+}
+
+function mergeWatchlistItems(local: MyListAnime[], cloud: MyListAnime[]): MyListAnime[] {
+  const merged = new Map<string, MyListAnime>();
+  
+  // First add all cloud items
+  cloud.forEach(item => {
+    merged.set(item.id, item);
+  });
+  
+  // Then merge local items, keeping the one with more recent addedAt
+  local.forEach(localItem => {
+    const cloudItem = merged.get(localItem.id);
+    if (!cloudItem) {
+      merged.set(localItem.id, localItem);
+    } else {
+      // Keep the item with more recent addedAt
+      if (localItem.addedAt > cloudItem.addedAt) {
+        merged.set(localItem.id, localItem);
+      }
+    }
+  });
+  
+  // Convert back to array and sort by addedAt
+  return Array.from(merged.values())
+    .sort((a, b) => b.addedAt - a.addedAt);
+}
+
 export const syncService = {
   // Initialize user data document
   async initializeUserData() {
     const userId = auth.currentUser?.uid;
-    if (!userId) return;
+    if (!userId) {
+      logger.info('No authenticated user, skipping initialization');
+      return;
+    }
 
     try {
       const userDataRef = doc(db, COLLECTIONS.USER_DATA, userId);
@@ -54,93 +123,192 @@ export const syncService = {
   // Get user data document reference
   getUserDataRef(): DocumentReference | null {
     const userId = auth.currentUser?.uid;
-    if (!userId) return null;
-    return doc(db, COLLECTIONS.USER_DATA, userId);
+    return userId ? doc(db, COLLECTIONS.USER_DATA, userId) : null;
   },
 
-  // Sync watch history
+  // Optimize queue sync operation
+  queueSync(key: string, operation: () => Promise<void>) {
+    // Skip if no authenticated user
+    if (!auth.currentUser) {
+      return;
+    }
+
+    // Clear existing timeout for this key
+    if (syncQueue[key]) {
+      clearTimeout(syncQueue[key]);
+    }
+
+    // Set new timeout with reduced operations
+    syncQueue[key] = setTimeout(async () => {
+      try {
+        if (isSyncing) {
+          pendingSync = true;
+          return;
+        }
+        isSyncing = true;
+        await operation();
+        isSyncing = false;
+        
+        // Handle any pending sync
+        if (pendingSync) {
+          pendingSync = false;
+          this.queueSync(key, operation);
+        }
+        
+        delete syncQueue[key];
+      } catch (error) {
+        logger.error(`Error in queued sync operation for ${key}:`, error);
+        isSyncing = false;
+        delete syncQueue[key];
+      }
+    }, SYNC_DELAY);
+  },
+
+  // Clear sync queue (useful when logging out)
+  clearSyncQueue() {
+    Object.keys(syncQueue).forEach(key => {
+      if (syncQueue[key]) {
+        clearTimeout(syncQueue[key]);
+        delete syncQueue[key];
+      }
+    });
+    // Also clear cache
+    userDataCache = {};
+  },
+
+  // Optimize sync watch history
   async syncWatchHistory(history: WatchHistoryItem[]) {
     const userId = auth.currentUser?.uid;
     if (!userId) return;
 
-    try {
-      // Initialize document if it doesn't exist
-      await this.initializeUserData();
-      
-      // Trim history to prevent exceeding Firestore document size limit
-      const trimmedHistory = trimWatchHistoryIfNeeded(history);
-      
-      if (trimmedHistory.length < history.length) {
-        logger.warn(`Watch history trimmed from ${history.length} to ${trimmedHistory.length} items due to size constraints`);
+    this.queueSync('watchHistory', async () => {
+      try {
+        const trimmedHistory = trimWatchHistoryIfNeeded(history);
+        
+        // Only sync if cache doesn't exist or data is different
+        const cached = userDataCache[userId]?.data?.watchHistory;
+        if (cached && JSON.stringify(cached) === JSON.stringify(trimmedHistory)) {
+          return;
+        }
+
+        const batch = writeBatch(db);
+        const userDataRef = doc(db, COLLECTIONS.USER_DATA, userId);
+        
+        batch.update(userDataRef, {
+          watchHistory: trimmedHistory,
+          lastSync: Timestamp.now()
+        });
+
+        await batch.commit();
+        
+        // Update cache
+        if (userDataCache[userId]) {
+          userDataCache[userId] = {
+            data: { 
+              ...userDataCache[userId].data, 
+              watchHistory: trimmedHistory,
+              lastSync: Timestamp.now()
+            },
+            timestamp: Date.now()
+          };
+        }
+      } catch (error) {
+        logger.error('Error syncing watch history:', error);
       }
-      
-      const userDataRef = doc(db, COLLECTIONS.USER_DATA, userId);
-      await updateDoc(userDataRef, {
-        watchHistory: trimmedHistory,
-        lastSync: Timestamp.now()
-      });
-      
-      logger.info(`Successfully synced ${trimmedHistory.length} watch history items to Firestore`);
-    } catch (error) {
-      logger.error('Error syncing watch history:', error);
-    }
+    });
   },
 
-  // Sync watchlist
+  // Optimize sync watchlist
   async syncWatchlist(watchlist: MyListAnime[]) {
     const userId = auth.currentUser?.uid;
     if (!userId) return;
 
-    try {
-      // Initialize document if it doesn't exist
-      await this.initializeUserData();
-      
-      // Trim watchlist to prevent exceeding Firestore document size limit
-      const trimmedWatchlist = trimWatchlistIfNeeded(watchlist);
-      
-      if (trimmedWatchlist.length < watchlist.length) {
-        logger.warn(`Watchlist trimmed from ${watchlist.length} to ${trimmedWatchlist.length} items due to size constraints`);
+    this.queueSync('watchlist', async () => {
+      try {
+        const trimmedWatchlist = trimWatchlistIfNeeded(watchlist);
+        
+        // Only sync if cache doesn't exist or data is different
+        const cached = userDataCache[userId]?.data?.watchlist;
+        if (cached && JSON.stringify(cached) === JSON.stringify(trimmedWatchlist)) {
+          return;
+        }
+
+        const batch = writeBatch(db);
+        const userDataRef = doc(db, COLLECTIONS.USER_DATA, userId);
+        
+        batch.update(userDataRef, {
+          watchlist: trimmedWatchlist,
+          lastSync: Timestamp.now()
+        });
+
+        await batch.commit();
+        
+        // Update cache
+        if (userDataCache[userId]) {
+          userDataCache[userId] = {
+            data: { 
+              ...userDataCache[userId].data, 
+              watchlist: trimmedWatchlist,
+              lastSync: Timestamp.now()
+            },
+            timestamp: Date.now()
+          };
+        }
+      } catch (error) {
+        logger.error('Error syncing watchlist:', error);
       }
-      
-      const userDataRef = doc(db, COLLECTIONS.USER_DATA, userId);
-      await updateDoc(userDataRef, {
-        watchlist: trimmedWatchlist,
-        lastSync: Timestamp.now()
-      });
-      
-      logger.info(`Successfully synced ${trimmedWatchlist.length} watchlist items to Firestore`);
-    } catch (error) {
-      logger.error('Error syncing watchlist:', error);
-    }
+    });
   },
 
-  // Fetch user data from Firestore
+  // Optimize fetch user data
   async fetchUserData(): Promise<UserData | null> {
     const userId = auth.currentUser?.uid;
     if (!userId) return null;
 
     try {
-      // Initialize document if it doesn't exist
-      await this.initializeUserData();
-      
+      // Check cache first
+      const cached = userDataCache[userId];
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        return cached.data;
+      }
+
       const userDataRef = doc(db, COLLECTIONS.USER_DATA, userId);
       const userDataSnap = await getDoc(userDataRef);
 
       if (userDataSnap.exists()) {
         const data = userDataSnap.data() as UserData;
-        logger.info(`Successfully fetched user data from Firestore with lastSync: ${data.lastSync?.toDate().toISOString()}`);
+        userDataCache[userId] = {
+          data,
+          timestamp: Date.now()
+        };
         return data;
       }
+
+      // Initialize if document doesn't exist
+      const initialData: UserData = {
+        lastSync: Timestamp.now(),
+        watchHistory: [],
+        watchlist: []
+      };
+      await setDoc(userDataRef, initialData);
+      userDataCache[userId] = {
+        data: initialData,
+        timestamp: Date.now()
+      };
+      return initialData;
     } catch (error) {
       logger.error('Error fetching user data:', error);
+      return null;
     }
-    return null;
   },
 
   // Add item to watchlist
   async addToWatchlist(anime: MyListAnime) {
     const userId = auth.currentUser?.uid;
-    if (!userId) return false;
+    if (!userId) {
+      logger.info('No authenticated user, skipping add to watchlist');
+      return false;
+    }
 
     try {
       // Initialize document if it doesn't exist
@@ -170,13 +338,26 @@ export const syncService = {
           watchlist: trimmedWatchlist,
           lastSync: Timestamp.now()
         });
+        
+        // Update cache
+        userDataCache[userId] = {
+          data: { ...data, watchlist: trimmedWatchlist },
+          timestamp: Date.now()
+        };
       } else {
         // Document doesn't exist yet, create it
-        await setDoc(userDataRef, {
+        const newData = {
           watchlist: [anime],
           watchHistory: [],
           lastSync: Timestamp.now()
-        });
+        };
+        await setDoc(userDataRef, newData);
+        
+        // Update cache
+        userDataCache[userId] = {
+          data: newData,
+          timestamp: Date.now()
+        };
       }
       
       logger.info(`Added anime ${anime.id} to watchlist in Firestore`);
@@ -190,7 +371,10 @@ export const syncService = {
   // Remove item from watchlist
   async removeFromWatchlist(animeId: string) {
     const userId = auth.currentUser?.uid;
-    if (!userId) return false;
+    if (!userId) {
+      logger.info('No authenticated user, skipping remove from watchlist');
+      return false;
+    }
 
     try {
       const userDataRef = doc(db, COLLECTIONS.USER_DATA, userId);
@@ -206,6 +390,16 @@ export const syncService = {
             watchlist: arrayRemove(animeToRemove),
             lastSync: Timestamp.now()
           });
+          
+          // Update cache
+          if (userDataCache[userId]) {
+            const newWatchlist = data.watchlist.filter(item => item.id !== animeId);
+            userDataCache[userId] = {
+              data: { ...data, watchlist: newWatchlist },
+              timestamp: Date.now()
+            };
+          }
+          
           logger.info(`Removed anime ${animeId} from watchlist in Firestore`);
           return true;
         } else {
@@ -215,6 +409,15 @@ export const syncService = {
             watchlist: filteredWatchlist,
             lastSync: Timestamp.now()
           });
+          
+          // Update cache
+          if (userDataCache[userId]) {
+            userDataCache[userId] = {
+              data: { ...data, watchlist: filteredWatchlist },
+              timestamp: Date.now()
+            };
+          }
+          
           logger.info(`Removed anime ${animeId} from watchlist in Firestore using manual filtering`);
           return true;
         }
@@ -229,7 +432,10 @@ export const syncService = {
   // Update watch history item
   async updateWatchHistoryItem(historyItem: WatchHistoryItem) {
     const userId = auth.currentUser?.uid;
-    if (!userId) return false;
+    if (!userId) {
+      logger.info('No authenticated user, skipping watch history item update');
+      return false;
+    }
 
     try {
       const userDataRef = doc(db, COLLECTIONS.USER_DATA, userId);
@@ -249,6 +455,14 @@ export const syncService = {
           lastSync: Timestamp.now()
         });
         
+        // Update cache
+        if (userDataCache[userId]) {
+          userDataCache[userId] = {
+            data: { ...data, watchHistory: trimmedHistory },
+            timestamp: Date.now()
+          };
+        }
+        
         logger.info(`Updated watch history item for episode ${historyItem.episodeId} in Firestore`);
         return true;
       }
@@ -262,20 +476,92 @@ export const syncService = {
   // Sync on app launch or at regular intervals
   async syncOnLaunch() {
     const userId = auth.currentUser?.uid;
-    if (!userId) return;
+    if (!userId) {
+      logger.info('No authenticated user, skipping sync on launch');
+      return;
+    }
 
     try {
       logger.info('Starting sync on app launch');
       await this.initializeUserData();
       
-      // Additional sync logic could be added here:
-      // - Merge local and remote data based on lastSync timestamps
-      // - Resolve conflicts
-      // - Batch updates
+      // Clear any existing sync operations
+      this.clearSyncQueue();
       
-      logger.info('Completed sync on app launch');
+      // Clear cache to ensure fresh data
+      delete userDataCache[userId];
+      
+      logger.info('Completed sync on launch');
     } catch (error) {
       logger.error('Error during sync on launch:', error);
+    }
+  },
+
+  // Add this new method for initial sync after login
+  async performInitialSync(localHistory: WatchHistoryItem[], localWatchlist: MyListAnime[]) {
+    const userId = auth.currentUser?.uid;
+    if (!userId) {
+      logger.info('No authenticated user, skipping initial sync');
+      return null;
+    }
+
+    try {
+      logger.info('Starting initial sync after login');
+      
+      // Initialize user data document if needed
+      await this.initializeUserData();
+      
+      // Get cloud data
+      const userDataRef = doc(db, COLLECTIONS.USER_DATA, userId);
+      const userDataSnap = await getDoc(userDataRef);
+      
+      let cloudHistory: WatchHistoryItem[] = [];
+      let cloudWatchlist: MyListAnime[] = [];
+      
+      if (userDataSnap.exists()) {
+        const data = userDataSnap.data() as UserData;
+        cloudHistory = data.watchHistory || [];
+        cloudWatchlist = data.watchlist || [];
+      }
+      
+      // Merge local and cloud data
+      const mergedHistory = mergeWatchHistoryItems(localHistory, cloudHistory);
+      const mergedWatchlist = mergeWatchlistItems(localWatchlist, cloudWatchlist);
+      
+      // Trim if needed
+      const trimmedHistory = trimWatchHistoryIfNeeded(mergedHistory);
+      const trimmedWatchlist = trimWatchlistIfNeeded(mergedWatchlist);
+      
+      // Save merged data back to Firestore
+      const batch = writeBatch(db);
+      batch.update(userDataRef, {
+        watchHistory: trimmedHistory,
+        watchlist: trimmedWatchlist,
+        lastSync: Timestamp.now()
+      });
+      
+      await batch.commit();
+      
+      // Update cache
+      userDataCache[userId] = {
+        data: {
+          lastSync: Timestamp.now(),
+          watchHistory: trimmedHistory,
+          watchlist: trimmedWatchlist
+        },
+        timestamp: Date.now()
+      };
+      
+      logger.info(`Initial sync completed: ${trimmedHistory.length} history items, ${trimmedWatchlist.length} watchlist items`);
+      
+      // Return merged data for stores to update
+      return {
+        watchHistory: trimmedHistory,
+        watchlist: trimmedWatchlist
+      };
+    } catch (error) {
+      logger.error('Error during initial sync:', error);
+      return null;
     }
   }
 }; 

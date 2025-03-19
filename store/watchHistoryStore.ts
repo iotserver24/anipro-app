@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { logger } from '../utils/logger';
 import { getItem, setItem, removeItem } from '../utils/storage';
 import { syncService } from '../services/syncService';
+import { auth } from '../services/firebase';
 
 const FALLBACK_IMAGE = 'https://via.placeholder.com/300x450?text=No+Image';
 const STORAGE_KEY = 'anipro:watchHistory';
@@ -34,26 +35,26 @@ export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
 
   initializeHistory: async () => {
     try {
-      // Try to fetch from Firestore first
-      const userData = await syncService.fetchUserData();
-      if (userData?.watchHistory) {
-        set({ history: userData.watchHistory });
-        return;
+      // If user is authenticated, try to fetch from Firestore first
+      if (auth.currentUser) {
+        // Get local data first
+        const localHistory = await getItem<WatchHistoryItem[]>(STORAGE_KEY) || [];
+        
+        // Perform initial sync which will merge local and cloud data
+        const syncResult = await syncService.performInitialSync(localHistory, []);
+        if (syncResult) {
+          set({ history: syncResult.watchHistory });
+          // Update local storage with merged data
+          await setItem(STORAGE_KEY, syncResult.watchHistory);
+          return;
+        }
       }
 
-      // Fallback to local storage
+      // If not authenticated or sync failed, use local storage
       const stored = await getItem<WatchHistoryItem[]>(STORAGE_KEY);
       if (stored && Array.isArray(stored)) {
-        // Sort by lastWatched (most recent first)
-        const sortedHistory = stored.sort((a: WatchHistoryItem, b: WatchHistoryItem) => 
-          b.lastWatched - a.lastWatched
-        );
-        
-        //console.log(`[DEBUG] WatchHistoryStore: Loaded ${sortedHistory.length} history items`);
+        const sortedHistory = stored.sort((a, b) => b.lastWatched - a.lastWatched);
         set({ history: sortedHistory });
-      } else {
-        //console.log('[DEBUG] WatchHistoryStore: No history found in storage');
-        set({ history: [] });
       }
     } catch (error) {
       logger.error('Error loading watch history:', error);
@@ -67,11 +68,14 @@ export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
       return;
     }
 
-    //console.log(`[DEBUG] WatchHistoryStore: Adding to history - episodeId: ${item.episodeId}, progress: ${item.progress}, duration: ${item.duration}`);
-
     const currentHistory = get().history;
     const currentTime = Date.now();
     
+    // Check if item already exists and if update is needed
+    const existingIndex = currentHistory.findIndex(
+      (historyItem) => historyItem.episodeId === item.episodeId
+    );
+
     // Prepare the validated item with all required fields
     const validatedItem = {
       ...item,
@@ -81,84 +85,95 @@ export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
       progress: item.progress > 0 ? item.progress : 0,
       duration: item.duration > 0 ? item.duration : 0,
       timestamp: item.timestamp || currentTime,
-      lastWatched: currentTime // Always update lastWatched to current time
+      lastWatched: currentTime
     };
 
-    //console.log(`[DEBUG] WatchHistoryStore: Validated progress: ${validatedItem.progress}`);
+    // Only update if:
+    // 1. Item doesn't exist, or
+    // 2. Progress has changed significantly (more than 5 seconds), or
+    // 3. It's been more than 5 minutes since last update
+    const shouldUpdate = 
+      existingIndex === -1 ||
+      Math.abs(validatedItem.progress - currentHistory[existingIndex].progress) > 5 ||
+      currentTime - currentHistory[existingIndex].lastWatched > 300000;
 
-    // Create new history array with the new item
-    const newHistory = [...currentHistory, validatedItem];
+    if (!shouldUpdate) {
+      return;
+    }
+
+    let newHistory;
+    if (existingIndex !== -1) {
+      // Update existing item
+      newHistory = [...currentHistory];
+      newHistory[existingIndex] = validatedItem;
+    } else {
+      // Add new item
+      newHistory = [...currentHistory, validatedItem];
+    }
 
     // Sort by lastWatched (most recent first)
     newHistory.sort((a, b) => b.lastWatched - a.lastWatched);
 
-    try {
-      // Save to local storage
-      await setItem(STORAGE_KEY, newHistory);
-      
-      // Sync with Firestore
-      await syncService.syncWatchHistory(newHistory);
-      
-      set({ history: newHistory });
-      //console.log(`[DEBUG] WatchHistoryStore: Saved ${newHistory.length} history items to storage`);
-    } catch (error) {
-      logger.error('Error saving watch history:', error);
+    // Only update if the history has actually changed
+    if (JSON.stringify(newHistory) !== JSON.stringify(currentHistory)) {
+      try {
+        // Save to local storage first for immediate feedback
+        await setItem(STORAGE_KEY, newHistory);
+        set({ history: newHistory });
+        
+        // Then sync with Firestore
+        syncService.syncWatchHistory(newHistory);
+      } catch (error) {
+        logger.error('Error saving watch history:', error);
+      }
     }
   },
 
   updateProgress: async (episodeId: string, progress: number) => {
-    if (progress <= 0) {
-      logger.error('Invalid progress value:', progress);
-      return;
-    }
-    
-    ////console.log(`[DEBUG] WatchHistoryStore: Updating progress for episodeId: ${episodeId}, progress: ${progress}`);
+    if (progress <= 0) return;
     
     const currentHistory = get().history;
-    const newHistory = [...currentHistory];
-    const index = newHistory.findIndex(
+    const index = currentHistory.findIndex(
       (item) => item.episodeId === episodeId
     );
-
-    //console.log(`[DEBUG] WatchHistoryStore: Found episode at index: ${index}`);
     
     if (index !== -1) {
       const currentTime = Date.now();
+      const currentItem = currentHistory[index];
       
-      // Only update if the new progress is greater than the existing progress
-      // or if we're within 10 seconds of the end
-      const shouldUpdateProgress = 
-        progress > newHistory[index].progress || 
-        (newHistory[index].duration > 0 && progress >= newHistory[index].duration - 10);
+      // Only update if:
+      // 1. Progress has changed significantly (more than 5 seconds), or
+      // 2. It's been more than 5 minutes since last update
+      const shouldUpdate = 
+        Math.abs(progress - currentItem.progress) > 5 ||
+        currentTime - currentItem.lastWatched > 300000;
       
-      //console.log(`[DEBUG] WatchHistoryStore: Should update progress: ${shouldUpdateProgress}, current: ${newHistory[index].progress}, new: ${progress}`);
-      
-      if (shouldUpdateProgress) {
-        //console.log(`[DEBUG] WatchHistoryStore: Updating progress from ${newHistory[index].progress} to ${progress}`);
-        
-        newHistory[index] = {
-          ...newHistory[index],
-          progress,
-          lastWatched: currentTime
-        };
-      } else {
-        // Just update the lastWatched time
-        newHistory[index].lastWatched = currentTime;
+      if (!shouldUpdate) {
+        return;
       }
 
-      // Re-sort by lastWatched (most recent first)
+      const newHistory = [...currentHistory];
+      newHistory[index] = {
+        ...currentItem,
+        progress,
+        lastWatched: currentTime
+      };
+
+      // Sort by lastWatched (most recent first)
       newHistory.sort((a, b) => b.lastWatched - a.lastWatched);
 
-      try {
-        // Save to local storage
-        await setItem(STORAGE_KEY, newHistory);
-        
-        // Sync with Firestore
-        await syncService.syncWatchHistory(newHistory);
-        
-        set({ history: newHistory });
-      } catch (error) {
-        logger.error('Error updating watch history:', error);
+      // Only update if the history has actually changed
+      if (JSON.stringify(newHistory) !== JSON.stringify(currentHistory)) {
+        try {
+          // Save to local storage first
+          await setItem(STORAGE_KEY, newHistory);
+          set({ history: newHistory });
+          
+          // Then sync with Firestore
+          syncService.syncWatchHistory(newHistory);
+        } catch (error) {
+          logger.error('Error updating watch history:', error);
+        }
       }
     }
   },
@@ -170,15 +185,17 @@ export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
   },
   
   clearHistory: async () => {
-    //console.log(`[DEBUG] WatchHistoryStore: Clearing history`);
     try {
       // Clear local storage
       await removeItem(STORAGE_KEY);
       
-      // Clear Firestore data
-      await syncService.syncWatchHistory([]);
+      // If user is authenticated, clear Firestore data
+      if (auth.currentUser) {
+        await syncService.syncWatchHistory([]);
+      }
       
       set({ history: [] });
+      logger.info('Watch history cleared successfully');
     } catch (error) {
       logger.error('Error clearing watch history:', error);
     }

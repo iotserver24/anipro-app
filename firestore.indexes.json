@@ -1,13 +1,6 @@
 {
   "indexes": [
     {
-      "collectionGroup": "user_data",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "lastSync", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "comments",
       "queryScope": "COLLECTION",
       "fields": [

@@ -15,6 +15,7 @@ import { doc, setDoc, collection, query, where, getDocs, Timestamp, updateDoc, w
 import { db } from './firebase';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Avatar } from '../constants/avatars';
+import { logger } from '../utils/logger';
 
 // Constants for AsyncStorage keys
 const USER_AUTH_KEY = 'user_auth';
@@ -252,6 +253,18 @@ export const signInUser = async (email: string, password: string): Promise<User>
     // Store session with credentials for auto-login
     await storeUserSession(user, { email, password });
     
+    // Initialize stores and sync data
+    const { useWatchHistoryStore } = await import('../store/watchHistoryStore');
+    const { useMyListStore } = await import('../store/myListStore');
+    
+    // Initialize both stores which will handle merging local and cloud data
+    await Promise.all([
+      useWatchHistoryStore.getState().initializeHistory(),
+      useMyListStore.getState().initializeList()
+    ]);
+    
+    logger.info('User signed in and data synced successfully');
+    
     return user;
   } catch (error) {
     console.error('Error signing in user:', error);
@@ -262,13 +275,44 @@ export const signInUser = async (email: string, password: string): Promise<User>
 // Sign out user
 export const signOut = async (): Promise<void> => {
   try {
+    // Import syncService here to avoid circular dependency
+    const { syncService } = await import('./syncService');
+    
+    // Clear all pending sync operations first
+    syncService.clearSyncQueue();
+    
+    // Sign out from Firebase
     await firebaseSignOut(auth);
+    
+    // Clear local storage
     await clearUserSession();
+    
+    // Clear any in-memory caches
+    await clearInMemoryCaches();
+    
+    logger.info('User signed out successfully');
   } catch (error) {
     console.error('Error signing out:', error);
     throw error;
   }
 };
+
+// Helper function to clear in-memory caches
+async function clearInMemoryCaches() {
+  try {
+    // Clear watch history store
+    const { useWatchHistoryStore } = await import('../store/watchHistoryStore');
+    useWatchHistoryStore.getState().clearHistory();
+    
+    // Clear watchlist store
+    const { useMyListStore } = await import('../store/myListStore');
+    useMyListStore.getState().clearList();
+    
+    logger.info('In-memory caches cleared successfully');
+  } catch (error) {
+    console.error('Error clearing in-memory caches:', error);
+  }
+}
 
 // Get current authenticated user
 export const getCurrentUser = (): User | null => {
