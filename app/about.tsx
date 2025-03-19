@@ -15,6 +15,7 @@ import UpdateModal from '../components/UpdateModal';
 import WhatsNewModal from '../components/WhatsNewModal';
 import { fetchWhatsNewInfo, WhatsNewInfo } from '../utils/whatsNewUtils';
 import { logger } from '../utils/logger';
+import { auth } from '../services/firebase';
 
 interface ChangelogItem {
   type: 'text' | 'image' | 'video' | 'url';
@@ -586,11 +587,10 @@ export default function AboutScreen() {
               onPress={() => router.push('/profile')}
             >
               <MaterialIcons name="person" size={24} color="#fff" />
-              <Text style={styles.profileButtonText}>View Profile</Text>
+              <Text style={styles.profileButtonText}>
+                {auth.currentUser ? "View Profile" : "Login / Register"}
+              </Text>
             </TouchableOpacity>
-            <Text style={styles.aboutText}>
-              Access your account profile to log in, view your account details, or log out.
-            </Text>
           </View>
         </View>
 

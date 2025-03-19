@@ -1,4 +1,4 @@
-export const API_BASE = 'https://conapi.anipro.site/anime/animekai';
+export const API_BASE = 'https://con.anisurge.me/anime/animekai';
 
 export const ENDPOINTS = {
   RECENT: '/recent-added',

@@ -2,7 +2,7 @@ import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshContr
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons, MaterialCommunityIcons, FontAwesome } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getCachedData, setCachedData, cacheKeys } from '../utils/cache';
 import { addToMyList, removeFromMyList, isInMyList } from '../utils/myList';
@@ -24,15 +24,19 @@ import * as BackgroundFetch from 'expo-background-fetch';
 import * as TaskManager from 'expo-task-manager';
 import { checkAndNotifyAiringAnime } from './schedule';
 import * as Notifications from 'expo-notifications';
+import AuthModal from '../components/AuthModal';
+import { auth } from '../services/firebase';
 
 const { width } = Dimensions.get('window');
-const ITEM_WIDTH = width * 0.9;
-const ITEM_SPACING = (width - ITEM_WIDTH) / 2;
-const SPACING = 10;
+const ITEM_WIDTH = width * 0.85;
+const ITEM_SPACING = 10;
+const ITEM_MARGIN = (width - ITEM_WIDTH) / 2;
 
 const CACHE_KEYS = {
   TRENDING_RECENT: 'home_trending_recent_cache',
-  NEW_EPISODES: 'home_new_episodes_cache'
+  NEW_EPISODES: 'home_new_episodes_cache',
+  LATEST_COMPLETED: 'home_latest_completed_cache',
+  NEW_RELEASES: 'home_new_releases_cache'
 };
 
 interface CachedData {
@@ -69,6 +73,11 @@ interface AnimeResult {
   sub?: number;
   dub?: number;
   episodes?: number;
+  banner?: string;
+  genres?: string[];
+  releaseDate?: string;
+  quality?: string;
+  description?: string;
 }
 
 type AnimeItem = AnimeResult & {
@@ -100,7 +109,11 @@ const mapToAnimeItem = (item: any): AnimeItem => ({
     eps: Math.max(item.sub || 0, item.dub || 0),
     sub: item.sub || 0,
     dub: item.dub || 0
-  } : 0)
+  } : 0),
+  genres: item.genres,
+  releaseDate: item.releaseDate,
+  quality: item.quality,
+  description: item.description
 });
 
 interface ChangelogItem {
@@ -268,6 +281,10 @@ export default function Home() {
   const [showWhatsNewModal, setShowWhatsNewModal] = useState(false);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [hasShownAuthPrompt, setHasShownAuthPrompt] = useState(false);
+  const [latestCompleted, setLatestCompleted] = useState<AnimeItem[]>([]);
+  const [newReleases, setNewReleases] = useState<AnimeItem[]>([]);
 
   const fetchAnime = async (bypassCache: boolean = false) => {
     try {
@@ -275,16 +292,25 @@ export default function Home() {
 
       if (!bypassCache) {
         // Try loading from cache first
-        const [trendingRecentCache, newEpisodesCache] = await Promise.all([
+        const [trendingRecentCache, newEpisodesCache, latestCompletedCache, newReleasesCache] = await Promise.all([
           AsyncStorage.getItem(CACHE_KEYS.TRENDING_RECENT),
-          AsyncStorage.getItem(CACHE_KEYS.NEW_EPISODES)
+          AsyncStorage.getItem(CACHE_KEYS.NEW_EPISODES),
+          AsyncStorage.getItem(CACHE_KEYS.LATEST_COMPLETED),
+          AsyncStorage.getItem(CACHE_KEYS.NEW_RELEASES)
         ]);
+
+        // Process each cache
+        let needFetchTrending = true;
+        let needFetchNewEpisodes = true;
+        let needFetchLatestCompleted = true;
+        let needFetchNewReleases = true;
 
         if (trendingRecentCache) {
           const { timestamp, data } = JSON.parse(trendingRecentCache);
           if (isTrendingRecentCacheValid(timestamp)) {
             setTrendingAnime(data.trending);
             setRecentAnime(data.recent);
+            needFetchTrending = false;
           }
         }
 
@@ -292,21 +318,53 @@ export default function Home() {
           const { timestamp, data } = JSON.parse(newEpisodesCache);
           if (isNewEpisodesCacheValid(timestamp)) {
             setNewEpisodes(data);
-            if (!trendingRecentCache || !isTrendingRecentCacheValid(JSON.parse(trendingRecentCache).timestamp)) {
-              // Only fetch trending and recent if their cache is invalid
-              await fetchTrendingAndRecent();
-            }
-            setLoading(false);
-            setRefreshing(false);
-            return;
+            needFetchNewEpisodes = false;
           }
         }
+
+        if (latestCompletedCache) {
+          const { timestamp, data } = JSON.parse(latestCompletedCache);
+          if (isNewEpisodesCacheValid(timestamp)) { // Using same validity as new episodes
+            setLatestCompleted(data);
+            needFetchLatestCompleted = false;
+          }
+        }
+
+        if (newReleasesCache) {
+          const { timestamp, data } = JSON.parse(newReleasesCache);
+          if (isNewEpisodesCacheValid(timestamp)) { // Using same validity as new episodes
+            setNewReleases(data);
+            needFetchNewReleases = false;
+          }
+        }
+
+        // Check if we have all data from cache
+        if (!needFetchTrending && !needFetchNewEpisodes && 
+            !needFetchLatestCompleted && !needFetchNewReleases) {
+          setLoading(false);
+          setRefreshing(false);
+          return;
+        }
+
+        // Fetch only what we need
+        const fetchPromises = [];
+        if (needFetchTrending) fetchPromises.push(fetchTrendingAndRecent());
+        if (needFetchNewEpisodes) fetchPromises.push(fetchNewEpisodes());
+        if (needFetchLatestCompleted) fetchPromises.push(fetchLatestCompletedWithCache());
+        if (needFetchNewReleases) fetchPromises.push(fetchNewReleasesWithCache());
+
+        await Promise.all(fetchPromises);
+        setLoading(false);
+        setRefreshing(false);
+        return;
       }
 
-      // If cache is invalid or bypassing cache, fetch everything
+      // If bypassing cache, fetch everything
       await Promise.all([
         fetchTrendingAndRecent(),
-        fetchNewEpisodes()
+        fetchNewEpisodes(),
+        fetchLatestCompletedWithCache(),
+        fetchNewReleasesWithCache()
       ]);
 
     } catch (error) {
@@ -367,6 +425,50 @@ export default function Home() {
 
     } catch (error) {
       logger.error('Error fetching new episodes:', error);
+    }
+  };
+
+  const fetchLatestCompletedWithCache = async () => {
+    try {
+      const latest = await animeAPI.getLatestCompleted();
+      // Handle both array and object with results property
+      const latestResults = Array.isArray(latest) ? latest : ((latest as any)?.results || []);
+      const mappedLatest = latestResults?.map(mapToAnimeItem) || [];
+
+      setLatestCompleted(mappedLatest);
+
+      // Cache the data
+      const cacheData = {
+        timestamp: Date.now(),
+        data: mappedLatest
+      };
+      await AsyncStorage.setItem(CACHE_KEYS.LATEST_COMPLETED, JSON.stringify(cacheData));
+      return mappedLatest;
+    } catch (error) {
+      logger.error('Error fetching latest completed:', error);
+      return [];
+    }
+  };
+
+  const fetchNewReleasesWithCache = async () => {
+    try {
+      const releases = await animeAPI.getNewReleases();
+      // Handle both array and object with results property
+      const releasesResults = Array.isArray(releases) ? releases : ((releases as any)?.results || []);
+      const mappedReleases = releasesResults?.map(mapToAnimeItem) || [];
+
+      setNewReleases(mappedReleases);
+
+      // Cache the data
+      const cacheData = {
+        timestamp: Date.now(),
+        data: mappedReleases
+      };
+      await AsyncStorage.setItem(CACHE_KEYS.NEW_RELEASES, JSON.stringify(cacheData));
+      return mappedReleases;
+    } catch (error) {
+      logger.error('Error fetching new releases:', error);
+      return [];
     }
   };
 
@@ -606,13 +708,43 @@ export default function Home() {
     registerBackgroundTask();
   }, []);
 
+  useEffect(() => {
+    const checkAndShowAuthPrompt = async () => {
+      try {
+        // Check if we've shown the auth prompt before
+        const hasShown = await AsyncStorage.getItem('has_shown_auth_prompt');
+        if (hasShown) return;
+
+        // Check if user is already logged in
+        if (auth.currentUser) return;
+
+        // Show the auth modal
+        setShowAuthModal(true);
+        setHasShownAuthPrompt(true);
+
+        // Mark that we've shown the prompt
+        await AsyncStorage.setItem('has_shown_auth_prompt', 'true');
+      } catch (error) {
+        logger.error('Error checking auth prompt:', error);
+      }
+    };
+
+    checkAndShowAuthPrompt();
+  }, []);
+
+  const handleAuthSuccess = () => {
+    setShowAuthModal(false);
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     try {
       // Clear all caches first
       await Promise.all([
         AsyncStorage.removeItem(CACHE_KEYS.TRENDING_RECENT),
-        AsyncStorage.removeItem(CACHE_KEYS.NEW_EPISODES)
+        AsyncStorage.removeItem(CACHE_KEYS.NEW_EPISODES),
+        AsyncStorage.removeItem(CACHE_KEYS.LATEST_COMPLETED),
+        AsyncStorage.removeItem(CACHE_KEYS.NEW_RELEASES)
       ]);
       // Fetch fresh data
       await fetchAnime(true);
@@ -627,11 +759,17 @@ export default function Home() {
     if (!trendingAnime.length) return;
 
     const nextIndex = (currentIndex + 1) % trendingAnime.length;
-    flatListRef.current?.scrollToIndex({
-      index: nextIndex,
-      animated: true
-    });
-    setCurrentIndex(nextIndex);
+    if (flatListRef.current) {
+      if (nextIndex === 0) {
+        // When looping back to first item, disable animation for smooth transition
+        flatListRef.current.scrollToOffset({ offset: 0, animated: false });
+      } else {
+        // Calculate the exact offset for perfect centering
+        const offset = (ITEM_WIDTH + ITEM_SPACING) * nextIndex;
+        flatListRef.current.scrollToOffset({ offset, animated: true });
+      }
+      setCurrentIndex(nextIndex);
+    }
   }, [currentIndex, trendingAnime.length]);
 
   // Setup auto sliding
@@ -640,7 +778,7 @@ export default function Home() {
       clearTimeout(timeoutRef.current);
     }
 
-    timeoutRef.current = setTimeout(goToNextSlide, 3000); // Changed from 7000 to 4000 for 4 seconds
+    timeoutRef.current = setTimeout(goToNextSlide, 4000);
 
     return () => {
       if (timeoutRef.current) {
@@ -649,54 +787,107 @@ export default function Home() {
     };
   }, [currentIndex, goToNextSlide]);
 
-  // Handle manual scroll end
+  // Handle manual scroll end with improved logic
   const handleScrollEnd = useCallback((event: any) => {
-    const slideSize = event.nativeEvent.layoutMeasurement.width;
-    const offset = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offset / slideSize);
+    if (!trendingAnime.length) return;
     
-    setCurrentIndex(index);
-  }, []);
+    const offsetX = event.nativeEvent.contentOffset.x;
+    const index = Math.round(offsetX / (ITEM_WIDTH + ITEM_SPACING));
+    
+    // Ensure index is within bounds
+    const boundedIndex = Math.max(0, Math.min(index, trendingAnime.length - 1));
+    setCurrentIndex(boundedIndex);
+    
+    // Reset timer when user manually scrolls
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(goToNextSlide, 4000);
+    }
+  }, [trendingAnime.length, goToNextSlide]);
 
+  // Completely redesigned trending item renderer
   const renderTrendingItem = ({ item, index }: { item: AnimeItem; index: number }) => {
-    const inputRange = [
-      (index - 1) * ITEM_WIDTH,
-      index * ITEM_WIDTH,
-      (index + 1) * ITEM_WIDTH,
-    ];
-
-    const scale = scrollX.interpolate({
-      inputRange,
-      outputRange: [0.9, 1, 0.9],
-    });
-
-    const opacity = scrollX.interpolate({
-      inputRange,
-      outputRange: [0.6, 1, 0.6],
-    });
-
+    const isCurrentItem = index === currentIndex;
+    
     return (
-      <Animated.View style={[styles.trendingCard, { transform: [{ scale }], opacity }]}>
-        <TouchableOpacity
-          onPress={() => router.push({
-            pathname: "/anime/[id]",
-            params: { id: item.id }
-          })}
-        >
-          <Image 
-            source={{ uri: item.banner || item.image }} 
-            style={styles.trendingImage} 
-          />
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.9)']}
-            style={styles.gradient}
-          >
-            <View>
-              <Text style={styles.trendingTitle} numberOfLines={2}>{item.title}</Text>
+      <TouchableOpacity 
+        style={[
+          styles.trendingCard,
+          isCurrentItem && styles.trendingCardActive
+        ]}
+        activeOpacity={0.9}
+        onPress={() => router.push({
+          pathname: "/anime/[id]",
+          params: { id: item.id }
+        })}
+      >
+        <Image 
+          source={{ uri: item.banner || item.image }} 
+          style={styles.trendingImage} 
+          resizeMode="cover"
+        />
+        
+        {/* Overlay gradient for better text visibility */}
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.9)']}
+          style={styles.trendingGradient}
+        />
+        
+        {/* Content container */}
+        <View style={styles.trendingContent}>
+          {/* Title and metadata */}
+          <View style={styles.trendingInfo}>
+            <Text style={styles.trendingTitle} numberOfLines={2}>{item.title}</Text>
+            
+            {/* Japanese Title if available */}
+            {item.japaneseTitle ? (
+              <Text style={styles.japaneseTitleText} numberOfLines={1}>{item.japaneseTitle}</Text>
+            ) : null}
+            
+            <View style={styles.trendingMeta}>
+              {/* Type badge */}
+              {item.type ? (
+                <View style={styles.typeBadge}>
+                  <Text style={styles.typeBadgeText}>{item.type}</Text>
+                </View>
+              ) : null}
+              
+              {/* Year */}
+              {item.releaseDate ? (
+                <Text style={styles.yearText}>{item.releaseDate}</Text>
+              ) : null}
+              
+              {/* Episodes with Sub/Dub indicators */}
+              <View style={styles.episodeInfo}>
+                {item.sub && item.sub > 0 ? (
+                  <View style={styles.langContainer}>
+                    <MaterialIcons name="subtitles" size={16} color="#fff" />
+                    <Text style={styles.episodeText}>{item.sub}</Text>
+                  </View>
+                ) : null}
+                
+                {item.dub && item.dub > 0 ? (
+                  <View style={styles.langContainer}>
+                    <MaterialCommunityIcons name="microphone" size={16} color="#fff" />
+                    <Text style={styles.episodeText}>{item.dub}</Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
-          </LinearGradient>
-        </TouchableOpacity>
-      </Animated.View>
+            
+            {/* Genres */}
+            {item.genres && item.genres.length > 0 ? (
+              <View style={styles.genreContainer}>
+                {item.genres.slice(0, 3).map((genre, idx) => (
+                  <View key={idx} style={styles.genrePill}>
+                    <Text style={styles.genreText}>{genre}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        </View>
+      </TouchableOpacity>
     );
   };
 
@@ -716,6 +907,7 @@ export default function Home() {
         >
           <View>
             <Text style={styles.animeName} numberOfLines={2}>{item.title}</Text>
+            {item.type ? <Text style={styles.animeType}>{item.type}</Text> : null}
           </View>
         </LinearGradient>
       </TouchableOpacity>
@@ -745,6 +937,11 @@ export default function Home() {
 
   return (
     <View style={styles.container}>
+      <AuthModal 
+        isVisible={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onAuthSuccess={handleAuthSuccess}
+      />
       {showUpdateBanner && updateInfo && (
         <TouchableOpacity 
           style={styles.updateBanner}
@@ -797,49 +994,62 @@ export default function Home() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f4511e" />
         }
       >
-        {/* Trending Section */}
+        {/* Redesigned Trending Section */}
         <View style={styles.trendingSection}>
-          <Text style={styles.sectionTitle}>Trending Now</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Trending Now</Text>
+          </View>
+          
           {loading ? (
             <ActivityIndicator size="large" color="#f4511e" />
           ) : trendingAnime && trendingAnime.length > 0 ? (
-            <>
-              <Animated.FlatList
+            <View>
+              {/* Main carousel without dots */}
+              <FlatList
                 ref={flatListRef}
                 data={trendingAnime}
-                renderItem={renderTrendingItem}
+                renderItem={({ item, index }) => (
+                  <View style={{ 
+                    width: ITEM_WIDTH,
+                    marginHorizontal: ITEM_SPACING / 2, // Half spacing on each side
+                  }}>
+                    {renderTrendingItem({ item, index })}
+                  </View>
+                )}
                 keyExtractor={(item) => item.id}
                 horizontal
+                pagingEnabled={false}
                 showsHorizontalScrollIndicator={false}
-                snapToInterval={ITEM_WIDTH}
+                snapToInterval={ITEM_WIDTH + ITEM_SPACING} // Include spacing in snap calculation
                 decelerationRate="fast"
-                contentContainerStyle={styles.trendingList}
-                onScroll={Animated.event(
-                  [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-                  { useNativeDriver: true }
-                )}
+                snapToAlignment="center"
                 onMomentumScrollEnd={handleScrollEnd}
                 getItemLayout={(data, index) => ({
-                  length: ITEM_WIDTH,
-                  offset: ITEM_WIDTH * index,
+                  length: ITEM_WIDTH + ITEM_SPACING,
+                  offset: (ITEM_WIDTH + ITEM_SPACING) * index,
                   index,
                 })}
-                snapToAlignment="center"
-                pagingEnabled
+                contentContainerStyle={{
+                  paddingHorizontal: ITEM_MARGIN - (ITEM_SPACING / 2) // Adjust for item spacing
+                }}
+                initialScrollIndex={0}
+                onScrollToIndexFailed={(info) => {
+                  const wait = new Promise(resolve => setTimeout(resolve, 500));
+                  wait.then(() => {
+                    if (flatListRef.current) {
+                      flatListRef.current.scrollToIndex({ index: info.index, animated: true });
+                    }
+                  });
+                }}
               />
-              {/* Dots indicator */}
-              <View style={styles.dotsContainer}>
-                {trendingAnime.map((_, index) => (
-                  <View
-                    key={index}
-                    style={[
-                      styles.dot,
-                      { backgroundColor: index === currentIndex ? '#f4511e' : '#666' }
-                    ]}
-                  />
-                ))}
+              
+              {/* Optional: Visual indicator for position/total */}
+              <View style={styles.carouselIndicator}>
+                <Text style={styles.carouselIndicatorText}>
+                  {currentIndex + 1}/{trendingAnime.length}
+                </Text>
               </View>
-            </>
+            </View>
           ) : (
             <Text style={styles.noDataText}>No trending anime available</Text>
           )}
@@ -867,7 +1077,7 @@ export default function Home() {
         </View>
 
         {/* Recent Anime Section */}
-        <View style={[styles.section, { marginBottom: 100 }]}>
+        <View style={[styles.section, { marginBottom: 16 }]}>
           <Text style={styles.sectionTitle}>Recent Anime</Text>
           {loading ? (
             <ActivityIndicator size="large" color="#f4511e" />
@@ -884,6 +1094,51 @@ export default function Home() {
             <Text style={styles.noDataText}>No recent anime available</Text>
           )}
         </View>
+
+        {/* Latest Completed Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Latest Completed</Text>
+          {loading ? (
+            <ActivityIndicator size="large" color="#f4511e" />
+          ) : latestCompleted && latestCompleted.length > 0 ? (
+            <FlatList
+              data={latestCompleted}
+              renderItem={renderAnimeCard}
+              keyExtractor={(item) => item.id}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.listContainer}
+            />
+          ) : (
+            <Text style={styles.noDataText}>No latest completed anime available</Text>
+          )}
+        </View>
+
+        {/* New Releases Section */}
+        <View style={[styles.section, { marginBottom: 16 }]}>
+          <Text style={styles.sectionTitle}>New Releases</Text>
+          {loading ? (
+            <ActivityIndicator size="large" color="#f4511e" />
+          ) : newReleases && newReleases.length > 0 ? (
+            <FlatList
+              data={newReleases}
+              renderItem={renderAnimeCard}
+              keyExtractor={(item) => item.id}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.listContainer}
+            />
+          ) : (
+            <Text style={styles.noDataText}>No new releases available</Text>
+          )}
+        </View>
+
+        {/* Footer */}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            Made with <Text style={styles.heartText}>❤️</Text> by AniSurge team
+          </Text>
+        </View>
       </ScrollView>
     </View>
   );
@@ -895,43 +1150,149 @@ const styles = StyleSheet.create({
     backgroundColor: '#121212',
   },
   trendingSection: {
-    paddingVertical: 8,
+    paddingTop: 16,
+    paddingBottom: 8,
   },
   section: {
     paddingVertical: 16,
+  },
+  sectionHeader: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 16,
-    paddingHorizontal: 16,
   },
-  trendingList: {
-    paddingHorizontal: ITEM_SPACING / 2,
+  trendingListContainer: {
+    paddingHorizontal: ITEM_MARGIN // Equal padding on both sides
   },
   trendingCard: {
     width: ITEM_WIDTH,
-    height: ITEM_WIDTH * 0.5625,
+    height: ITEM_WIDTH * 0.5625, // 16:9 aspect ratio
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#1a1a1a',
     elevation: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
   trendingImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
+  },
+  trendingGradient: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '70%',
+  },
+  trendingContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 12,
+  },
+  trendingInfo: {
+    justifyContent: 'flex-end',
   },
   trendingTitle: {
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
+    marginBottom: 2,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  japaneseTitleText: {
+    color: '#ddd',
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginBottom: 6,
+  },
+  trendingMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    flexWrap: 'wrap',
+  },
+  typeBadge: {
+    backgroundColor: '#f4511e',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  typeBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  yearText: {
+    color: '#ccc',
+    fontSize: 12,
+    marginRight: 12,
+  },
+  episodeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  langContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  episodeText: {
+    color: '#fff',
+    fontSize: 12,
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  genreContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  genrePill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    marginRight: 6,
     marginBottom: 4,
+  },
+  genreText: {
+    color: '#fff',
+    fontSize: 11,
+  },
+  carouselIndicator: {
+    position: 'absolute',
+    right: 24,
+    bottom: 12,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  carouselIndicatorText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  trendingCardActive: {
+    // Optional: Add a subtle indicator for the active card
+    borderWidth: 2,
+    borderColor: '#f4511e',
   },
   listContainer: {
     paddingHorizontal: 16,
@@ -972,27 +1333,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 4,
   },
-  episodeInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  episodeText: {
-    color: '#fff',
+  animeType: {
+    color: '#ccc',
     fontSize: 12,
-    marginLeft: 4,
-    opacity: 0.8,
-  },
-  dotsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginHorizontal: 4,
+    fontWeight: '500',
   },
   bookmarkButton: {
     position: 'absolute',
@@ -1033,5 +1377,19 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  footer: {
+    paddingVertical: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  footerText: {
+    color: '#9e9e9e',
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  heartText: {
+    color: '#f4511e',
   },
 }); 

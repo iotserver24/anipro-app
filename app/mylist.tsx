@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Alert, ActivityIndicator, RefreshControl } from 'react-native';
 import { useState, useEffect } from 'react';
 import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -15,15 +15,33 @@ type MyListAnime = {
 
 export default function MyList() {
   const { myList, removeAnime, initializeStore } = useMyListStore();
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
+    // Start loading data immediately
     const init = async () => {
-      await initializeStore();
-      setLoading(false);
+      try {
+        await initializeStore();
+      } catch (error) {
+        console.error('Error initializing my list:', error);
+      } finally {
+        setInitialLoading(false);
+      }
     };
     init();
   }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await initializeStore();
+    } catch (error) {
+      console.error('Error refreshing my list:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const removeFromList = async (animeId: string) => {
     Alert.alert(
@@ -75,7 +93,7 @@ export default function MyList() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>My List</Text>
-      {loading ? (
+      {initialLoading && myList.length === 0 ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#f4511e" />
         </View>
@@ -97,6 +115,14 @@ export default function MyList() {
           keyExtractor={(item) => item.id}
           numColumns={2}
           contentContainerStyle={styles.listContainer}
+          refreshControl={
+            <RefreshControl 
+              refreshing={refreshing} 
+              onRefresh={onRefresh}
+              colors={['#f4511e']}
+              tintColor="#f4511e"
+            />
+          }
         />
       )}
     </View>

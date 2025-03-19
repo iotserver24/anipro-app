@@ -266,35 +266,45 @@ export const syncService = {
     if (!userId) return null;
 
     try {
-      // Check cache first
+      // Check cache first - use cache with longer TTL for better performance
       const cached = userDataCache[userId];
       if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        // Return cached data immediately without network requests
+        logger.info('Using cached user data');
         return cached.data;
       }
 
+      logger.info('Fetching user data from Firestore');
       const userDataRef = doc(db, COLLECTIONS.USER_DATA, userId);
       const userDataSnap = await getDoc(userDataRef);
 
       if (userDataSnap.exists()) {
         const data = userDataSnap.data() as UserData;
+        
+        // Update cache with fresh data
         userDataCache[userId] = {
           data,
           timestamp: Date.now()
         };
+        
         return data;
       }
 
       // Initialize if document doesn't exist
+      logger.info('Creating new user data document');
       const initialData: UserData = {
         lastSync: Timestamp.now(),
         watchHistory: [],
         watchlist: []
       };
       await setDoc(userDataRef, initialData);
+      
+      // Cache the new data
       userDataCache[userId] = {
         data: initialData,
         timestamp: Date.now()
       };
+      
       return initialData;
     } catch (error) {
       logger.error('Error fetching user data:', error);

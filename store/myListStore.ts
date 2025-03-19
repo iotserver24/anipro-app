@@ -24,27 +24,40 @@ export const useMyListStore = create<MyListStore>((set, get) => ({
 
   initializeStore: async () => {
     try {
-      // Try to fetch from Firestore first
-      const userData = await syncService.fetchUserData();
-      if (userData?.watchlist) {
-        const watchlist = userData.watchlist;
-        set({
-          myList: watchlist,
-          bookmarkedIds: new Set(watchlist.map(item => item.id))
-        });
-        return;
-      }
-
-      // Fallback to local storage
+      // PERFORMANCE OPTIMIZATION: Always load local data first for immediate display
       const savedList = await getItem<MyListAnime[]>(STORAGE_KEY);
-      if (savedList) {
+      if (savedList && savedList.length > 0) {
         set({
           myList: savedList,
           bookmarkedIds: new Set(savedList.map(item => item.id))
         });
       }
+
+      // Only try to fetch from Firestore if user is authenticated
+      if (auth.currentUser) {
+        // Fetch data from Firestore in background
+        const userId = auth.currentUser.uid;
+        const userData = await syncService.fetchUserData();
+        
+        if (userData?.watchlist) {
+          const watchlist = userData.watchlist;
+          // Only update if the cloud data is different from what we already have
+          const currentList = JSON.stringify(get().myList);
+          const cloudList = JSON.stringify(watchlist);
+          
+          if (currentList !== cloudList) {
+            set({
+              myList: watchlist,
+              bookmarkedIds: new Set(watchlist.map(item => item.id))
+            });
+            // Update local storage with cloud data
+            await setItem(STORAGE_KEY, watchlist);
+          }
+        }
+      }
     } catch (error) {
       logger.error('Error initializing my list store:', error);
+      // If there was an error fetching, we already have local data displayed
     }
   },
 
@@ -52,15 +65,17 @@ export const useMyListStore = create<MyListStore>((set, get) => ({
     try {
       const { myList, bookmarkedIds } = get();
       if (!bookmarkedIds.has(anime.id)) {
-        const newList = [...myList, { ...anime, addedAt: Date.now() }];
+        // Add addedAt property to the anime object
+        const animeWithTimestamp = { ...anime, addedAt: Date.now() };
+        const newList = [...myList, animeWithTimestamp];
         
         // Only update if the list has actually changed
         if (JSON.stringify(newList) !== JSON.stringify(myList)) {
           // Save to local storage
           await setItem(STORAGE_KEY, newList);
           
-          // Sync with Firestore
-          await syncService.addToWatchlist(anime);
+          // Sync with Firestore - pass the object with addedAt timestamp
+          await syncService.addToWatchlist(animeWithTimestamp);
           
           set({
             myList: newList,
