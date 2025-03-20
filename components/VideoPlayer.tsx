@@ -393,7 +393,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     try {
       const newIsPlaying = !isPlaying;
       requestAnimationFrame(() => {
-        setIsPlaying(newIsPlaying);
+      setIsPlaying(newIsPlaying);
       });
       
       if (videoRef.current) {
@@ -403,7 +403,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           await videoRef.current.pauseAsync();
         }
       }
-        } catch (error) {
+    } catch (error) {
       console.error('Error toggling play/pause:', error);
       // Revert state on error
       requestAnimationFrame(() => {
@@ -470,7 +470,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }
       
       // Reset flag after shorter delay
-      setTimeout(() => {
+            setTimeout(() => {
         isOrientationChangingRef.current = false;
       }, 250);
       
@@ -573,7 +573,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         try {
           await videoRef.current.setPositionAsync(initialPosition * 1000);
           setIsReady(true);
-        } catch (error) {
+      } catch (error) {
           console.error('Error seeking to initial position:', error);
           setIsReady(true);
         }
@@ -592,7 +592,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         videoRef.current?.setPositionAsync(savedQualityPosition * 1000)
           .then(() => {
             // Resume playback if it was playing before
-            if (isPlaying) {
+        if (isPlaying) {
               videoRef.current?.playAsync().catch(console.error);
             }
           })
@@ -605,11 +605,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Handle video load
   const handleLoad = async (status: AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
-    
-    const videoDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
-    setDuration(videoDuration);
-    
+      if (!status.isLoaded) return;
+      
+      const videoDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
+      setDuration(videoDuration);
+      
     // Reset end of video flag on new load
     didCompletePlaybackRef.current = false;
     
@@ -622,7 +622,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         if (isPlaying) {
           await videoRef.current?.playAsync();
         }
-      } catch (error) {
+          } catch (error) {
         console.error('Error seeking after quality change:', error);
       }
     } else if (initialPosition > 0 && !isReady) {
@@ -630,20 +630,20 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         await videoRef.current?.setPositionAsync(initialPosition * 1000);
         setCurrentTime(initialPosition);
         
-        if (isPlaying) {
+            if (isPlaying) {
           await videoRef.current?.playAsync();
-        }
-        
-        setIsReady(true);
-      } catch (error) {
+            }
+            
+            setIsReady(true);
+          } catch (error) {
         console.error('Error seeking to initial position:', error);
-        setIsReady(true);
+            setIsReady(true);
       }
     }
     
     // Call parent's onLoad callback
-    if (onLoad) {
-      onLoad(status);
+      if (onLoad) {
+        onLoad(status);
     }
   };
 
@@ -685,7 +685,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       styles.container,
       isFullscreen && styles.fullscreenContainer,
       style,
-      {
+      { 
         width: dimensions.width,
         height: dimensions.height,
         backgroundColor: '#000',
