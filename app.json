@@ -29,10 +29,7 @@
               "pathPrefix": "/anime/watch"
             }
           ],
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "category": ["BROWSABLE", "DEFAULT"]
         }
       ],
       "package": "com.anisurge.app",
@@ -76,8 +73,14 @@
       [
         "react-native-video",
         {
-          "androidPackage": "com.android.exoplayer2",
-          "enableAndroidBufferOptimizations": true
+          "enableAndroidPictureInPicture": true,
+          "enableNotificationControls": false,
+          "androidExtensions": {
+            "useExoplayerRtsp": false,
+            "useExoplayerSmoothStreaming": true,
+            "useExoplayerHls": true,
+            "useExoplayerDash": false
+          }
         }
       ],
       [
