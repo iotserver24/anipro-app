@@ -1747,54 +1747,21 @@ export default function WatchEpisode() {
 
                 {/* Episodes */}
                 <View style={styles.episodeSection}>
-                  <Text style={styles.sectionTitle}>Episodes</Text>
+                  <Text style={styles.sectionTitle}>
+                    {categoryAsSubOrDub === 'dub' ? 'Dubbed Episodes' : 'Subbed Episodes'}
+                  </Text>
                   
-                  {/* Add Audio Selector */}
-                  <View style={styles.audioSelector}>
-                    <TouchableOpacity 
-                      style={[styles.audioOption, categoryAsSubOrDub === 'sub' && styles.selectedAudio]}
-                      onPress={() => {
-                        const newCategory = 'sub';
-                        if (categoryAsSubOrDub !== newCategory) {
-                          setFilteredEpisodes(sortEpisodesByProximity(
-                            episodes.filter(ep => ep.isSubbed),
-                            episodeId as string
-                          ));
-                          router.setParams({ category: newCategory });
-                        }
-                      }}
-                    >
-                      <MaterialIcons 
-                        name="subtitles" 
-                        size={20} 
-                        color={categoryAsSubOrDub === 'sub' ? '#fff' : '#666'} 
-                      />
-                      <Text style={[styles.audioText, categoryAsSubOrDub === 'sub' && styles.selectedAudioText]}>
-                        Sub ({episodes.filter(ep => ep.isSubbed).length})
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      style={[styles.audioOption, categoryAsSubOrDub === 'dub' && styles.selectedAudio]}
-                      onPress={() => {
-                        const newCategory = 'dub';
-                        if (categoryAsSubOrDub !== newCategory) {
-                          setFilteredEpisodes(sortEpisodesByProximity(
-                            episodes.filter(ep => ep.isDubbed),
-                            episodeId as string
-                          ));
-                          router.setParams({ category: newCategory });
-                        }
-                      }}
-                    >
-                      <MaterialIcons 
-                        name="record-voice-over" 
-                        size={20} 
-                        color={categoryAsSubOrDub === 'dub' ? '#fff' : '#666'} 
-                      />
-                      <Text style={[styles.audioText, categoryAsSubOrDub === 'dub' && styles.selectedAudioText]}>
-                        Dub ({episodes.filter(ep => ep.isDubbed).length})
-                      </Text>
-                    </TouchableOpacity>
+                  {/* Remove the audio selector and replace with a simple status indicator */}
+                  <View style={styles.audioStatusContainer}>
+                    <MaterialIcons 
+                      name={categoryAsSubOrDub === 'dub' ? "record-voice-over" : "subtitles"} 
+                      size={20} 
+                      color="#f4511e" 
+                    />
+                    <Text style={styles.audioStatusText}>
+                      {categoryAsSubOrDub === 'dub' ? 'English Dub' : 'Original with Subtitles'}
+                      {' '}({filteredEpisodes.length} episodes)
+                    </Text>
                   </View>
 
                   {/* Search Bar */}
@@ -2230,6 +2197,20 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 14,
     textAlign: 'center',
+  },
+  audioStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  audioStatusText: {
+    color: '#fff',
+    fontSize: 14,
+    marginLeft: 8,
+    fontWeight: '500',
   },
   audioSelector: {
     flexDirection: 'row',

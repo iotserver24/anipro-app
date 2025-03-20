@@ -15,6 +15,9 @@ import {
   setDoc,
   writeBatch
 } from 'firebase/firestore';
+import { getCurrentUser } from './userService';
+import { logger } from '../utils/logger';
+import { AVATARS, getAvatarById } from '../constants/avatars';
 
 // Comment type definition
 export type Comment = {
@@ -66,7 +69,7 @@ export const addComment = async (comment: Omit<Comment, 'id' | 'likes' | 'create
 };
 
 // Get comments for a specific anime
-export const getAnimeComments = async (animeId: string) => {
+export const getAnimeComments = async (animeId: string): Promise<Comment[]> => {
   try {
     const commentsQuery = query(
       collection(db, 'comments'),
@@ -74,16 +77,90 @@ export const getAnimeComments = async (animeId: string) => {
       orderBy('createdAt', 'desc')
     );
     
-    const querySnapshot = await getDocs(commentsQuery);
+    const snapshot = await getDocs(commentsQuery);
     const comments: Comment[] = [];
     
-    querySnapshot.forEach((doc) => {
-      comments.push({ id: doc.id, ...doc.data() } as Comment);
+    // Track which users we need to update avatars for
+    const userAvatarsToUpdate: {[key: string]: {
+      commentIds: string[],
+      oldAvatar: string | undefined,
+      newAvatar: string | null
+    }} = {};
+    
+    // First pass: collect all comments and identify users whose avatars need updating
+    snapshot.forEach(doc => {
+      const data = doc.data() as Comment;
+      const comment = {
+        ...data,
+        id: doc.id
+      };
+      
+      // Add to comment list
+      comments.push(comment);
+      
+      // Check if we need to update this user's avatar in comments
+      if (comment.userId && !userAvatarsToUpdate[comment.userId]) {
+        userAvatarsToUpdate[comment.userId] = {
+          commentIds: [doc.id],
+          oldAvatar: comment.userAvatar,
+          newAvatar: null // Will be fetched later
+        };
+      } else if (comment.userId) {
+        userAvatarsToUpdate[comment.userId].commentIds.push(doc.id);
+      }
     });
+    
+    // Second pass: fetch latest avatars for users (in parallel)
+    const userIds = Object.keys(userAvatarsToUpdate);
+    await Promise.all(
+      userIds.map(async (userId) => {
+        const latestAvatar = await getLatestUserAvatar(userId);
+        if (latestAvatar) {
+          userAvatarsToUpdate[userId].newAvatar = latestAvatar;
+        }
+      })
+    );
+    
+    // Third pass: update comments with new avatars and queue Firestore updates
+    const updates: Promise<void>[] = [];
+    for (const userId in userAvatarsToUpdate) {
+      const { commentIds, oldAvatar, newAvatar } = userAvatarsToUpdate[userId];
+      
+      // Only update if we have a new avatar and it's different from the old one
+      if (newAvatar && newAvatar !== oldAvatar) {
+        // Update in-memory comments
+        comments.forEach(comment => {
+          if (comment.userId === userId) {
+            comment.userAvatar = newAvatar;
+          }
+        });
+        
+        // Queue Firestore updates (but don't wait for them)
+        commentIds.forEach(commentId => {
+          updates.push(
+            updateDoc(doc(db, 'comments', commentId), {
+              userAvatar: newAvatar
+            }).catch(err => {
+              logger.warn('commentService', `Failed to update avatar for comment ${commentId}: ${err}`);
+            })
+          );
+        });
+      }
+    }
+    
+    // Start updates but don't wait for them (to keep UI responsive)
+    if (updates.length > 0) {
+      logger.info('commentService', `Updating avatars for ${updates.length} comments in background`);
+      Promise.all(updates).then(() => {
+        logger.info('commentService', 'Avatar updates completed successfully');
+      }).catch(error => {
+        logger.error('commentService', `Error updating comment avatars: ${error}`);
+      });
+    }
     
     return comments;
   } catch (error) {
-    console.error('Error fetching comments:', error);
+    logger.error('commentService', `Error fetching comments: ${error}`);
     throw error;
   }
 };
@@ -340,5 +417,22 @@ export const migrateCommentsWithAvatars = async () => {
   } catch (error) {
     console.error('[AvatarMigration] Error in comment avatar migration:', error);
     return { success: false, error };
+  }
+};
+
+// Add a function to fetch the latest avatar for a user
+export const getLatestUserAvatar = async (userId: string): Promise<string | null> => {
+  try {
+    const userDoc = await getDoc(doc(db, 'users', userId));
+    if (!userDoc.exists()) return null;
+    
+    const userData = userDoc.data();
+    if (!userData.avatarId) return null;
+    
+    // Get the latest avatar URL
+    return await getAvatarById(userData.avatarId);
+  } catch (error) {
+    logger.error('commentService', `Error getting latest avatar: ${error}`);
+    return null;
   }
 }; 

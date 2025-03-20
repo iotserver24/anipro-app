@@ -18,6 +18,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { AVATARS, getAvatarById } from '../constants/avatars';
 import { logger } from '../utils/logger';
+import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 
 type UserData = {
   username: string;
@@ -37,6 +38,8 @@ export default function ProfileScreen() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
+  const [commentCount, setCommentCount] = useState<number | null>(null);
+  const [commentLoading, setCommentLoading] = useState(false);
 
   useEffect(() => {
     checkAuthStatus();
@@ -48,6 +51,35 @@ export default function ProfileScreen() {
       fetchAvatarUrl(userData.avatarId);
     }
   }, [userData]);
+
+  // Add useEffect to fetch comment count
+  useEffect(() => {
+    const fetchCommentCount = async () => {
+      if (!authenticated || !getCurrentUser()) return;
+      
+      const userId = getCurrentUser()?.uid;
+      if (!userId) return;
+      
+      setCommentLoading(true);
+      try {
+        const commentsQuery = query(
+          collection(db, 'comments'),
+          where('userId', '==', userId),
+          limit(100) // We just want to count, not fetch all
+        );
+        
+        const commentsSnapshot = await getDocs(commentsQuery);
+        setCommentCount(commentsSnapshot.size);
+        logger.info('ProfileScreen', `Comment count fetched: ${commentsSnapshot.size}`);
+      } catch (error) {
+        logger.error('ProfileScreen', `Error fetching comment count: ${error}`);
+      } finally {
+        setCommentLoading(false);
+      }
+    };
+    
+    fetchCommentCount();
+  }, [authenticated]);
 
   const fetchAvatarUrl = async (avatarId: string) => {
     setAvatarLoading(true);
@@ -250,6 +282,17 @@ export default function ProfileScreen() {
             <Text style={styles.infoValue}>
               {userData.createdAt?.toDate().toLocaleDateString() || 'Unknown'}
             </Text>
+          </View>
+
+          <View style={styles.infoSection}>
+            <Text style={styles.infoLabel}>Comments Posted</Text>
+            {commentLoading ? (
+              <ActivityIndicator size="small" color="#f4511e" />
+            ) : (
+              <Text style={styles.infoValue}>
+                {commentCount !== null ? commentCount : 'Loading...'}
+              </Text>
+            )}
           </View>
 
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>

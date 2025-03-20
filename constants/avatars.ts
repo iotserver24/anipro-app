@@ -1,4 +1,5 @@
 import { ImageSourcePropType } from 'react-native';
+import { logger } from '../utils/logger';
 
 export interface Avatar {
   id: string;
@@ -46,7 +47,7 @@ export let AVATARS: Avatar[] = [...DEFAULT_AVATARS];
 // Function to fetch avatars from remote source
 export const fetchAvatars = async (): Promise<Avatar[]> => {
   try {
-    console.log('Fetching avatars from API...');
+    logger.info('Avatars', 'Fetching avatars from API...');
     // Use the anisurge.me API endpoint to fetch avatars
     // The /list endpoint is a special case handler in the [id]/route.ts file
     const response = await fetch('https://anisurge.me/api/avatars/list');
@@ -71,20 +72,20 @@ export const fetchAvatars = async (): Promise<Avatar[]> => {
       
       if (validAvatars.length > 0) {
         AVATARS = validAvatars;
-        console.log('Successfully fetched avatars from server:', AVATARS.length);
+        logger.info('Avatars', `Successfully fetched ${AVATARS.length} avatars from server`);
         return validAvatars;
       } else {
-        console.warn('No valid avatars in response, using defaults');
+        logger.warn('Avatars', 'No valid avatars in response, using defaults');
       }
     } else {
-      console.warn('Empty or invalid avatar list received, using defaults');
+      logger.warn('Avatars', 'Empty or invalid avatar list received, using defaults');
     }
     
     return DEFAULT_AVATARS;
   } catch (error) {
-    console.error('Error fetching avatars:', error);
+    logger.error('Avatars', `Error fetching avatars: ${error}`);
     // Keep using default avatars if fetch fails
-    console.warn('Using default avatars due to fetch error');
+    logger.warn('Avatars', 'Using default avatars due to fetch error');
     return DEFAULT_AVATARS;
   }
 };
@@ -94,20 +95,24 @@ export const getAvatarById = async (avatarId: string): Promise<string> => {
   // First try to find it in the local AVATARS array
   const localAvatar = AVATARS.find(a => a.id === avatarId);
   if (localAvatar) {
+    logger.debug('Avatars', `Found avatar ${avatarId} in local cache`);
     return localAvatar.url;
   }
   
   // If not found locally, try to fetch from API
   try {
+    logger.info('Avatars', `Avatar ${avatarId} not found locally, fetching from API`);
     const avatars = await fetchAvatars();
     const avatar = avatars.find(a => a.id === avatarId);
     if (avatar) {
+      logger.info('Avatars', `Successfully fetched avatar ${avatarId} from API`);
       return avatar.url;
     }
   } catch (error) {
-    console.warn('Error fetching avatar by ID:', error);
+    logger.warn('Avatars', `Error fetching avatar ${avatarId}: ${error}`);
   }
   
   // Default fallback
+  logger.warn('Avatars', `Could not find avatar ${avatarId}, using default`);
   return DEFAULT_AVATARS[0].url;
 }; 

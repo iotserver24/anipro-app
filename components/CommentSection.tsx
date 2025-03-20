@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,7 +12,9 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
-  RefreshControl
+  RefreshControl,
+  ToastAndroid,
+  Animated
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { 
@@ -29,6 +31,9 @@ import { db } from '../services/firebase';
 import AuthModal from './AuthModal';
 import { AVATARS } from '../constants/avatars';
 import { useFocusEffect } from '@react-navigation/native';
+import UserProfileModal from './UserProfileModal';
+import { migrateCommentsWithAvatars } from '../services/commentService';
+import { logger } from '../utils/logger';
 
 type CommentSectionProps = {
   animeId: string;
@@ -49,60 +54,82 @@ const CommentItem = ({
   isLiked: boolean;
 }) => {
   const [refreshedAvatarUrl, setRefreshedAvatarUrl] = useState<string | null>(null);
+  const [showUserProfile, setShowUserProfile] = useState(false);
   
-  // Attempt to refresh the avatar URL from the API when component mounts
-  useEffect(() => {
-    const refreshAvatarUrl = async () => {
-      if (!comment.userId) return;
-      
-      try {
-        // Try to get the user's current avatar
-        const userDoc = await getDoc(doc(db, 'users', comment.userId));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          const avatarId = userData.avatarId;
-          
-          if (avatarId) {
-            try {
-              // Try multiple domain patterns
-              const apiUrls = [
-                'https://anisurge.me/api/avatars/list',
-                'https://app.animeverse.cc/api/avatars/list',
-                'https://api.animeverse.cc/avatars/list'
-              ];
-              
-              for (const url of apiUrls) {
-                try {
-                  const avatarsResponse = await fetch(url, { 
-                    method: 'GET',
-                    headers: { 'Cache-Control': 'no-cache' } 
-                  });
-                  
-                  if (avatarsResponse.ok) {
-                    const avatars = await avatarsResponse.json();
-                    const avatar = avatars.find((a: any) => a.id === avatarId);
-                    if (avatar && avatar.url) {
-                      setRefreshedAvatarUrl(avatar.url);
-                      break;
-                    }
-                  }
-                } catch (urlError) {
-                  console.warn(`Failed to fetch from ${url}:`, urlError);
-                }
-              }
-            } catch (avatarError) {
-              console.warn('Error refreshing avatar URL:', avatarError);
-            }
-          }
-        }
-      } catch (error) {
-        console.warn('Error refreshing avatar from user doc:', error);
-      }
-    };
+  // Create animated value for press animation
+  const avatarScale = useRef(new Animated.Value(1)).current;
+  
+  // Handle profile click with enhanced logging
+  const handleProfileClick = () => {
+    // Animate avatar press
+    Animated.sequence([
+      Animated.timing(avatarScale, {
+        toValue: 0.9,
+        duration: 100,
+        useNativeDriver: true
+      }),
+      Animated.timing(avatarScale, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true
+      })
+    ]).start();
     
-    refreshAvatarUrl();
-  }, [comment.userId]);
+    logger.uiEvent('CommentItem', 'Profile clicked', { userId: comment.userId, username: comment.userName });
+    setShowUserProfile(true);
+  };
   
+  // Debug logging when profile modal visibility changes
+  useEffect(() => {
+    logger.debug('CommentItem', `Profile modal visibility changed for user ${comment.userId}`, { visible: showUserProfile });
+  }, [showUserProfile, comment.userId]);
+
+  const getAvatarUrl = useCallback(() => {
+    // First check if we have a refreshed avatar URL from a manual fetch
+    if (refreshedAvatarUrl) return { uri: refreshedAvatarUrl };
+    
+    // If the comment has an avatar URL, use it
+    if (comment.userAvatar) {
+      // If it's already a full URL, use it directly
+      if (comment.userAvatar.startsWith('http')) {
+        return { uri: comment.userAvatar };
+      }
+      
+      // Otherwise, try to resolve the avatar from our constants
+      try {
+        const avatarId = comment.userAvatar;
+        // Fix the typing issue by using find() instead of bracket notation
+        const avatarItem = Array.isArray(AVATARS) 
+          ? AVATARS.find(avatar => avatar.id === avatarId)
+          : null;
+        
+        // Fall back to default if not found
+        if (avatarItem) {
+          return { uri: avatarItem.url };
+        } else {
+          // Get the default avatar (first one in array)
+          const defaultAvatar = Array.isArray(AVATARS) && AVATARS.length > 0 
+            ? AVATARS[0] 
+            : { url: 'https://cdn.pixabay.com/photo/2016/08/08/09/17/avatar-1577909_1280.png' };
+          return { uri: defaultAvatar.url };
+        }
+      } catch (e) {
+        logger.warn('CommentItem', `Failed to load avatar for ${comment.userName}`, { avatarId: comment.userAvatar });
+        // Get the default avatar (first one in array)
+        const defaultAvatar = Array.isArray(AVATARS) && AVATARS.length > 0 
+          ? AVATARS[0] 
+          : { url: 'https://cdn.pixabay.com/photo/2016/08/08/09/17/avatar-1577909_1280.png' };
+        return { uri: defaultAvatar.url };
+      }
+    }
+    
+    // Fallback to default avatar
+    const defaultAvatar = Array.isArray(AVATARS) && AVATARS.length > 0 
+      ? AVATARS[0] 
+      : { url: 'https://cdn.pixabay.com/photo/2016/08/08/09/17/avatar-1577909_1280.png' };
+    return { uri: defaultAvatar.url };
+  }, [comment.userAvatar, refreshedAvatarUrl]);
+
   // Format the timestamp to a readable date
   const formatDate = (timestamp: Timestamp) => {
     const date = timestamp.toDate();
@@ -113,33 +140,31 @@ const CommentItem = ({
     });
   };
 
-  // Get avatar URL from avatarId or use default
-  const getAvatarUrl = () => {
-    // First try the refreshed URL
-    if (refreshedAvatarUrl) {
-      return { uri: refreshedAvatarUrl };
-    }
-    // Then try the stored URL
-    if (comment.userAvatar) {
-      return { uri: comment.userAvatar };
-    }
-    // Fallback to default avatar
-    return { uri: AVATARS[0].url };
-  };
-
   return (
     <View style={styles.commentItem}>
       <View style={styles.commentRow}>
-        <View style={styles.avatarContainer}>
-          <Image 
-            source={getAvatarUrl()} 
-            style={styles.avatar}
-            onError={() => console.warn('Failed to load comment avatar')}
-          />
-        </View>
+        <TouchableOpacity 
+          style={styles.avatarContainer}
+          onPress={handleProfileClick}
+          activeOpacity={0.7}
+        >
+          <Animated.View style={{ transform: [{ scale: avatarScale }] }}>
+            <Image 
+              source={getAvatarUrl()} 
+              style={styles.avatar}
+              onError={() => logger.warn('CommentItem', 'Failed to load comment avatar')}
+            />
+          </Animated.View>
+        </TouchableOpacity>
         <View style={styles.commentContent}>
           <View style={styles.commentHeader}>
-            <Text style={styles.userName}>{comment.userName}</Text>
+            <TouchableOpacity 
+              onPress={handleProfileClick}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Text style={styles.userName}>{comment.userName}</Text>
+            </TouchableOpacity>
             <Text style={styles.commentDate}>{formatDate(comment.createdAt)}</Text>
           </View>
           
@@ -165,6 +190,18 @@ const CommentItem = ({
           </View>
         </View>
       </View>
+      
+      {/* Add the UserProfileModal with improved props */}
+      {comment.userId && (
+        <UserProfileModal 
+          visible={Boolean(showUserProfile)}
+          onClose={() => {
+            logger.uiEvent('CommentItem', 'Closing profile modal', { userId: comment.userId });
+            setShowUserProfile(false);
+          }}
+          userId={comment.userId}
+        />
+      )}
     </View>
   );
 };
@@ -187,18 +224,17 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
   // Also load comments when the component comes into focus
   useFocusEffect(
     useCallback(() => {
-      console.log('CommentSection is focused - refreshing comments');
+      logger.info('CommentSection', 'Component focused - refreshing comments');
       loadComments();
       
       // We could also use this opportunity to trigger the avatar migration
       // if we want to ensure avatars are always up to date when viewing comments
       const triggerAvatarCheck = async () => {
         try {
-          // Dynamic import to prevent circular dependencies
-          const { migrateCommentsWithAvatars } = await import('../services/commentService');
+          // Use the directly imported function instead of dynamic import
           await migrateCommentsWithAvatars();
         } catch (error) {
-          console.warn('Failed to trigger avatar check on focus:', error);
+          logger.warn('CommentSection', `Failed to trigger avatar check on focus: ${error}`);
         }
       };
       
@@ -208,14 +244,14 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
       }
       
       return () => {
-        console.log('CommentSection is unfocused');
+        logger.info('CommentSection', 'Component unfocused');
       };
     }, [animeId])
   );
 
   // Function to load comments
   const loadComments = async () => {
-    if (loading) return; // Prevent multiple simultaneous loads
+    if (loading) return Promise.resolve(); // Prevent multiple simultaneous loads
     
     setLoading(true);
     try {
@@ -237,9 +273,12 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
         );
         setLikedComments(newLikedComments);
       }
+      
+      return fetchedComments; // Return the fetched comments for chaining
     } catch (error) {
       console.error('Error loading comments:', error);
       Alert.alert('Error', 'Failed to load comments. Please try again.');
+      return []; // Return empty array on error
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -397,10 +436,11 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
     }
   };
 
-  // Check if a comment belongs to the current user
-  const isCommentOwner = (userId: string) => {
+  // Update the isCommentOwner function to handle nullable userId values
+  const isCommentOwner = (userId: string | undefined | null): boolean => {
+    if (!userId) return false;
     const currentUser = getCurrentUser();
-    return currentUser && currentUser.uid === userId;
+    return Boolean(currentUser && currentUser.uid === userId);
   };
 
   // Handle pull-to-refresh
@@ -414,6 +454,28 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
     // Reload comments to update the UI with the new user state
     loadComments();
   };
+
+  // Show a tooltip occasionally to help users understand they can view profiles
+  const showProfileTooltip = useCallback(() => {
+    // Only show this tooltip occasionally (10% chance)
+    if (Math.random() < 0.1 && comments.length > 0) {
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Tap on avatar or username to view user profile', ToastAndroid.SHORT);
+      } else {
+        // For iOS or other platforms, we could use a custom toast component
+        // For now we'll just log it
+        logger.info('CommentSection', 'Tooltip: Tap on avatar or username to view user profile');
+      }
+    }
+  }, [comments.length]);
+
+  // Add to the useEffect that loads comments
+  useEffect(() => {
+    loadComments().then(() => {
+      // Show tooltip hint after comments are loaded
+      showProfileTooltip();
+    });
+  }, [animeId, forceRefresh, showProfileTooltip]);
 
   return (
     <KeyboardAvoidingView 
@@ -586,6 +648,12 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     marginRight: 12,
+    borderRadius: 20,
+    overflow: 'hidden',
+    width: 40,
+    height: 40,
+    borderWidth: 1,
+    borderColor: 'rgba(244, 81, 30, 0.3)',
   },
   avatar: {
     width: 40,
@@ -604,8 +672,9 @@ const styles = StyleSheet.create({
   },
   userName: {
     color: '#f4511e',
-    fontSize: 14,
     fontWeight: 'bold',
+    marginBottom: 4,
+    fontSize: 15,
   },
   commentDate: {
     color: '#666',
