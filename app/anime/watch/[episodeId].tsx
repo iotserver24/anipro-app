@@ -716,8 +716,12 @@ export default function WatchEpisode() {
     const enableKeepAwake = async () => {
       try {
         activateKeepAwake();
-      } catch (error) {
-        logger.error('Failed to activate keep awake:', error);
+      } catch (error: unknown) {
+        if (error instanceof Error) {
+          logger.error('Failed to activate keep awake:', error.message);
+        } else {
+          logger.error('Failed to activate keep awake:', String(error));
+        }
       }
     };
 
@@ -883,7 +887,7 @@ export default function WatchEpisode() {
       }
 
     } catch (error) {
-      logger.error('Error fetching episode:', error);
+      logger.error('Error fetching episode:', error as string);
       setError('Failed to load episode. Please try again.');
     } finally {
       setLoading(false);
@@ -928,7 +932,7 @@ export default function WatchEpisode() {
         setCurrentEpisodeIndex(index);
       }
     } catch (error) {
-      logger.error('Error fetching anime info:', error);
+      logger.error('Error fetching anime info:', error as string);
     }
   };
 
@@ -951,7 +955,7 @@ export default function WatchEpisode() {
         setIsVideoReady(true);
         //console.log('Video successfully seeked to resume position');
       } catch (err) {
-        logger.error('Error seeking to position:', err);
+        logger.error('Error seeking to position:', err as string);
         // Try again with a longer delay if it failed
         if (!isVideoReady) {
           setTimeout(async () => {
@@ -962,7 +966,7 @@ export default function WatchEpisode() {
                 setIsVideoReady(true);
               }
             } catch (retryErr) {
-              logger.error('Error on retry seeking:', retryErr);
+              logger.error('Error on retry seeking:', retryErr as string);
             }
           }, 1000);
         }
@@ -1045,7 +1049,7 @@ export default function WatchEpisode() {
           setIsPlaying(true);
         }
       } catch (error) {
-        logger.error('Error seeking:', error);
+        logger.error('Error seeking:', error as string);
       }
     }
   };

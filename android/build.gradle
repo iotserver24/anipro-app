@@ -9,6 +9,12 @@ buildscript {
         kotlinVersion = findProperty('android.kotlinVersion') ?: '1.9.25'
 
         ndkVersion = "26.1.10909125"
+
+        useExoplayerIMA = true
+        useExoplayerRtsp = true
+        useExoplayerSmoothStreaming = true
+        useExoplayerDash = true
+        useExoplayerHls = true
     }
     repositories {
         google()
