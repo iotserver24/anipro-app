@@ -1,6 +1,6 @@
 {
   "name": "anisurge",
-  "version": "2.9.9",
+  "version": "2.10.0",
   "main": "index.ts",
   "scripts": {
     "start": "expo start --dev-client",
