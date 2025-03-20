@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { sendVerificationEmail, reloadUser } from '../services/userService';
 import { logger } from '../utils/logger';
+import { auth } from '../services/firebase';
 
 interface EmailVerificationBannerProps {
   onVerificationComplete?: () => void;
@@ -36,10 +37,12 @@ const EmailVerificationBanner = ({ onVerificationComplete }: EmailVerificationBa
       const isVerified = await reloadUser();
       
       if (isVerified) {
-        // Email has been verified
-        if (onVerificationComplete) {
-          onVerificationComplete();
+        // Force token refresh immediately after verification is confirmed
+        const user = auth.currentUser;
+        if (user) {
+          await user.getIdToken(true);
         }
+        onVerificationComplete?.();
       } else {
         // Still not verified
         setErrorMessage('Your email is not verified yet. Please check your email inbox and verify your email.');

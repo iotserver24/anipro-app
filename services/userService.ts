@@ -459,6 +459,9 @@ export const reloadUser = async (): Promise<boolean> => {
     
     await currentUser.reload();
     
+    // Force token refresh after reload to update email verification status
+    await currentUser.getIdToken(true);
+    
     // If email is now verified, update Firestore
     if (currentUser.emailVerified) {
       const userRef = doc(db, 'users', currentUser.uid);

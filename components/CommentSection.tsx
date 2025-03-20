@@ -425,15 +425,38 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
 
   // Handle delete action
   const handleDeleteComment = async (commentId: string) => {
-    try {
-      await deleteComment(commentId);
-      
-      // Remove the comment from the UI
-      setComments(comments.filter(comment => comment.id !== commentId));
-    } catch (error) {
-      console.error('Error deleting comment:', error);
-      Alert.alert('Error', 'Failed to delete comment. Please try again.');
-    }
+    // Show confirmation dialog
+    Alert.alert(
+      'Delete Comment',
+      'Are you sure you want to delete this comment? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteComment(commentId);
+              
+              // Remove the comment from the UI
+              setComments(comments.filter(comment => comment.id !== commentId));
+              
+              // Show success message
+              if (Platform.OS === 'android') {
+                ToastAndroid.show('Comment deleted successfully', ToastAndroid.SHORT);
+              }
+            } catch (error) {
+              console.error('Error deleting comment:', error);
+              Alert.alert('Error', 'Failed to delete comment. Please try again.');
+            }
+          }
+        }
+      ],
+      { cancelable: true }
+    );
   };
 
   // Update the isCommentOwner function to handle nullable userId values
