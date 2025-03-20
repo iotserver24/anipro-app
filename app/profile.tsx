@@ -120,31 +120,16 @@ export default function ProfileScreen() {
   };
 
   const handleAvatarSelect = async (avatar: { id: string }) => {
-    if (avatar.id === userData?.avatarId) {
-      // Already selected this avatar, just close the modal
-      setShowAvatarModal(false);
-      return;
-    }
-    
     try {
       setUpdatingAvatar(true);
-      
-      // Show a toast that we're updating
-      showToast('Updating your avatar...');
-      
       await updateUserAvatar(avatar.id);
-      
       // Update local state
       if (userData) {
         setUserData({ ...userData, avatarId: avatar.id });
       }
-      
       // Immediately fetch the new avatar URL
       await fetchAvatarUrl(avatar.id);
       setShowAvatarModal(false);
-      
-      // Show success message
-      showToast('Avatar updated successfully!');
     } catch (error) {
       console.error('Error updating avatar:', error);
       Alert.alert('Error', 'Failed to update avatar. Please try again.');
@@ -216,26 +201,25 @@ export default function ProfileScreen() {
           {updatingAvatar || avatarLoading ? (
             <ActivityIndicator size="large" color="#f4511e" />
           ) : (
-            <View style={styles.avatarWrapper}>
-              <Image 
-                source={getCurrentAvatar()} 
-                style={styles.avatar}
-                resizeMode="cover"
-                onError={(e) => {
-                  console.warn('Failed to load profile avatar');
-                  // If the image fails to load, we'll fall back to the default avatar
-                  setAvatarUrl(AVATARS[0].url);
-                }}
-              />
+            <>
+              <View style={styles.avatarWrapper}>
+                <Image 
+                  source={getCurrentAvatar()} 
+                  style={styles.avatar}
+                  resizeMode="cover"
+                  onError={(e) => {
+                    console.warn('Failed to load profile avatar');
+                    // If the image fails to load, we'll fall back to the default avatar
+                    setAvatarUrl(AVATARS[0].url);
+                  }}
+                />
+              </View>
               {authenticated && (
                 <View style={styles.editOverlay}>
                   <MaterialIcons name="edit" size={22} color="#fff" />
                 </View>
               )}
-            </View>
-          )}
-          {authenticated && (
-            <Text style={styles.changeAvatarText}>Tap to change avatar</Text>
+            </>
           )}
         </TouchableOpacity>
 
@@ -381,8 +365,8 @@ const styles = StyleSheet.create({
   },
   editOverlay: {
     position: 'absolute',
-    bottom: 0,
-    right: 0,
+    bottom: -8,
+    right: -8,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     borderRadius: 20,
     width: 36,
@@ -490,15 +474,5 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'center',
     marginBottom: 16,
-  },
-  changeAvatarText: {
-    color: '#fff',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 8,
-    backgroundColor: 'rgba(244, 81, 30, 0.8)',
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 12,
   },
 }); 

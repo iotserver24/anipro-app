@@ -6,9 +6,9 @@ This document describes how to manage app versions in AniSurge using the version
 
 App versions are stored in these config files:
 
-1. **package.json** - Contains the npm package version
-2. **app.json** - Contains the Expo app version and Android version code
-3. **android/app/build.gradle** - Contains the Android app version code and name (after prebuild)
+1. **`constants/appConfig.ts`** - Contains the main app configuration including version and version code
+2. **`app.json`** - Contains the Expo app version and Android version code
+3. **`package.json`** - Contains the npm package version
 
 ## Version Management Commands
 
@@ -60,27 +60,16 @@ node scripts/version-manager.js major --prebuild --clean
 You can display the current app version in your app using the provided components:
 
 ```jsx
-import AppVersionInfo from '../components/AppVersionInfo';
+import { APP_CONFIG, getAppVersion, getAppVersionCode } from '../constants/appConfig';
 
 function MySettingsScreen() {
   return (
     <View style={styles.container}>
-      {/* Other components */}
-      <AppVersionInfo />
+      <Text>Version: {getAppVersion()}</Text>
+      <Text>Build: {getAppVersionCode()}</Text>
     </View>
   );
 }
-```
-
-You can customize the appearance:
-
-```jsx
-<AppVersionInfo 
-  prefix="App Version" 
-  showBuildNumber={true}
-  style={{ marginTop: 20 }}
-  textStyle={{ color: '#666', fontSize: 16 }}
-/>
 ```
 
 ## Getting Version Programmatically
@@ -88,20 +77,14 @@ You can customize the appearance:
 You can access version information programmatically:
 
 ```jsx
-import { getAppVersion } from '../utils/appVersion';
+import { APP_CONFIG } from '../constants/appConfig';
 
 function MyComponent() {
-  const { version, buildNumber, isLatestVersion } = getAppVersion();
-  
-  // Check if current version is up to date
-  const isUpToDate = isLatestVersion('3.0.0');
+  const { VERSION, VERSION_CODE } = APP_CONFIG;
   
   return (
     <View>
-      <Text>Current version: {version} (Build {buildNumber})</Text>
-      {!isUpToDate && (
-        <Text>Update available!</Text>
-      )}
+      <Text>Current version: {VERSION} (Build {VERSION_CODE})</Text>
     </View>
   );
 }

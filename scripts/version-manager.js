@@ -10,7 +10,8 @@ const rootDir = path.resolve(__dirname, '..');
 const configFiles = {
   packageJson: path.join(rootDir, 'package.json'),
   appJson: path.join(rootDir, 'app.json'),
-  gradleBuild: path.join(rootDir, 'android', 'app', 'build.gradle')
+  gradleBuild: path.join(rootDir, 'android', 'app', 'build.gradle'),
+  appConfig: path.join(rootDir, 'constants', 'appConfig.ts')
 };
 
 /**
@@ -29,6 +30,15 @@ function checkVersions() {
   console.log('📱 app.json:');
   console.log(`   Version: ${appJson.expo.version}`);
   console.log(`   Android versionCode: ${appJson.expo.android.versionCode}\n`);
+  
+  // Read appConfig.ts
+  const appConfigContent = fs.readFileSync(configFiles.appConfig, 'utf8');
+  const versionMatch = appConfigContent.match(/VERSION:\s*['"]([^'"]+)['"]/);
+  const versionCodeMatch = appConfigContent.match(/VERSION_CODE:\s*(\d+)/);
+  
+  console.log('⚙️ constants/appConfig.ts:');
+  console.log(`   Version: ${versionMatch ? versionMatch[1] : 'Not found'}`);
+  console.log(`   Version Code: ${versionCodeMatch ? versionCodeMatch[1] : 'Not found'}\n`);
   
   // Check build.gradle only if it exists (might not exist before prebuild)
   let gradleVersionName = 'Not available (run prebuild first)';
@@ -53,7 +63,9 @@ function checkVersions() {
     appVersion: appJson.expo.version,
     gradleVersionName: gradleVersionName !== 'Not available (run prebuild first)' && gradleVersionName !== 'Not found' ? gradleVersionName : null,
     appVersionCode: appJson.expo.android.versionCode,
-    gradleVersionCode: gradleVersionCode !== 'Not available (run prebuild first)' && gradleVersionCode !== 'Not found' ? parseInt(gradleVersionCode) : null
+    gradleVersionCode: gradleVersionCode !== 'Not available (run prebuild first)' && gradleVersionCode !== 'Not found' ? parseInt(gradleVersionCode) : null,
+    appConfigVersion: versionMatch ? versionMatch[1] : null,
+    appConfigVersionCode: versionCodeMatch ? parseInt(versionCodeMatch[1]) : null
   };
   
   let inconsistencies = [];
@@ -68,6 +80,14 @@ function checkVersions() {
   
   if (versions.gradleVersionCode && versions.appVersionCode !== versions.gradleVersionCode) {
     inconsistencies.push('Android versionCode is inconsistent between app.json and build.gradle');
+  }
+  
+  if (versions.appConfigVersion && versions.appVersion !== versions.appConfigVersion) {
+    inconsistencies.push('Version string is inconsistent between app.json and appConfig.ts');
+  }
+  
+  if (versions.appConfigVersionCode && versions.appVersionCode !== versions.appConfigVersionCode) {
+    inconsistencies.push('Version code is inconsistent between app.json and appConfig.ts');
   }
   
   if (inconsistencies.length > 0) {
@@ -118,6 +138,19 @@ function updateVersions(newVersion, newVersionCode) {
   } else {
     console.log('⚠️ android/app/build.gradle not found. Run expo prebuild after updating version.');
   }
+  
+  // Update appConfig.ts
+  let appConfigContent = fs.readFileSync(configFiles.appConfig, 'utf8');
+  appConfigContent = appConfigContent.replace(
+    /VERSION:\s*['"][^'"]+['"]/,
+    `VERSION: '${newVersion}'`
+  );
+  appConfigContent = appConfigContent.replace(
+    /VERSION_CODE:\s*\d+/,
+    `VERSION_CODE: ${newVersionCode}`
+  );
+  fs.writeFileSync(configFiles.appConfig, appConfigContent);
+  console.log('✅ Updated constants/appConfig.ts');
   
   console.log('\n🎉 Version update complete!');
 }

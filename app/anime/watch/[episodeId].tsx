@@ -1485,7 +1485,8 @@ export default function WatchEpisode() {
           episodeNumber: prevEpisode.number,
           title: animeInfo?.title || (title as string) || 'Unknown Anime',
           episodeTitle: prevEpisode.title || `Episode ${prevEpisode.number}`,
-          category: category
+          category: category,
+          resumeTime: "0" // Force start from beginning
         }
       });
     }
@@ -1506,7 +1507,8 @@ export default function WatchEpisode() {
           episodeNumber: nextEpisode.number,
           title: animeInfo?.title || (title as string) || 'Unknown Anime',
           episodeTitle: nextEpisode.title || `Episode ${nextEpisode.number}`,
-          category: category
+          category: category,
+          resumeTime: "0" // Force start from beginning
         }
       });
     }
@@ -1768,7 +1770,8 @@ export default function WatchEpisode() {
                                 animeId: animeId,
                                 episodeNumber: episode.number,
                                 title: episode.title || `Episode ${episode.number}`,
-                                category: category
+                                category: category,
+                                resumeTime: "0" // Force start from beginning
                               }
                             });
                           }}
