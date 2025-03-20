@@ -600,7 +600,7 @@ export default function AboutScreen() {
           <View style={styles.donationCard}>
             <TouchableOpacity 
               style={styles.customDonationButton}
-              onPress={() => openLink('https://www.buymeacoffee.com/R3AP3Redit')}
+              onPress={() => openLink('https://anisurge.me/donate')}
             >
               <Text style={styles.customDonationButtonText}>☕ Donate here</Text>
             </TouchableOpacity>
