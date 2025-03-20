@@ -108,12 +108,6 @@ const ControlsOverlay = React.memo(({
         style={styles.topBar}
       >
         <View style={styles.topBarContent}>
-          <View style={styles.titleContainer}>
-          <Text style={styles.titleText} numberOfLines={1}>
-            {title}
-          </Text>
-          </View>
-          
           {/* Skip Intro/Outro buttons */}
           <View style={styles.skipButtonsContainer}>
             {shouldShowIntroButton && (
@@ -422,56 +416,71 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const toggleFullscreen = useCallback(async () => {
     try {
       if (isOrientationChangingRef.current) return;
-      
       isOrientationChangingRef.current = true;
+      
       const newIsFullscreen = !isFullscreen;
       
-      requestAnimationFrame(() => {
-      setIsFullscreen(newIsFullscreen);
-      });
-      
       if (newIsFullscreen) {
-        // Go to landscape
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-        if (Platform.OS === 'android') {
-          await NavigationBar.setVisibilityAsync('hidden');
-        }
-        StatusBar.setHidden(true);
+        // Go to landscape - do this first for smoother transition
+        await Promise.all([
+          ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT),
+          Platform.OS === 'android' ? NavigationBar.setVisibilityAsync('hidden') : Promise.resolve(),
+          StatusBar.setHidden(true, 'fade')
+        ]);
+
+        // Get screen dimensions after orientation change
+        const { width: screenWidth, height: screenHeight } = Dimensions.get('screen');
         
-        const { width, height } = Dimensions.get('screen');
-        requestAnimationFrame(() => {
-          setDimensions({
-            width: width,
-            height: height
-          });
-        });
-      } else {
-        // Go to portrait
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-        if (Platform.OS === 'android') {
-          await NavigationBar.setVisibilityAsync('visible');
-        }
-        StatusBar.setHidden(false);
-        
-        const { width } = Dimensions.get('window');
-        requestAnimationFrame(() => {
+        // Set dimensions immediately
         setDimensions({
-          width: width,
-          height: (width * 9) / 16
+          width: Math.max(screenWidth, screenHeight),
+          height: Math.min(screenWidth, screenHeight)
         });
+        
+        // Update state after dimensions are set
+        setIsFullscreen(true);
+      } else {
+        // Update state first when exiting
+        setIsFullscreen(false);
+        
+        // Go to portrait
+        await Promise.all([
+          ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP),
+          Platform.OS === 'android' ? NavigationBar.setVisibilityAsync('visible') : Promise.resolve(),
+          StatusBar.setHidden(false, 'fade')
+        ]);
+
+        // Force a small delay to ensure orientation change is complete
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Get window dimensions and calculate 16:9 aspect ratio
+        const { width: windowWidth } = Dimensions.get('window');
+        const height = (windowWidth * 9) / 16;
+        
+        // Set dimensions with exact 16:9 ratio
+        setDimensions({
+          width: windowWidth,
+          height: height
         });
       }
       
-      // Reset flag after a delay
+      // Notify parent of fullscreen change
+      if (onFullscreenChange) {
+        onFullscreenChange(newIsFullscreen);
+      }
+      
+      // Reset flag after shorter delay
       setTimeout(() => {
         isOrientationChangingRef.current = false;
-      }, 500);
+      }, 250);
       
     } catch (error) {
       console.error('Error toggling fullscreen:', error);
+      // Reset state and flag on error
+      setIsFullscreen(!newIsFullscreen);
       isOrientationChangingRef.current = false;
     }
-  }, [isFullscreen]);
+  }, [isFullscreen, onFullscreenChange]);
 
   // Set up and tear down
   useEffect(() => {
@@ -524,28 +533,32 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Handle screen dimension changes
   useEffect(() => {
-    const dimensionsChangeHandler = ({ window, screen }: { window: { width: number; height: number }, screen: { width: number; height: number } }) => {
-      const isLandscapeOrientation = window.width > window.height;
-      
-      if (isLandscapeOrientation === isFullscreen) {
-        if (isFullscreen) {
-          setDimensions({
-            width: screen.width,
-            height: screen.height
-          });
-        } else {
-          setDimensions({
-            width: window.width,
-            height: (window.width * 9) / 16
-          });
-        }
+    const dimensionsChangeHandler = ({ screen, window }: { screen: { width: number; height: number }, window: { width: number; height: number } }) => {
+      if (isFullscreen) {
+        // In fullscreen mode, use screen dimensions
+        const maxDim = Math.max(screen.width, screen.height);
+        const minDim = Math.min(screen.width, screen.height);
+        
+        setDimensions({
+          width: maxDim,
+          height: minDim
+        });
+      } else {
+        // In normal mode, force 16:9 aspect ratio
+        const height = (window.width * 9) / 16;
+        setDimensions({
+          width: window.width,
+          height: height
+        });
       }
     };
 
     const subscription = Dimensions.addEventListener('change', dimensionsChangeHandler);
+
+    // Force an immediate update
     dimensionsChangeHandler({ 
-      window: Dimensions.get('window'),
-      screen: Dimensions.get('screen')
+      screen: Dimensions.get('screen'),
+      window: Dimensions.get('window')
     });
 
     return () => {
@@ -654,39 +667,50 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, [outro, onSkipOutro]);
 
-  // Memoize video style
+  // Memoize video style with absolute positioning in fullscreen
   const videoStyle = useMemo(() => [
-    styles.video, 
-    isFullscreen && { 
-      width: dimensions.width, 
-      height: dimensions.height,
-      position: 'absolute' as const,
+    styles.video,
+    isFullscreen && {
+      position: 'absolute',
       top: 0,
       left: 0,
-      right: 0,
-      bottom: 0
+      width: dimensions.width,
+      height: dimensions.height,
+      backgroundColor: '#000'
     }
-  ], [isFullscreen, dimensions.width, dimensions.height]);
+  ], [isFullscreen, dimensions]);
 
   return (
     <View style={[
       styles.container,
       isFullscreen && styles.fullscreenContainer,
       style,
-      { 
-        width: isFullscreen ? dimensions.width : '100%', 
+      {
+        width: dimensions.width,
         height: dimensions.height,
-        backgroundColor: '#000'
+        backgroundColor: '#000',
+        aspectRatio: isFullscreen ? undefined : 16/9
       }
     ]}>
       <Pressable 
-        style={[styles.videoWrapper, { backgroundColor: '#000' }]} 
+        style={[
+          styles.videoWrapper,
+          {
+            backgroundColor: '#000',
+            aspectRatio: isFullscreen ? undefined : 16/9
+          }
+        ]} 
         onPress={handleScreenTap}
       >
         <Video
           ref={videoRef}
           source={source.uri ? source : undefined}
-          style={videoStyle}
+          style={[
+            videoStyle,
+            {
+              aspectRatio: isFullscreen ? undefined : 16/9
+            }
+          ]}
           resizeMode={ResizeMode.CONTAIN}
           shouldPlay={isPlaying}
           onPlaybackStatusUpdate={onPlaybackStatusUpdate}
@@ -734,8 +758,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: 999,
-    width: '100%',
-    height: '100%',
+    elevation: 999, // Added for Android
+    backgroundColor: '#000',
   },
   videoWrapper: {
     flex: 1,
@@ -743,8 +767,7 @@ const styles = StyleSheet.create({
   },
   video: {
     flex: 1,
-    width: '100%',
-    height: '100%',
+    backgroundColor: '#000',
   },
   controlsOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -760,20 +783,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  titleContainer: {
-    flex: 1,
-    marginRight: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  titleText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '700',
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 4,
   },
   skipButtonsContainer: {
     flexDirection: 'row',

@@ -14,6 +14,7 @@ import { activateKeepAwake, deactivateKeepAwake } from 'expo-keep-awake';
 import * as NavigationBar from 'expo-navigation-bar';
 import { WebView } from 'react-native-webview';
 import { debounce } from 'lodash';
+import CommentModal from '../../../components/CommentModal';
 
 type StreamSource = {
   url: string;
@@ -412,7 +413,7 @@ const EpisodeControls = React.memo(({
   onPrevious, 
   onNext, 
   onDownload,
-  onExternalPlayer,
+  onComments,
   downloadUrl
 }: { 
   currentEpisodeIndex: number; 
@@ -420,7 +421,7 @@ const EpisodeControls = React.memo(({
   onPrevious: () => void;
   onNext: () => void;
   onDownload: () => void;
-  onExternalPlayer: () => void;
+  onComments: () => void;
   downloadUrl: string | null;
 }) => {
   const hasPrevious = currentEpisodeIndex > 0;
@@ -479,9 +480,9 @@ const EpisodeControls = React.memo(({
           borderRadius: 18,
           backgroundColor: 'rgba(0,0,0,0.3)',
         }}
-        onPress={onExternalPlayer}
+        onPress={onComments}
       >
-        <MaterialIcons name="open-in-new" size={22} color="white" />
+        <MaterialIcons name="comment" size={22} color="white" />
       </TouchableOpacity>
       
       <TouchableOpacity 
@@ -630,6 +631,7 @@ export default function WatchEpisode() {
   const navigation = useNavigation();
   const [showDownloadPopup, setShowDownloadPopup] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [showCommentsModal, setShowCommentsModal] = useState(false);
   // Add a ref to track navigation state
   const isNavigating = useRef(false);
   // Add a ref to track the last progress update to throttle history updates
@@ -781,11 +783,10 @@ export default function WatchEpisode() {
         isNavigating.current = false;
       }
       
-      let currentCategory = categoryAsSubOrDub; // Use the initial category
+      let currentCategory = categoryAsSubOrDub;
       
       // If animeId is not provided (e.g., from a shared URL), parse the full URL
       if (!animeId && typeof episodeId === 'string') {
-        // Parse all parameters from the episodeId
         const parts = episodeId.split('$');
         const extractedAnimeId = parts[0];
         
@@ -813,12 +814,15 @@ export default function WatchEpisode() {
           };
           setAnimeInfo(processedData);
           
-          // Set episodes
+          // Set episodes and filter by current category
           if (animeData.episodes) {
-            setEpisodes(animeData.episodes as APIEpisode[]);
-            // Find the episode index without the category parameter
-            const cleanEpisodeId = episodeId.split('$category=')[0];
-            const index = animeData.episodes.findIndex(ep => ep.id === cleanEpisodeId);
+            const allEpisodes = animeData.episodes as APIEpisode[];
+            setEpisodes(allEpisodes);
+            const filteredByCategory = allEpisodes.filter(ep => 
+              currentCategory === 'dub' ? ep.isDubbed : ep.isSubbed
+            );
+            setFilteredEpisodes(sortEpisodesByProximity(filteredByCategory, episodeId));
+            const index = filteredByCategory.findIndex(ep => ep.id === episodeId);
             setCurrentEpisodeIndex(index);
           }
         }
@@ -1357,26 +1361,34 @@ export default function WatchEpisode() {
     }
   };
 
-  // Update the search handler to maintain the sorting
+  // Update the useEffect that initializes filtered episodes
+  useEffect(() => {
+    const sortedEpisodes = sortEpisodesByProximity(
+      episodes.filter(ep => categoryAsSubOrDub === 'dub' ? ep.isDubbed : ep.isSubbed),
+      episodeId as string
+    );
+    setFilteredEpisodes(sortedEpisodes);
+  }, [episodes, episodeId, categoryAsSubOrDub]);
+
+  // Update the search handler to maintain sub/dub filtering
   const handleSearch = (query: string) => {
     setSearchQuery(query);
     if (!query.trim()) {
-      setFilteredEpisodes(sortEpisodesByProximity(episodes, episodeId as string));
+      setFilteredEpisodes(sortEpisodesByProximity(
+        episodes.filter(ep => categoryAsSubOrDub === 'dub' ? ep.isDubbed : ep.isSubbed),
+        episodeId as string
+      ));
       return;
     }
     
-    const filtered = episodes.filter(episode => 
-      episode.number.toString().includes(query) ||
-      episode.title?.toLowerCase().includes(query.toLowerCase())
-    );
+    const filtered = episodes
+      .filter(ep => categoryAsSubOrDub === 'dub' ? ep.isDubbed : ep.isSubbed)
+      .filter(episode => 
+        episode.number.toString().includes(query) ||
+        episode.title?.toLowerCase().includes(query.toLowerCase())
+      );
     setFilteredEpisodes(filtered);
   };
-
-  // Update the useEffect that initializes filtered episodes
-  useEffect(() => {
-    const sortedEpisodes = sortEpisodesByProximity(episodes, episodeId as string);
-    setFilteredEpisodes(sortedEpisodes);
-  }, [episodes, episodeId]);
 
   // Add this useEffect to scroll to current episode when list changes
   useEffect(() => {
@@ -1558,14 +1570,14 @@ export default function WatchEpisode() {
     }
   }, [videoData]);
 
-  // Handle external player button press
-  const handleExternalPlayer = useCallback(() => {
-    Alert.alert(
-      "External Player",
-      "Coming Soon! This feature will allow you to open videos in your favorite external player.",
-      [{ text: "OK", onPress: () => console.log("External player alert closed") }]
-    );
-  }, []);
+  // Handle comment button press
+  const handleShowComments = useCallback(() => {
+    // Pause the video when opening comments
+    if (isPlaying) {
+      setIsPlaying(false);
+    }
+    setShowCommentsModal(true);
+  }, [isPlaying]);
 
   if (loading) {
     return (
@@ -1641,7 +1653,7 @@ export default function WatchEpisode() {
                 onPrevious={handlePreviousEpisode}
                 onNext={handleNextEpisode}
                 onDownload={handleDownload}
-                onExternalPlayer={handleExternalPlayer}
+                onComments={handleShowComments}
                 downloadUrl={videoData?.download || null}
               />
               <ScrollView style={styles.controls}>
@@ -1737,6 +1749,54 @@ export default function WatchEpisode() {
                 <View style={styles.episodeSection}>
                   <Text style={styles.sectionTitle}>Episodes</Text>
                   
+                  {/* Add Audio Selector */}
+                  <View style={styles.audioSelector}>
+                    <TouchableOpacity 
+                      style={[styles.audioOption, categoryAsSubOrDub === 'sub' && styles.selectedAudio]}
+                      onPress={() => {
+                        const newCategory = 'sub';
+                        if (categoryAsSubOrDub !== newCategory) {
+                          setFilteredEpisodes(sortEpisodesByProximity(
+                            episodes.filter(ep => ep.isSubbed),
+                            episodeId as string
+                          ));
+                          router.setParams({ category: newCategory });
+                        }
+                      }}
+                    >
+                      <MaterialIcons 
+                        name="subtitles" 
+                        size={20} 
+                        color={categoryAsSubOrDub === 'sub' ? '#fff' : '#666'} 
+                      />
+                      <Text style={[styles.audioText, categoryAsSubOrDub === 'sub' && styles.selectedAudioText]}>
+                        Sub ({episodes.filter(ep => ep.isSubbed).length})
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[styles.audioOption, categoryAsSubOrDub === 'dub' && styles.selectedAudio]}
+                      onPress={() => {
+                        const newCategory = 'dub';
+                        if (categoryAsSubOrDub !== newCategory) {
+                          setFilteredEpisodes(sortEpisodesByProximity(
+                            episodes.filter(ep => ep.isDubbed),
+                            episodeId as string
+                          ));
+                          router.setParams({ category: newCategory });
+                        }
+                      }}
+                    >
+                      <MaterialIcons 
+                        name="record-voice-over" 
+                        size={20} 
+                        color={categoryAsSubOrDub === 'dub' ? '#fff' : '#666'} 
+                      />
+                      <Text style={[styles.audioText, categoryAsSubOrDub === 'dub' && styles.selectedAudioText]}>
+                        Dub ({episodes.filter(ep => ep.isDubbed).length})
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
                   {/* Search Bar */}
                   <View style={styles.searchContainer}>
                     <MaterialIcons name="search" size={24} color="#666" />
@@ -1800,6 +1860,20 @@ export default function WatchEpisode() {
         visible={showDownloadPopup}
         onClose={() => setShowDownloadPopup(false)}
         downloadUrl={downloadUrl}
+      />
+
+      {/* Comments Modal - using the same modal as in [id].tsx */}
+      <CommentModal
+        visible={showCommentsModal}
+        onClose={() => {
+          setShowCommentsModal(false);
+          // Resume video playback when closing comments if it was playing before
+          if (!isPlaying) {
+            setIsPlaying(true);
+          }
+        }}
+        animeId={animeId as string}
+        animeTitle={animeInfo?.title || (title as string)}
       />
     </>
   );
@@ -2156,5 +2230,32 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 14,
     textAlign: 'center',
+  },
+  audioSelector: {
+    flexDirection: 'row',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    padding: 4,
+    marginBottom: 16,
+  },
+  audioOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    gap: 8,
+  },
+  selectedAudio: {
+    backgroundColor: '#f4511e',
+  },
+  audioText: {
+    color: '#666',
+    fontSize: 14,
+  },
+  selectedAudioText: {
+    color: '#fff',
   },
 }); 
