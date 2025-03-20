@@ -43,6 +43,7 @@
         <action android:name="android.intent.action.VIEW"/>
         <data android:scheme="anisurge" android:host="*" android:pathPrefix="/anime"/>
         <data android:scheme="anisurge" android:host="*" android:pathPrefix="/anime/watch"/>
+        <data android:scheme="exp+anisurge"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>

@@ -181,43 +181,99 @@ export const updateUserAvatar = async (avatarId: string): Promise<void> => {
       throw new Error('User must be authenticated to update avatar');
     }
 
+    console.log(`[AvatarUpdate] Starting avatar update to ${avatarId} for user ${currentUser.uid}`);
+
     // Get the avatar URL
     let avatarUrl = '';
     try {
-      // Find the avatar in the AVATARS array
-      const avatarResponse = await fetch('https://anisurge.me/api/avatars/list');
-      if (avatarResponse.ok) {
-        const avatars = await avatarResponse.json();
-        const avatar = avatars.find((a: any) => a.id === avatarId);
-        if (avatar && avatar.url) {
+      // Try multiple domain patterns to ensure we can reach the API even with domain changes
+      const apiUrls = [
+        'https://anisurge.me/api/avatars/list',
+        'https://app.animeverse.cc/api/avatars/list',
+        'https://api.animeverse.cc/avatars/list'
+      ];
+      
+      let fetchSuccess = false;
+      for (const url of apiUrls) {
+        try {
+          console.log(`[AvatarUpdate] Trying to fetch avatars from: ${url}`);
+          const avatarResponse = await fetch(url, { 
+            method: 'GET',
+            headers: { 'Cache-Control': 'no-cache' } 
+          });
+          
+          if (avatarResponse.ok) {
+            const avatars = await avatarResponse.json();
+            const avatar = avatars.find((a: any) => a.id === avatarId);
+            if (avatar && avatar.url) {
+              avatarUrl = avatar.url;
+              console.log(`[AvatarUpdate] Successfully found avatar URL: ${avatarUrl}`);
+              fetchSuccess = true;
+              break;
+            }
+          } else {
+            console.warn(`[AvatarUpdate] Failed to fetch from ${url}: ${avatarResponse.status}`);
+          }
+        } catch (urlError) {
+          console.warn(`[AvatarUpdate] Error fetching from ${url}:`, urlError);
+        }
+      }
+      
+      if (!fetchSuccess) {
+        // Try to find it in the local AVATARS array as fallback
+        console.log(`[AvatarUpdate] Falling back to local AVATARS array`);
+        const { AVATARS } = await import('../constants/avatars');
+        const avatar = AVATARS.find(a => a.id === avatarId);
+        if (avatar) {
           avatarUrl = avatar.url;
+          console.log(`[AvatarUpdate] Found avatar in local array: ${avatarUrl}`);
+        } else {
+          console.warn(`[AvatarUpdate] Avatar with ID ${avatarId} not found even in local array`);
         }
       }
     } catch (error) {
-      console.warn('Error fetching avatar URL:', error);
-      // Continue even if we can't get the URL - we'll still update the avatarId
+      console.error('[AvatarUpdate] Error fetching avatar URL:', error);
+    }
+
+    if (!avatarUrl) {
+      console.warn('[AvatarUpdate] Could not determine avatar URL, only updating avatarId in user profile');
     }
 
     // Update the avatar in Firestore
+    console.log(`[AvatarUpdate] Updating user profile in Firestore with avatarId: ${avatarId}`);
     const userRef = doc(db, 'users', currentUser.uid);
     await updateDoc(userRef, {
       avatarId: avatarId
     });
+    console.log(`[AvatarUpdate] User profile updated successfully`);
 
     // Update all comments by this user with the new avatar URL
     if (avatarUrl) {
-      await updateUserCommentsWithAvatar(currentUser.uid, avatarUrl);
+      console.log(`[AvatarUpdate] Starting comment updates with avatar URL: ${avatarUrl}`);
+      const result = await updateUserCommentsWithAvatar(currentUser.uid, avatarUrl);
+      console.log(`[AvatarUpdate] Comment updates complete:`, result);
+    } else {
+      console.warn('[AvatarUpdate] Skipping comment updates due to missing avatar URL');
+    }
+    
+    // Force a comment avatar migration for this user specifically
+    try {
+      const { migrateCommentsWithAvatars } = await import('./commentService');
+      console.log(`[AvatarUpdate] Running comment avatar migration as a fallback`);
+      await migrateCommentsWithAvatars();
+    } catch (migrationError) {
+      console.error('[AvatarUpdate] Error during migration fallback:', migrationError);
     }
   } catch (error) {
-    console.error('Error updating avatar:', error);
+    console.error('[AvatarUpdate] Error updating avatar:', error);
     throw error;
   }
 };
 
 // Helper function to update all comments made by a user with their new avatar URL
-const updateUserCommentsWithAvatar = async (userId: string, avatarUrl: string): Promise<void> => {
+const updateUserCommentsWithAvatar = async (userId: string, avatarUrl: string): Promise<{success: boolean, count: number, error?: any}> => {
   try {
-    console.log(`Updating comments for user ${userId} with new avatar: ${avatarUrl}`);
+    console.log(`[AvatarUpdate] Updating comments for user ${userId} with new avatar: ${avatarUrl}`);
     
     // Query all comments by this user
     const commentsQuery = query(
@@ -226,27 +282,49 @@ const updateUserCommentsWithAvatar = async (userId: string, avatarUrl: string): 
     );
     
     const querySnapshot = await getDocs(commentsQuery);
+    console.log(`[AvatarUpdate] Found ${querySnapshot.size} comments to update`);
     
     // Use a batch to update all comments at once
-    const batch = writeBatch(db);
-    let updateCount = 0;
+    const MAX_BATCH_SIZE = 500; // Firestore limit
+    let totalUpdated = 0;
+    let batchCount = 0;
     
-    querySnapshot.forEach((commentDoc) => {
-      batch.update(commentDoc.ref, { userAvatar: avatarUrl });
-      updateCount++;
-    });
-    
-    // Commit the batch if there are updates to make
-    if (updateCount > 0) {
-      await batch.commit();
-      console.log(`Updated avatar in ${updateCount} comments`);
+    if (querySnapshot.size > 0) {
+      let batch = writeBatch(db);
+      let batchSize = 0;
+      
+      querySnapshot.forEach((commentDoc) => {
+        batch.update(commentDoc.ref, { userAvatar: avatarUrl });
+        batchSize++;
+        totalUpdated++;
+        
+        // If we reach the batch limit, commit and start a new batch
+        if (batchSize >= MAX_BATCH_SIZE) {
+          batchCount++;
+          console.log(`[AvatarUpdate] Committing batch ${batchCount} with ${batchSize} updates`);
+          batch.commit();
+          batch = writeBatch(db);
+          batchSize = 0;
+        }
+      });
+      
+      // Commit any remaining updates
+      if (batchSize > 0) {
+        batchCount++;
+        console.log(`[AvatarUpdate] Committing final batch ${batchCount} with ${batchSize} updates`);
+        await batch.commit();
+      }
+      
+      console.log(`[AvatarUpdate] Successfully updated ${totalUpdated} comments with new avatar`);
+      return { success: true, count: totalUpdated };
     } else {
-      console.log('No comments found to update');
+      console.log('[AvatarUpdate] No comments found to update');
+      return { success: true, count: 0 };
     }
   } catch (error) {
-    console.error('Error updating user comments with new avatar:', error);
-    // Don't throw an error here - we don't want to fail the avatar update
-    // if comment updates fail
+    console.error('[AvatarUpdate] Error updating user comments with new avatar:', error);
+    // Don't throw an error here - return a result object instead
+    return { success: false, count: 0, error };
   }
 };
 

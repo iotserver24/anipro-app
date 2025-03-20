@@ -120,16 +120,31 @@ export default function ProfileScreen() {
   };
 
   const handleAvatarSelect = async (avatar: { id: string }) => {
+    if (avatar.id === userData?.avatarId) {
+      // Already selected this avatar, just close the modal
+      setShowAvatarModal(false);
+      return;
+    }
+    
     try {
       setUpdatingAvatar(true);
+      
+      // Show a toast that we're updating
+      showToast('Updating your avatar...');
+      
       await updateUserAvatar(avatar.id);
+      
       // Update local state
       if (userData) {
         setUserData({ ...userData, avatarId: avatar.id });
       }
+      
       // Immediately fetch the new avatar URL
       await fetchAvatarUrl(avatar.id);
       setShowAvatarModal(false);
+      
+      // Show success message
+      showToast('Avatar updated successfully!');
     } catch (error) {
       console.error('Error updating avatar:', error);
       Alert.alert('Error', 'Failed to update avatar. Please try again.');
@@ -218,6 +233,9 @@ export default function ProfileScreen() {
                 </View>
               )}
             </View>
+          )}
+          {authenticated && (
+            <Text style={styles.changeAvatarText}>Tap to change avatar</Text>
           )}
         </TouchableOpacity>
 
@@ -472,5 +490,15 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: 'center',
     marginBottom: 16,
+  },
+  changeAvatarText: {
+    color: '#fff',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
+    backgroundColor: 'rgba(244, 81, 30, 0.8)',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 12,
   },
 }); 

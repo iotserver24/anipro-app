@@ -174,114 +174,171 @@ export const deleteComment = async (commentId: string) => {
 // This can be called when needed to update old comments
 export const migrateCommentsWithAvatars = async () => {
   try {
-    console.log('Starting comment avatar migration...');
+    console.log('[AvatarMigration] Starting comment avatar migration...');
     
     // Fetch all available avatars from the API
     let avatarsMap = new Map();
     try {
-      const avatarsResponse = await fetch('https://anisurge.me/api/avatars/list');
-      if (avatarsResponse.ok) {
-        const avatars = await avatarsResponse.json();
-        // Create a map for quick lookups
-        avatars.forEach((avatar: any) => {
-          if (avatar.id && avatar.url) {
-            avatarsMap.set(avatar.id, avatar.url);
+      // Try multiple domain patterns to ensure we can reach the API
+      const apiUrls = [
+        'https://anisurge.me/api/avatars/list',
+        'https://app.animeverse.cc/api/avatars/list',
+        'https://api.animeverse.cc/avatars/list'
+      ];
+      
+      let fetchSuccess = false;
+      for (const url of apiUrls) {
+        try {
+          console.log(`[AvatarMigration] Trying to fetch avatars from: ${url}`);
+          const avatarsResponse = await fetch(url, { 
+            method: 'GET',
+            headers: { 'Cache-Control': 'no-cache' } 
+          });
+          
+          if (avatarsResponse.ok) {
+            const avatars = await avatarsResponse.json();
+            // Create a map for quick lookups
+            avatars.forEach((avatar: any) => {
+              if (avatar.id && avatar.url) {
+                avatarsMap.set(avatar.id, avatar.url);
+              }
+            });
+            console.log(`[AvatarMigration] Loaded ${avatarsMap.size} avatars from API`);
+            fetchSuccess = true;
+            break;
+          } else {
+            console.warn(`[AvatarMigration] Failed to fetch from ${url}: ${avatarsResponse.status}`);
           }
-        });
-        console.log(`Loaded ${avatarsMap.size} avatars from API`);
+        } catch (urlError) {
+          console.warn(`[AvatarMigration] Error fetching from ${url}:`, urlError);
+        }
+      }
+      
+      if (!fetchSuccess) {
+        console.warn('[AvatarMigration] Could not fetch avatars from any endpoint');
       }
     } catch (error) {
-      console.warn('Error fetching avatars for migration:', error);
+      console.warn('[AvatarMigration] Error fetching avatars for migration:', error);
       // Continue with migration even if we can't get the avatars
     }
     
-    // Get all comments that need avatar updating
-    const commentsQuery = query(
-      collection(db, 'comments'),
-      where('userAvatar', '==', null)
-    );
+    if (avatarsMap.size === 0) {
+      // If we couldn't get avatars from the API, use the local AVATARS array
+      console.log('[AvatarMigration] Using local AVATARS as fallback');
+      const { AVATARS } = await import('../constants/avatars');
+      AVATARS.forEach(avatar => {
+        if (avatar.id && avatar.url) {
+          avatarsMap.set(avatar.id, avatar.url);
+        }
+      });
+    }
     
+    if (avatarsMap.size === 0) {
+      console.error('[AvatarMigration] No avatars available for migration, aborting');
+      return { success: false, error: 'No avatars available' };
+    }
+    
+    // Strategy: Instead of just finding comments with null userAvatar,
+    // we'll get all comments for users and update them all
+    
+    // First get all users
     try {
-      const commentsSnapshot = await getDocs(commentsQuery);
+      const usersCollection = collection(db, 'users');
+      const usersSnapshot = await getDocs(usersCollection);
       
-      if (commentsSnapshot.empty) {
-        console.log('No comments require avatar migration');
+      if (usersSnapshot.empty) {
+        console.log('[AvatarMigration] No users found for avatar migration');
         return { success: true, updatedCount: 0 };
       }
       
-      console.log(`Found ${commentsSnapshot.size} comments that need avatar migration`);
+      console.log(`[AvatarMigration] Found ${usersSnapshot.size} users for potential comment avatar updates`);
       
-      // Group comments by userId to minimize Firestore reads
-      const userComments = new Map<string, {id: string, userId: string}[]>();
-      commentsSnapshot.forEach(doc => {
-        const data = doc.data();
-        // Only process if userId exists
-        if (data.userId) {
-          const comment = { id: doc.id, userId: data.userId };
-          if (!userComments.has(data.userId)) {
-            userComments.set(data.userId, []);
-          }
-          userComments.get(data.userId)?.push(comment);
-        }
-      });
-      
-      // Process comments in batches by user
+      // Process each user
       let totalUpdated = 0;
-      const batch = writeBatch(db);
-      let batchSize = 0;
-      const MAX_BATCH_SIZE = 500; // Firestore limit is 500 operations per batch
+      let totalErrors = 0;
       
-      // For each user, get their avatar and update all their comments
-      for (const [userId, comments] of userComments.entries()) {
+      for (const userDoc of usersSnapshot.docs) {
         try {
-          // Get user's current avatar
-          const userDoc = await getDoc(doc(db, 'users', userId));
+          const userData = userDoc.data();
+          const userId = userDoc.id;
+          const avatarId = userData.avatarId;
           
-          if (userDoc.exists()) {
-            const userData = userDoc.data();
-            const avatarId = userData.avatarId;
-            
-            // If user has an avatar, use it to update their comments
-            if (avatarId && avatarsMap.has(avatarId)) {
-              const avatarUrl = avatarsMap.get(avatarId);
+          if (!avatarId) {
+            console.log(`[AvatarMigration] User ${userId} has no avatarId, skipping`);
+            continue;
+          }
+          
+          // Get the avatar URL for this user
+          let avatarUrl = avatarsMap.get(avatarId);
+          if (!avatarUrl) {
+            console.log(`[AvatarMigration] No avatar URL found for avatarId ${avatarId}, skipping user ${userId}`);
+            continue;
+          }
+          
+          console.log(`[AvatarMigration] Processing comments for user ${userId} with avatar ${avatarId}`);
+          
+          // Get all comments by this user
+          const commentsQuery = query(
+            collection(db, 'comments'),
+            where('userId', '==', userId)
+          );
+          
+          const commentsSnapshot = await getDocs(commentsQuery);
+          
+          if (commentsSnapshot.empty) {
+            console.log(`[AvatarMigration] No comments found for user ${userId}`);
+            continue;
+          }
+          
+          console.log(`[AvatarMigration] Found ${commentsSnapshot.size} comments for user ${userId}`);
+          
+          // Update comments in batches
+          const MAX_BATCH_SIZE = 500; // Firestore limit
+          let batch = writeBatch(db);
+          let batchSize = 0;
+          let userUpdated = 0;
+          
+          commentsSnapshot.forEach(commentDoc => {
+            const commentData = commentDoc.data();
+            // Only update if the avatar URL is different
+            if (commentData.userAvatar !== avatarUrl) {
+              batch.update(commentDoc.ref, { userAvatar: avatarUrl });
+              batchSize++;
+              userUpdated++;
               
-              // Update all comments by this user
-              for (const comment of comments) {
-                if (batchSize >= MAX_BATCH_SIZE) {
-                  // Commit the current batch and start a new one
-                  await batch.commit();
-                  console.log(`Committed batch with ${batchSize} updates`);
-                  totalUpdated += batchSize;
-                  batchSize = 0;
-                }
-                
-                // Add the update to the batch
-                batch.update(doc(db, 'comments', comment.id), { userAvatar: avatarUrl });
-                batchSize++;
+              if (batchSize >= MAX_BATCH_SIZE) {
+                // Commit the current batch and start a new one
+                batch.commit();
+                console.log(`[AvatarMigration] Committed batch with ${batchSize} updates for user ${userId}`);
+                batch = writeBatch(db);
+                batchSize = 0;
               }
             }
+          });
+          
+          // Commit any remaining updates
+          if (batchSize > 0) {
+            await batch.commit();
+            console.log(`[AvatarMigration] Committed final batch with ${batchSize} updates for user ${userId}`);
           }
+          
+          console.log(`[AvatarMigration] Updated ${userUpdated} comments for user ${userId}`);
+          totalUpdated += userUpdated;
         } catch (userError) {
-          console.warn(`Error processing user ${userId} for comment migration:`, userError);
+          console.warn(`[AvatarMigration] Error processing user ${userDoc.id}:`, userError);
+          totalErrors++;
         }
       }
       
-      // Commit any remaining updates
-      if (batchSize > 0) {
-        await batch.commit();
-        totalUpdated += batchSize;
-        console.log(`Final batch committed with ${batchSize} updates`);
-      }
+      console.log(`[AvatarMigration] Comment avatar migration completed. Updated ${totalUpdated} comments, encountered ${totalErrors} errors.`);
+      return { success: true, updatedCount: totalUpdated, errors: totalErrors };
       
-      console.log(`Comment avatar migration completed. Updated ${totalUpdated} comments.`);
-      return { success: true, updatedCount: totalUpdated };
-      
-    } catch (queryError) {
-      console.error('Error querying comments for migration:', queryError);
-      return { success: false, error: queryError };
+    } catch (error) {
+      console.error('[AvatarMigration] Error during comment avatar migration:', error);
+      return { success: false, error };
     }
   } catch (error) {
-    console.error('Error in comment avatar migration:', error);
+    console.error('[AvatarMigration] Error in comment avatar migration:', error);
     return { success: false, error };
   }
 }; 

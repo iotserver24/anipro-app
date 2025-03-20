@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,7 +11,8 @@ import {
   Keyboard,
   Image,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  RefreshControl
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { 
@@ -47,6 +48,61 @@ const CommentItem = ({
   isOwner: boolean;
   isLiked: boolean;
 }) => {
+  const [refreshedAvatarUrl, setRefreshedAvatarUrl] = useState<string | null>(null);
+  
+  // Attempt to refresh the avatar URL from the API when component mounts
+  useEffect(() => {
+    const refreshAvatarUrl = async () => {
+      if (!comment.userId) return;
+      
+      try {
+        // Try to get the user's current avatar
+        const userDoc = await getDoc(doc(db, 'users', comment.userId));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          const avatarId = userData.avatarId;
+          
+          if (avatarId) {
+            try {
+              // Try multiple domain patterns
+              const apiUrls = [
+                'https://anisurge.me/api/avatars/list',
+                'https://app.animeverse.cc/api/avatars/list',
+                'https://api.animeverse.cc/avatars/list'
+              ];
+              
+              for (const url of apiUrls) {
+                try {
+                  const avatarsResponse = await fetch(url, { 
+                    method: 'GET',
+                    headers: { 'Cache-Control': 'no-cache' } 
+                  });
+                  
+                  if (avatarsResponse.ok) {
+                    const avatars = await avatarsResponse.json();
+                    const avatar = avatars.find((a: any) => a.id === avatarId);
+                    if (avatar && avatar.url) {
+                      setRefreshedAvatarUrl(avatar.url);
+                      break;
+                    }
+                  }
+                } catch (urlError) {
+                  console.warn(`Failed to fetch from ${url}:`, urlError);
+                }
+              }
+            } catch (avatarError) {
+              console.warn('Error refreshing avatar URL:', avatarError);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Error refreshing avatar from user doc:', error);
+      }
+    };
+    
+    refreshAvatarUrl();
+  }, [comment.userId]);
+  
   // Format the timestamp to a readable date
   const formatDate = (timestamp: Timestamp) => {
     const date = timestamp.toDate();
@@ -59,6 +115,11 @@ const CommentItem = ({
 
   // Get avatar URL from avatarId or use default
   const getAvatarUrl = () => {
+    // First try the refreshed URL
+    if (refreshedAvatarUrl) {
+      return { uri: refreshedAvatarUrl };
+    }
+    // Then try the stored URL
     if (comment.userAvatar) {
       return { uri: comment.userAvatar };
     }
@@ -110,50 +171,71 @@ const CommentItem = ({
 
 const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) => {
   const [comments, setComments] = useState<Comment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
   const [commentText, setCommentText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [likedComments, setLikedComments] = useState<{ [key: string]: boolean }>({});
+  const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
+  const [forceRefresh, setForceRefresh] = useState(0); // Counter to force re-renders
 
-  // Load comments when the component mounts
+  // Load comments when component mounts
   useEffect(() => {
     loadComments();
-  }, [animeId]);
+  }, [animeId, forceRefresh]);
   
-  // Reload comments when the screen comes into focus
+  // Also load comments when the component comes into focus
   useFocusEffect(
-    React.useCallback(() => {
-      console.log('Comment section focused, reloading comments');
+    useCallback(() => {
+      console.log('CommentSection is focused - refreshing comments');
       loadComments();
+      
+      // We could also use this opportunity to trigger the avatar migration
+      // if we want to ensure avatars are always up to date when viewing comments
+      const triggerAvatarCheck = async () => {
+        try {
+          // Dynamic import to prevent circular dependencies
+          const { migrateCommentsWithAvatars } = await import('../services/commentService');
+          await migrateCommentsWithAvatars();
+        } catch (error) {
+          console.warn('Failed to trigger avatar check on focus:', error);
+        }
+      };
+      
+      // Only run avatar check occasionally to avoid unnecessary API calls
+      if (Math.random() < 0.2) { // 20% chance on each focus
+        triggerAvatarCheck();
+      }
+      
       return () => {
-        // This runs when the screen is unfocused
-        console.log('Comment section unfocused');
+        console.log('CommentSection is unfocused');
       };
     }, [animeId])
   );
 
-  // Load comments from Firebase
+  // Function to load comments
   const loadComments = async () => {
+    if (loading) return; // Prevent multiple simultaneous loads
+    
+    setLoading(true);
     try {
-      setLoading(true);
-      const animeComments = await getAnimeComments(animeId);
-      setComments(animeComments);
-
-      // Load liked status for each comment if user is authenticated
+      const fetchedComments = await getAnimeComments(animeId);
+      setComments(fetchedComments);
+      
+      // Check which comments the current user has liked
       if (isAuthenticated()) {
-        const currentUser = getCurrentUser();
-        if (currentUser) {
-          const likes: { [key: string]: boolean } = {};
-          for (const comment of animeComments) {
+        const newLikedComments = new Set<string>();
+        await Promise.all(
+          fetchedComments.map(async (comment) => {
             if (comment.id) {
-              const hasLiked = await hasUserLikedComment(comment.id, currentUser.uid);
-              likes[comment.id] = hasLiked;
+              const hasLiked = await hasUserLikedComment(comment.id, getCurrentUser()?.uid || '');
+              if (hasLiked) {
+                newLikedComments.add(comment.id);
+              }
             }
-          }
-          setLikedComments(likes);
-        }
+          })
+        );
+        setLikedComments(newLikedComments);
       }
     } catch (error) {
       console.error('Error loading comments:', error);
@@ -162,6 +244,13 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
       setLoading(false);
       setRefreshing(false);
     }
+  };
+  
+  // Function to refresh comments and trigger avatar updates
+  const refreshComments = async () => {
+    setRefreshing(true);
+    setForceRefresh(prev => prev + 1); // Increment to force re-render of child components
+    await loadComments();
   };
 
   // Handle comment submission
@@ -249,13 +338,14 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
       const currentUser = getCurrentUser();
       if (!currentUser) return;
 
-      const isCurrentlyLiked = likedComments[commentId] || false;
+      const isCurrentlyLiked = likedComments.has(commentId);
       
       // Update UI immediately for better user experience
-      setLikedComments(prev => ({
-        ...prev,
-        [commentId]: !isCurrentlyLiked
-      }));
+      if (isCurrentlyLiked) {
+        setLikedComments(prev => new Set(Array.from(prev).filter(id => id !== commentId)));
+      } else {
+        setLikedComments(prev => new Set(prev.add(commentId)));
+      }
       
       setComments(prev => 
         prev.map(comment => 
@@ -342,29 +432,37 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
       
       {/* Comments List */}
       <View style={styles.commentsContainer}>
-        {loading && !refreshing ? (
-          <ActivityIndicator size="large" color="#f4511e" style={styles.loader} />
-        ) : (
-          <FlatList
-            data={comments}
-            renderItem={({ item }) => (
-              <CommentItem 
-                comment={item} 
-                onLike={() => handleLikeComment(item.id as string)} 
-                onDelete={() => handleDeleteComment(item.id as string)}
-                isOwner={isCommentOwner(item.userId)}
-                isLiked={likedComments[item.id as string] || false}
-              />
-            )}
-            keyExtractor={item => item.id as string}
-            ListEmptyComponent={() => (
-              <Text style={styles.emptyText}>No comments yet. Be the first to comment!</Text>
-            )}
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            contentContainerStyle={styles.commentsList}
-          />
-        )}
+        <FlatList
+          data={comments}
+          keyExtractor={(item) => item.id || Math.random().toString()}
+          renderItem={({ item }) => (
+            <CommentItem 
+              comment={item} 
+              onLike={() => handleLikeComment(item.id as string)} 
+              onDelete={() => handleDeleteComment(item.id as string)}
+              isOwner={isCommentOwner(item.userId)}
+              isLiked={likedComments.has(item.id as string)}
+            />
+          )}
+          ListEmptyComponent={
+            loading ? (
+              <ActivityIndicator size="large" color="#f4511e" style={styles.loader} />
+            ) : (
+              <View style={styles.emptyCommentsContainer}>
+                <Text style={styles.emptyCommentsText}>No comments yet. Be the first!</Text>
+              </View>
+            )
+          }
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={refreshComments}
+              colors={['#f4511e']}
+              tintColor="#f4511e"
+            />
+          }
+          contentContainerStyle={styles.commentsList}
+        />
       </View>
       
       {/* Comment Input - Now at the bottom */}
@@ -536,7 +634,12 @@ const styles = StyleSheet.create({
   deleteButton: {
     padding: 4,
   },
-  emptyText: {
+  emptyCommentsContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyCommentsText: {
     color: '#666',
     textAlign: 'center',
     padding: 20,

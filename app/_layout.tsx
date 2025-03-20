@@ -134,13 +134,37 @@ export default function RootLayout() {
         await initializeHistory();
         console.log('[DEBUG] App: Watch history initialized successfully');
         
-        // Initialize avatars
-        await fetchAvatars();
-        console.log('[DEBUG] App: Avatars loaded successfully');
+        // Initialize avatars - critical for comment display
+        try {
+          await fetchAvatars();
+          console.log('[DEBUG] App: Avatars loaded successfully');
+        } catch (avatarError) {
+          console.error('[DEBUG] App: Error loading avatars:', avatarError);
+          // Continue initialization even if avatar loading fails
+        }
         
-        // Run comment avatar migration
-        await migrateCommentsWithAvatars();
-        console.log('[DEBUG] App: Comment avatar migration completed');
+        // Run comment avatar migration with retries
+        try {
+          console.log('[DEBUG] App: Starting comment avatar migration');
+          const migrationResult = await migrateCommentsWithAvatars();
+          if (migrationResult.success) {
+            console.log(`[DEBUG] App: Comment avatar migration completed successfully. Updated ${migrationResult.updatedCount} comments.`);
+          } else {
+            console.warn('[DEBUG] App: Comment avatar migration returned failure:', migrationResult.error);
+            
+            // Try one more time after a delay if first attempt failed
+            setTimeout(async () => {
+              try {
+                console.log('[DEBUG] App: Retry comment avatar migration');
+                await migrateCommentsWithAvatars();
+              } catch (retryError) {
+                console.error('[DEBUG] App: Retry migration also failed:', retryError);
+              }
+            }, 5000);
+          }
+        } catch (migrationError) {
+          console.error('[DEBUG] App: Error running comment avatar migration:', migrationError);
+        }
       } catch (error) {
         console.error('[DEBUG] App: Error initializing app data:', error);
       }

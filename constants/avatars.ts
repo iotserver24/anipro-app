@@ -4,6 +4,7 @@ export interface Avatar {
   id: string;
   name: string;
   url: string;
+  category?: string;
 }
 
 // Default avatars as fallback
@@ -11,32 +12,38 @@ export const DEFAULT_AVATARS: Avatar[] = [
   {
     id: 'default',
     name: 'Default',
-    url: 'https://cdn.pixabay.com/photo/2016/08/08/09/17/avatar-1577909_1280.png'
+    url: 'https://cdn.pixabay.com/photo/2016/08/08/09/17/avatar-1577909_1280.png',
+    category: 'Default'
   },
   {
     id: 'ninja',
     name: 'Ninja',
-    url: 'https://cdn-icons-png.flaticon.com/512/2410/2410387.png'
+    url: 'https://cdn-icons-png.flaticon.com/512/2410/2410387.png',
+    category: 'Anime'
   },
   {
     id: 'samurai',
     name: 'Samurai',
-    url: 'https://cdn-icons-png.flaticon.com/512/4696/4696465.png'
+    url: 'https://cdn-icons-png.flaticon.com/512/4696/4696465.png',
+    category: 'Anime'
   },
   {
     id: 'mecha',
     name: 'Mecha',
-    url: 'https://cdn-icons-png.flaticon.com/512/1154/1154468.png'
+    url: 'https://cdn-icons-png.flaticon.com/512/1154/1154468.png',
+    category: 'Anime'
   },
   {
     id: 'kawaii',
     name: 'Kawaii',
-    url: 'https://cdn-icons-png.flaticon.com/512/1785/1785210.png'
+    url: 'https://cdn-icons-png.flaticon.com/512/1785/1785210.png',
+    category: 'Anime'
   },
   {
     id: 'sensei',
     name: 'Sensei',
-    url: 'https://cdn-icons-png.flaticon.com/512/4874/4874878.png'
+    url: 'https://cdn-icons-png.flaticon.com/512/4874/4874878.png',
+    category: 'Anime'
   }
 ];
 
