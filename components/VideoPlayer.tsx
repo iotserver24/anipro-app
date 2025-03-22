@@ -421,16 +421,22 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
       if (newIsFullscreen) {
         // Go to landscape - do this first for smoother transition
-        await Promise.all([
-          ScreenOrientation.lockAsync(
-            ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT
-          ),
-          Platform.OS === "android"
-            ? NavigationBar.setVisibilityAsync("hidden")
-            : Promise.resolve(),
-          StatusBar.setHidden(true, "fade"),
-        ]);
+        StatusBar.setHidden(true);
         FullScreenChz.enable();
+        await ScreenOrientation.lockAsync(
+          ScreenOrientation.OrientationLock.LANDSCAPE
+        );
+        setIsFullscreen(true);
+        // await NavigationBar.setVisibilityAsync("hidden");
+        // await Promise.all([
+        //   ScreenOrientation.lockAsync(
+        //     ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT
+        //   ),
+        //   Platform.OS === "android"
+        //     ? NavigationBar.setVisibilityAsync("hidden")
+        //     : Promise.resolve(),
+        //   StatusBar.setHidden(true, "fade"),
+        // ]);
         // // Get screen dimensions after orientation change
         // const { width: screenWidth, height: screenHeight } =
         //   Dimensions.get("screen");
@@ -445,18 +451,24 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         setIsFullscreen(true);
       } else {
         // Update state first when exiting
-        setIsFullscreen(false);
+        StatusBar.setHidden(false);
+        // await NavigationBar.setVisibilityAsync("visible");
         FullScreenChz.disable();
+        await ScreenOrientation.lockAsync(
+          ScreenOrientation.OrientationLock.PORTRAIT_UP
+        );
+        setIsFullscreen(false);
+
         // Go to portrait
-        await Promise.all([
-          ScreenOrientation.lockAsync(
-            ScreenOrientation.OrientationLock.PORTRAIT_UP
-          ),
-          Platform.OS === "android"
-            ? NavigationBar.setVisibilityAsync("visible")
-            : Promise.resolve(),
-          StatusBar.setHidden(false, "fade"),
-        ]);
+        // await Promise.all([
+        //   ScreenOrientation.lockAsync(
+        //     ScreenOrientation.OrientationLock.PORTRAIT_UP
+        //   ),
+        //   Platform.OS === "android"
+        //     ? NavigationBar.setVisibilityAsync("visible")
+        //     : Promise.resolve(),
+        //   StatusBar.setHidden(false, "fade"),
+        // ]);
 
         // // Force a small delay to ensure orientation change is complete
         // await new Promise((resolve) => setTimeout(resolve, 50));
