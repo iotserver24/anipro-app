@@ -1,0 +1,105 @@
+cd "C:\Users\Asus\all repos\anime-app\anipro-app"
+npx expo prebuild --clean
+
+npx react-native bundle --platform android `
+    --dev false `
+    --entry-file app/_layout.tsx `
+    --bundle-output android/app/src/main/assets/index.android.bundle `
+    --assets-dest android/app/src/main/res
+cd android
+./gradlew clean
+./gradlew assembleRelease
+./gradlew installRelease
+
+# The APKs will be generated in the following locations:
+# Universal APK: android/app/build/outputs/apk/release/app-universal-release.apk
+# ARM64 APK: android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
+# x86 APK: android/app/build/outputs/apk/release/app-x86-release.apk
+# x86_64 APK: android/app/build/outputs/apk/release/app-x86_64-release.apk
+
+
+
+# =====================================================================
+# QUICK UPDATE COMMANDS (for small changes)
+# =====================================================================
+# If you're only making small changes to JavaScript/TypeScript code
+# and not modifying native code or adding new dependencies, you can use:
+
+
+
+cd "C:\Users\Asus\all repos\anime app\anipro"
+
+npx react-native bundle --platform android `
+    --dev false `
+    --entry-file app/_layout.tsx `
+    --bundle-output android/app/src/main/assets/index.android.bundle `
+    --assets-dest android/app/src/main/res
+
+cd android
+node scripts/check-version.js
+node scripts/update-version.js <version> <versionCode>  
+example: node scripts/update-version.js 1.0.0 100
+
+
+./gradlew assembleRelease
+./gradlew installRelease
+
+
+
+
+
+keystore details
+
+PS C:\Users\Asus\all repos\anime app\anipro> npm run version:update 2.9.9 1
+
+> anisurge@2.9.9 version:update
+> node scripts/version-manager.js update 2.9.9 1
+
+🔄 Updating version to 2.9.9 (code: 1)...
+
+✅ Updated package.json
+✅ Updated app.json
+✅ Updated android/app/build.gradle
+
+🎉 Version update complete!
+PS C:\Users\Asus\all repos\anime app\anipro> keytool -list -v -keystore anisurge-release-key.keystore
+Enter keystore password:  
+
+Keystore type: PKCS12
+Keystore provider: SUN
+
+Your keystore contains 1 entry
+
+Alias name: anisurge-key
+Creation date: Mar 14, 2025
+Entry type: PrivateKeyEntry
+Certificate chain length: 1
+Certificate[1]:
+Owner: CN=r3ap3redit, OU=anisurge, O=Unknown, L=karnataka, ST=karnataka, C=91
+Issuer: CN=r3ap3redit, OU=anisurge, O=Unknown, L=karnataka, ST=karnataka, C=91
+Serial number: 9d60ae901b90eefc
+Valid from: Fri Mar 14 21:42:04 IST 2025 until: Tue Jul 30 21:42:04 IST 2052
+Certificate fingerprints:
+         SHA1: D8:9F:B6:20:54:B8:F4:03:87:37:D1:73:58:37:50:5A:38:77:44:86
+         SHA256: 55:69:AB:DE:44:84:52:C9:4E:E0:C5:45:DD:74:9D:CB:CB:65:F0:F5:B5:AD:F5:D3:37:76:4E:0A:81:BF:49:95
+Signature algorithm name: SHA384withRSA
+Subject Public Key Algorithm: 2048-bit RSA key
+Version: 3
+
+Extensions:
+
+#1: ObjectId: 2.5.29.14 Criticality=false
+SubjectKeyIdentifier [
+KeyIdentifier [
+0000: C9 20 92 4C FB 50 51 4D   FF 24 32 6C 32 67 86 10  . .L.PQM.$2l2g..
+0010: 73 7C FB 48                                        s..H
+]
+]
+
+
+
+*******************************************
+*******************************************
+
+
+PS C:\Users\Asus\all repos\anime app\anipro> 

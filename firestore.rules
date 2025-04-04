@@ -1,0 +1,99 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Function to check if a user's email is verified
+    function isEmailVerified() {
+      return request.auth.token.email_verified;
+    }
+
+    // Function to check if user is authenticated with verified email
+    function isAuthenticatedAndVerified() {
+      return request.auth != null && isEmailVerified();
+    }
+
+    // Function to validate avatar ID format
+    function isValidAvatarId(avatarId) {
+      return avatarId is string && (
+        // Regular avatar format
+        avatarId.matches('^[a-zA-Z0-9_-]+$') ||
+        // Premium avatar format (must start with 'premium_')
+        avatarId.matches('^premium_[0-9]+$')
+      );
+    }
+
+    // Function to check if a user has premium avatar access
+    function hasPremiumAvatarAccess() {
+      return request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isPremium == true;
+    }
+
+    // Function to validate avatar update
+    function canUseAvatar(avatarId) {
+      return isValidAvatarId(avatarId) && (
+        // If it's a premium avatar, check for premium access
+        (avatarId.matches('^premium_.*$') && hasPremiumAvatarAccess()) ||
+        // If not a premium avatar, it's fine to use
+        !avatarId.matches('^premium_.*$')
+      );
+    }
+
+    match /users/{userId} {
+      // Allow reading all user documents for username checks
+      allow read: if true;
+      
+      // Allow users to create their own document during registration
+      allow create: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow users to update their own document
+      allow update: if request.auth != null && 
+                     request.auth.uid == userId && 
+                     (
+                       // For avatar updates, ensure avatarId is valid and user has the right permissions
+                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avatarId']) && 
+                        canUseAvatar(request.resource.data.avatarId)) || 
+                       // OR no avatar field is being changed
+                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['avatarId'])
+                     );
+    }
+    
+    match /comments/{commentId} {
+      allow read: if true;
+      
+      // Require email verification to create new comments
+      allow create: if isAuthenticatedAndVerified();
+      
+      // Allow deletion of own comments regardless of verification
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+      
+      // Allow updating likes count without verification
+      allow update: if request.auth != null && 
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']);
+    }
+    
+    match /comment_likes/{likeId} {
+      // Allow reading like status
+      allow read: if true;
+      
+      // Require email verification for liking comments
+      allow create, delete: if isAuthenticatedAndVerified() && 
+                             likeId.matches(request.auth.uid + '_.*');
+    }
+
+    // User data collection (watch history and watchlist)
+    match /user_data/{userId} {
+      // Allow users to read their own data even without verification
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow creating initial data without verification
+      allow create: if request.auth != null && request.auth.uid == userId;
+      
+      // Require email verification for updating existing data
+      allow update: if isAuthenticatedAndVerified() && 
+                     request.auth.uid == userId && 
+                     (
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['watchHistory', 'watchlist', 'lastSync']) || 
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSync'])
+                     );
+    }
+  }
+}
