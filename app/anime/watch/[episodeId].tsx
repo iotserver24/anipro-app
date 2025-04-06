@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput, BackHandler, Platform, Linking, Modal, Alert, Animated } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput, BackHandler, Platform, Linking, Modal, Alert, Animated, Image } from 'react-native';
 import { useLocalSearchParams, router, Stack, useNavigation } from 'expo-router';
 import Video from 'react-native-video';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -572,6 +572,58 @@ const DownloadPopup = ({ visible, onClose, downloadUrl }: {
   );
 };
 
+// Add this component after other component definitions and before the main WatchEpisode component
+const AnimeInfo = React.memo(({ 
+  animeInfo, 
+  onNavigateToAnime 
+}: { 
+  animeInfo: any; 
+  onNavigateToAnime: () => void;
+}) => {
+  if (!animeInfo) return null;
+
+  return (
+    <TouchableOpacity 
+      onPress={onNavigateToAnime}
+      style={styles.animeInfoContainer}
+    >
+      <View style={styles.animeInfoContent}>
+        <View style={styles.animeCoverContainer}>
+          {animeInfo.image ? (
+            <Image 
+              source={{ uri: animeInfo.image }} 
+              style={styles.animeCover}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.animeCover, styles.animeCoverPlaceholder]}>
+              <MaterialIcons name="image" size={32} color="#666" />
+            </View>
+          )}
+        </View>
+        <View style={styles.animeDetails}>
+          <Text style={styles.animeTitle} numberOfLines={1}>
+            {animeInfo.title}
+          </Text>
+          <View style={styles.animeTypeTag}>
+            <Text style={styles.animeTypeText}>
+              {animeInfo.type}
+            </Text>
+          </View>
+          <Text style={styles.animeDescription} numberOfLines={3}>
+            {animeInfo.description}
+          </Text>
+          <View style={styles.animeMetaInfo}>
+            <Text style={styles.animeStatus}>
+              {animeInfo.status}
+            </Text>
+          </View>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+});
+
 // Optimize the main WatchEpisode component
 export default function WatchEpisode() {
   const { episodeId, animeId, episodeNumber, title, episodeTitle, category, resumeTime } = useLocalSearchParams();
@@ -930,11 +982,11 @@ export default function WatchEpisode() {
       // Now fetch anime details with the correct ID
       const data = await animeAPI.getAnimeDetails(actualAnimeId);
       
-      // Ensure we have the required fields
+      // Ensure we have the required fields and map image to coverImage
       const processedData = {
         ...data,
         title: data.title,
-        image: data.image,
+        coverImage: data.image || data.info?.image, // Map image to coverImage
         description: data.description,
         type: data.type,
         status: data.status,
@@ -947,7 +999,7 @@ export default function WatchEpisode() {
       addToHistory({
         id: actualAnimeId,
         name: processedData.title,
-        img: processedData.image || processedData.info?.image || '',
+        img: processedData.coverImage || '', // Use the mapped coverImage
         episodeId: episodeId as string,
         episodeNumber: Number(episodeNumber) || 0,
         timestamp: now,
@@ -1719,6 +1771,19 @@ export default function WatchEpisode() {
                 onComments={handleShowComments}
                 downloadUrl={videoData?.download || null}
               />
+              
+              <AnimeInfo 
+                animeInfo={animeInfo} 
+                onNavigateToAnime={() => {
+                  if (animeId) {
+                    router.push({
+                      pathname: "/anime/[id]",
+                      params: { id: animeId }
+                    });
+                  }
+                }}
+              />
+
               <ScrollView style={styles.controls}>
                 {/* Episodes */}
                 <View style={styles.episodeSection}>
@@ -1966,7 +2031,7 @@ const styles = StyleSheet.create({
   episodeListScroll: {  // Rename to avoid duplicate
     flex: 1,
   },
-  currentEpisodeItem: {  // Rename to avoid duplicate
+  currentEpisodeItem: {
     backgroundColor: '#333',
   },
   episodeItem: {
@@ -2213,5 +2278,89 @@ const styles = StyleSheet.create({
   },
   selectedAudioText: {
     color: '#fff',
+  },
+  animeInfoContainer: {
+    backgroundColor: '#1a1a1a',
+    marginHorizontal: 16,
+    marginVertical: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  animeInfoContent: {
+    flexDirection: 'row',
+    padding: 12,
+    gap: 12,
+  },
+  animeCoverContainer: {
+    width: 100,
+    height: 150,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#333',
+  },
+  animeCover: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 8,
+  },
+  animeCoverPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#333',
+  },
+  animeDetails: {
+    flex: 1,
+    justifyContent: 'flex-start',
+  },
+  animeTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  animeTypeTag: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#f4511e',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  animeTypeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '500',
+    textTransform: 'capitalize',
+  },
+  animeDescription: {
+    color: '#999',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  animeMetaInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  animeStatus: {
+    color: '#666',
+    fontSize: 14,
+    textTransform: 'capitalize',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#333',
+    marginVertical: 16,
+  },
+  episodesHeader: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 16,
   },
 });
