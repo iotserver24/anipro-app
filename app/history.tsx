@@ -5,6 +5,8 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useWatchHistoryStore, WatchHistoryItem } from '../store/watchHistoryStore';
 import { formatDistanceToNow } from 'date-fns';
+import { auth } from '../services/firebase';
+import { syncService } from '../services/syncService';
 
 export default function History() {
   // 1. Store hooks
@@ -38,15 +40,57 @@ export default function History() {
   }, []);
 
   const handleClearAll = useCallback(() => {
+    // First check if user is logged in and email is verified
+    if (auth.currentUser && !auth.currentUser.emailVerified) {
+      Alert.alert(
+        'Email Not Verified',
+        'Please verify your email first to sync changes with cloud storage. Your local history will still be cleared.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Clear Local Only',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await clearHistory();
+              } catch (error) {
+                console.error('Error clearing local history:', error);
+                Alert.alert('Error', 'Failed to clear the local history. Please try again.');
+              }
+            }
+          }
+        ]
+      );
+      return;
+    }
+
     Alert.alert(
-      'Clear All History',
-      'Are you sure you want to clear all watch history?',
+      'Clear Watch History',
+      auth.currentUser 
+        ? 'Are you sure you want to clear your entire watch history? This will clear both local and cloud storage.'
+        : 'Are you sure you want to clear your entire watch history?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Clear All',
           style: 'destructive',
-          onPress: () => clearHistory()
+          onPress: async () => {
+            try {
+              // Clear local history
+              await clearHistory();
+              
+              // If user is logged in and verified, sync empty history with Firestore
+              if (auth.currentUser?.emailVerified) {
+                await syncService.syncWatchHistory([]);
+              }
+            } catch (error) {
+              console.error('Error clearing history:', error);
+              Alert.alert(
+                'Error',
+                'Failed to clear the history. Please try again.'
+              );
+            }
+          }
         }
       ]
     );

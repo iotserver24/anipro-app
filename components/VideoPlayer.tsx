@@ -812,6 +812,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           muted={false}
           controls={false}
           progressUpdateInterval={250}
+          maxBitRate={2000000}
+          bufferConfig={{
+            minBufferMs: 15000,
+            maxBufferMs: 30000,
+            bufferForPlaybackMs: 2500,
+            bufferForPlaybackAfterRebufferMs: 5000
+          }}
           textTracks={selectedSubtitleTrack ? [selectedSubtitleTrack] : undefined}
           selectedTextTrack={selectedSubtitleTrack ? {
             type: SelectedTrackType.LANGUAGE,

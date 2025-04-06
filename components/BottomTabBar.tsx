@@ -69,19 +69,19 @@ function BottomTabBar() {
       IconComponent: MaterialIcons
     },
     {
-      name: 'Schedule',
-      path: '/schedule',
-      icon: 'calendar-today',
+      name: 'My List',
+      path: '/mylist',
+      icon: 'bookmark',
       IconComponent: MaterialIcons
-    },
+    }
   ];
 
   // Navigation tabs for the right side
   const rightTabs = [
     {
-      name: 'My List',
-      path: '/mylist',
-      icon: 'bookmark',
+      name: 'Gallery',
+      path: '/gallery',
+      icon: 'photo-library',
       IconComponent: MaterialIcons
     },
     {

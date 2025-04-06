@@ -5,6 +5,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useMyListStore } from '../store/myListStore';
+import { auth } from '../services/firebase';
+import { syncService } from '../services/syncService';
 
 type MyListAnime = {
   id: string;
@@ -14,7 +16,7 @@ type MyListAnime = {
 };
 
 export default function MyList() {
-  const { myList, removeAnime, initializeList, refreshIfNeeded, isLoading } = useMyListStore();
+  const { myList, removeAnime, initializeList, refreshIfNeeded, isLoading, clearList } = useMyListStore();
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -77,6 +79,57 @@ export default function MyList() {
     );
   };
 
+  const clearAllAnime = () => {
+    // First check if user is logged in and email is verified
+    if (auth.currentUser && !auth.currentUser.emailVerified) {
+      Alert.alert(
+        'Email Not Verified',
+        'Please verify your email first to sync changes with cloud storage. Your local list will still be cleared.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Clear Local Only',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await clearList();
+              } catch (error) {
+                console.error('Error clearing local list:', error);
+                Alert.alert('Error', 'Failed to clear the local list. Please try again.');
+              }
+            }
+          }
+        ]
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Clear My List',
+      auth.currentUser 
+        ? 'Are you sure you want to remove all anime from your list? This will clear both local and cloud storage.'
+        : 'Are you sure you want to remove all anime from your list?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await clearList();
+            } catch (error) {
+              console.error('Error clearing list:', error);
+              Alert.alert(
+                'Error',
+                'Failed to clear the list. Please try again.'
+              );
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const renderAnimeCard = ({ item }: { item: MyListAnime }) => (
     <TouchableOpacity 
       style={styles.animeCard}
@@ -105,7 +158,18 @@ export default function MyList() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>My List</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>My List</Text>
+        {myList.length > 0 && (
+          <TouchableOpacity 
+            style={styles.clearAllButton}
+            onPress={clearAllAnime}
+          >
+            <MaterialIcons name="delete-sweep" size={24} color="#f4511e" />
+            <Text style={styles.clearAllText}>Clear All</Text>
+          </TouchableOpacity>
+        )}
+      </View>
       {initialLoading && myList.length === 0 ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#f4511e" />
@@ -147,11 +211,30 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#121212',
   },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+  },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
-    padding: 16,
+  },
+  clearAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(244, 81, 30, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  clearAllText: {
+    color: '#f4511e',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   centerContainer: {
     flex: 1,
