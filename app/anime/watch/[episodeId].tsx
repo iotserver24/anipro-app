@@ -910,7 +910,25 @@ export default function WatchEpisode() {
 
   const fetchAnimeInfo = async () => {
     try {
-      const data = await animeAPI.getAnimeDetails(animeId as string);
+      // Extract the actual anime ID from the episode ID if animeId is not provided
+      let actualAnimeId = animeId as string;
+      if (!actualAnimeId && typeof episodeId === 'string') {
+        // For new format: no-longer-allowed-in-another-world-19247$episode$126001$category=dub
+        const withoutCategory = episodeId.split('$category=')[0];
+        if (withoutCategory.includes('$episode$')) {
+          // New format
+          actualAnimeId = withoutCategory.split('$episode$')[0];
+        } else if (withoutCategory.includes('$ep=')) {
+          // Old format
+          actualAnimeId = withoutCategory.split('$ep=')[0];
+        } else {
+          // Fallback - use everything before first $
+          actualAnimeId = episodeId.split('$')[0];
+        }
+      }
+      
+      // Now fetch anime details with the correct ID
+      const data = await animeAPI.getAnimeDetails(actualAnimeId);
       
       // Ensure we have the required fields
       const processedData = {
@@ -927,11 +945,11 @@ export default function WatchEpisode() {
       // Save to history immediately to ensure we have the correct info
       const now = Date.now();
       addToHistory({
-        id: animeId as string,
+        id: actualAnimeId,
         name: processedData.title,
-        img: processedData.image,
+        img: processedData.image || processedData.info?.image || '',
         episodeId: episodeId as string,
-        episodeNumber: Number(episodeNumber),
+        episodeNumber: Number(episodeNumber) || 0,
         timestamp: now,
         progress: 0,
         duration: 0,
@@ -997,30 +1015,56 @@ export default function WatchEpisode() {
       setCurrentTime(newTime);
       setDuration(newDuration);
       
-      // Save progress less frequently - increased from 2s to 5s
-      const now = Date.now();
-      // Only save if significant time has passed or position changed significantly
-      if (animeInfo && newTime > 0 && newDuration > 0 && 
-          (now - lastProgressUpdateRef.current >= 5000 || 
-           Math.abs(newTime - lastProgressValueRef.current) > 10)) {
+      // Save progress if we have valid data
+      if (animeInfo && newTime > 0 && newDuration > 0) {
+        const now = Date.now();
         
-        lastProgressUpdateRef.current = now;
-        lastProgressValueRef.current = newTime;
-        setLastSaveTime(now);
-        
-        // Save progress to history with explicit number conversion
-        addToHistory({
-          id: animeId as string,
-          name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
-          img: animeInfo.image || animeInfo.info?.image || '',
-          episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
-          episodeNumber: Number(episodeNumber),
-          timestamp: now,
-          progress: Number(newTime),
-          duration: Number(newDuration),
-          lastWatched: now,
-          subOrDub: (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub'
-        });
+        // Save progress every 2 seconds or if position changed significantly
+        if (now - lastProgressUpdateRef.current >= 2000 || 
+            Math.abs(newTime - lastProgressValueRef.current) > 5) {
+          
+          // Extract the actual anime ID
+          let actualAnimeId = animeId as string;
+          if (!actualAnimeId && typeof episodeId === 'string') {
+            // For new format: no-longer-allowed-in-another-world-19247$episode$126001$category=dub
+            const withoutCategory = episodeId.split('$category=')[0];
+            if (withoutCategory.includes('$episode$')) {
+              // New format
+              actualAnimeId = withoutCategory.split('$episode$')[0];
+            } else if (withoutCategory.includes('$ep=')) {
+              // Old format
+              actualAnimeId = withoutCategory.split('$ep=')[0];
+            } else {
+              // Fallback - use everything before first $
+              actualAnimeId = episodeId.split('$')[0];
+            }
+          }
+          
+          // Ensure all fields are valid before saving
+          const historyItem = {
+            id: actualAnimeId,
+            name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
+            img: animeInfo.image || animeInfo.info?.image || '',
+            episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
+            episodeNumber: Number(episodeNumber) || 0,
+            timestamp: now,
+            progress: Math.max(0, Math.floor(newTime)), // Ensure positive integer
+            duration: Math.max(0, Math.floor(newDuration)), // Ensure positive integer
+            lastWatched: now,
+            subOrDub: (typeof category === 'string' && (category === 'sub' || category === 'dub')) ? 
+              category as 'sub' | 'dub' : 'sub'
+          };
+          
+          // Log the history item for debugging
+          logger.debug('Saving history item:', historyItem);
+          
+          // Save progress to history
+          addToHistory(historyItem);
+          
+          // Update last progress values
+          lastProgressUpdateRef.current = now;
+          lastProgressValueRef.current = newTime;
+        }
       }
     }, 1000), // Increased debounce from 500ms to 1000ms
     [animeInfo, animeId, episodeId, episodeNumber, category, addToHistory]
@@ -1033,8 +1077,26 @@ export default function WatchEpisode() {
       if (currentTime > 0 && duration > 0 && animeInfo) {
         //console.log(`[DEBUG] Saving final progress - Time: ${currentTime}, Duration: ${duration}`);
         const now = Date.now();
+        
+        // Extract the actual anime ID
+        let actualAnimeId = animeId as string;
+        if (!actualAnimeId && typeof episodeId === 'string') {
+          // For new format: no-longer-allowed-in-another-world-19247$episode$126001$category=dub
+          const withoutCategory = episodeId.split('$category=')[0];
+          if (withoutCategory.includes('$episode$')) {
+            // New format
+            actualAnimeId = withoutCategory.split('$episode$')[0];
+          } else if (withoutCategory.includes('$ep=')) {
+            // Old format
+            actualAnimeId = withoutCategory.split('$ep=')[0];
+          } else {
+            // Fallback - use everything before first $
+            actualAnimeId = episodeId.split('$')[0];
+          }
+        }
+        
         addToHistory({
-          id: animeId as string,
+          id: actualAnimeId,
           name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
           img: animeInfo.image || animeInfo.info?.image || '',
           episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
@@ -1165,24 +1227,26 @@ export default function WatchEpisode() {
         if (now - lastProgressUpdateRef.current >= 2000 || 
             Math.abs(currentTime - lastProgressValueRef.current) > 5) {
           
-          //console.log(`[DEBUG] Saving progress - Time: ${currentTime}, Duration: ${videoDuration}`);
-          
-          lastProgressUpdateRef.current = now;
-          lastProgressValueRef.current = currentTime;
-          
-          // Save progress to history
-          addToHistory({
+          // Ensure all fields are valid before saving
+          const historyItem = {
             id: animeId as string,
             name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
             img: animeInfo.image || animeInfo.info?.image || '',
             episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
-            episodeNumber: Number(episodeNumber),
+            episodeNumber: Number(episodeNumber) || 0,
             timestamp: now,
-            progress: Math.floor(currentTime), // Ensure it's an integer
-            duration: Math.floor(videoDuration), // Ensure it's an integer
+            progress: Math.max(0, Math.floor(currentTime)), // Ensure positive integer
+            duration: Math.max(0, Math.floor(videoDuration)), // Ensure positive integer
             lastWatched: now,
-            subOrDub: (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub'
-          });
+            subOrDub: (typeof category === 'string' && (category === 'sub' || category === 'dub')) ? 
+              category as 'sub' | 'dub' : 'sub'
+          };
+          
+          // Log the history item for debugging
+          logger.debug('Saving history item:', historyItem);
+          
+          // Save progress to history
+          addToHistory(historyItem);
         }
       }
     },

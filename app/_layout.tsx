@@ -28,74 +28,117 @@ const HeaderRight = () => {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
+  const [initialized, setInitialized] = useState(false);
   const user = getCurrentUser();
 
-  useEffect(() => {
-    const fetchUserAvatar = async () => {
+  // Function to fetch user avatar
+  const fetchUserAvatar = async () => {
+    try {
+      if (!initialized) {
+        console.log('[Avatar] Waiting for auth initialization...');
+        return;
+      }
+
+      setLoading(true);
+      
       if (!user) {
-        console.log('[Avatar] No user found');
-        setLoading(false);
+        console.log('[Avatar] No user found, using default avatar');
+        setAvatarUrl(DEFAULT_AVATARS[0].url);
         return;
       }
 
       console.log('[Avatar] Fetching avatar for user:', user.uid);
-
-      try {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          console.log('[Avatar] User data:', userData);
-          
-          // Get avatarId from userData
-          const avatarId = userData.avatarId;
-          
-          if (avatarId) {
-            console.log('[Avatar] Found avatarId:', avatarId);
-            try {
-              // Use the getAvatarById helper to get the URL
-              const url = await getAvatarById(avatarId);
-              console.log('[Avatar] Resolved avatar URL:', url);
-              setAvatarUrl(url);
-            } catch (avatarError) {
-              console.error('[Avatar] Error fetching avatar URL:', avatarError);
-              // Fall back to default avatar
-              setAvatarUrl(DEFAULT_AVATARS[0].url);
-            }
-          } else if (userData.avatarUrl) {
-            // Direct URL fallback
-            setAvatarUrl(userData.avatarUrl);
-          } else if (userData.avatar) {
-            // Old format fallback
-            setAvatarUrl(userData.avatar);
-          } else if (user.photoURL) {
-            // Auth user photoURL fallback
-            setAvatarUrl(user.photoURL);
-          } else {
-            // Default avatar if nothing found
-            setAvatarUrl(DEFAULT_AVATARS[0].url);
-          }
-          
-          // Check for premium status
-          const isPremiumUser = userData.isPremium || false;
-          const donationAmount = userData.donationAmount || userData.premiumAmount || 0;
-          setIsPremium(isPremiumUser || donationAmount > 0);
-          console.log('[Avatar] Premium status:', isPremiumUser || donationAmount > 0);
-        } else {
-          console.log('[Avatar] User document not found');
-          // Default avatar if no user doc
-          setAvatarUrl(DEFAULT_AVATARS[0].url);
-        }
-      } catch (error) {
-        console.error('[Avatar] Error fetching avatar:', error);
-        // Default avatar on error
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      
+      if (!userDoc.exists()) {
+        console.log('[Avatar] User document not found, using default avatar');
         setAvatarUrl(DEFAULT_AVATARS[0].url);
-      } finally {
-        setLoading(false);
+        return;
       }
-    };
 
-    fetchUserAvatar();
-  }, [user]);
+      const userData = userDoc.data();
+      console.log('[Avatar] User data:', userData);
+
+      // Try each avatar source in order of preference
+      let finalAvatarUrl = null;
+
+      // 1. Try avatarId first
+      if (userData.avatarId) {
+        try {
+          console.log('[Avatar] Attempting to fetch avatar by ID:', userData.avatarId);
+          finalAvatarUrl = await getAvatarById(userData.avatarId);
+          console.log('[Avatar] Successfully fetched avatar by ID:', finalAvatarUrl);
+        } catch (error) {
+          console.error('[Avatar] Error fetching avatar by ID:', error);
+        }
+      }
+
+      // 2. Try direct avatarUrl if avatarId failed
+      if (!finalAvatarUrl && userData.avatarUrl) {
+        console.log('[Avatar] Using direct avatarUrl:', userData.avatarUrl);
+        finalAvatarUrl = userData.avatarUrl;
+      }
+
+      // 3. Try legacy avatar field if avatarUrl failed
+      if (!finalAvatarUrl && userData.avatar) {
+        console.log('[Avatar] Using legacy avatar field:', userData.avatar);
+        finalAvatarUrl = userData.avatar;
+      }
+
+      // 4. Try user's photoURL if all else failed
+      if (!finalAvatarUrl && user.photoURL) {
+        console.log('[Avatar] Using user photoURL:', user.photoURL);
+        finalAvatarUrl = user.photoURL;
+      }
+
+      // 5. Fall back to default if nothing worked
+      if (!finalAvatarUrl) {
+        console.log('[Avatar] No avatar found, using default');
+        finalAvatarUrl = DEFAULT_AVATARS[0].url;
+      }
+
+      // Set the final avatar URL
+      setAvatarUrl(finalAvatarUrl);
+
+      // Check premium status
+      const isPremiumUser = userData.isPremium || false;
+      const donationAmount = userData.donationAmount || userData.premiumAmount || 0;
+      setIsPremium(isPremiumUser || donationAmount > 0);
+      console.log('[Avatar] Premium status:', isPremiumUser || donationAmount > 0);
+
+    } catch (error) {
+      console.error('[Avatar] Error in fetchUserAvatar:', error);
+      setAvatarUrl(DEFAULT_AVATARS[0].url);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Listen for auth initialization
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      console.log('[Avatar] Auth state changed:', user ? 'User logged in' : 'No user');
+      setInitialized(true);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch avatar when component mounts and auth is initialized
+  useEffect(() => {
+    if (initialized) {
+      console.log('[Avatar] Auth initialized, fetching avatar');
+      fetchUserAvatar();
+    }
+  }, [initialized]); // Depend on initialized state
+
+  // Fetch avatar when user changes
+  useEffect(() => {
+    if (initialized && user) {
+      console.log('[Avatar] User changed, fetching new avatar');
+      fetchUserAvatar();
+    }
+  }, [user?.uid, initialized]); // Depend on both user ID and initialized state
 
   const handleProfilePress = () => {
     router.push('/profile');
@@ -112,21 +155,16 @@ const HeaderRight = () => {
           <View style={styles.avatarPlaceholder}>
             <MaterialIcons name="person" size={24} color="#aaa" />
           </View>
-        ) : avatarUrl ? (
+        ) : (
           <Image 
-            source={{ uri: avatarUrl }} 
+            source={{ uri: avatarUrl || DEFAULT_AVATARS[0].url }} 
             style={[styles.avatarImage, isPremium && styles.premiumAvatarBorder]} 
             onError={(e) => {
-              // Log the error
               console.error('[Avatar] Error loading image:', e.nativeEvent.error);
-              // Fallback if image fails to load
+              console.log('[Avatar] Falling back to default avatar');
               setAvatarUrl(DEFAULT_AVATARS[0].url);
             }}
           />
-        ) : (
-          <View style={[styles.avatarPlaceholder, isPremium && styles.premiumAvatarBorder]}>
-            <MaterialIcons name="person" size={24} color="#aaa" />
-          </View>
         )}
         
         {isPremium && (

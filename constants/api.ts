@@ -12,7 +12,7 @@ export const ENDPOINTS = {
   WATCH: '/watch/:episodeId',
   GENRE_LIST: '/genre/list',
   GENRE: '/genre/:genre',
-  MOVIES: '/movies',
+  MOVIES: '/movies', 
   ONA: '/ona',
   OVA: '/ova',
   SPECIALS: '/specials',

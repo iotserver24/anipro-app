@@ -30,6 +30,60 @@ interface WatchHistoryState {
   removeFromHistory: (animeId: string) => Promise<void>;
 }
 
+// Validation function for history items
+const validateHistoryItem = (item: WatchHistoryItem): boolean => {
+  if (!item) return false;
+  
+  // Check required string fields
+  if (!item.id || typeof item.id !== 'string' || !item.id.trim()) {
+    logger.error('Invalid history item: missing or invalid id');
+    return false;
+  }
+  if (!item.name || typeof item.name !== 'string' || !item.name.trim()) {
+    logger.error('Invalid history item: missing or invalid name');
+    return false;
+  }
+  if (!item.episodeId || typeof item.episodeId !== 'string' || !item.episodeId.trim()) {
+    logger.error('Invalid history item: missing or invalid episodeId');
+    return false;
+  }
+  
+  // Check numeric fields
+  if (typeof item.episodeNumber !== 'number' || isNaN(item.episodeNumber)) {
+    logger.error('Invalid history item: invalid episodeNumber');
+    return false;
+  }
+  if (typeof item.progress !== 'number' || isNaN(item.progress)) {
+    logger.error('Invalid history item: invalid progress');
+    return false;
+  }
+  if (typeof item.duration !== 'number' || isNaN(item.duration)) {
+    logger.error('Invalid history item: invalid duration');
+    return false;
+  }
+  if (typeof item.timestamp !== 'number' || isNaN(item.timestamp)) {
+    logger.error('Invalid history item: invalid timestamp');
+    return false;
+  }
+  if (typeof item.lastWatched !== 'number' || isNaN(item.lastWatched)) {
+    logger.error('Invalid history item: invalid lastWatched');
+    return false;
+  }
+  
+  // Validate subOrDub
+  if (item.subOrDub !== 'sub' && item.subOrDub !== 'dub') {
+    logger.error('Invalid history item: invalid subOrDub value');
+    return false;
+  }
+  
+  // Set fallback image if missing
+  if (!item.img || typeof item.img !== 'string' || !item.img.trim()) {
+    item.img = FALLBACK_IMAGE;
+  }
+  
+  return true;
+};
+
 export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
   history: [],
 
@@ -38,20 +92,24 @@ export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
       // Always load local data first for immediate response
       const localHistory = await getItem<WatchHistoryItem[]>(STORAGE_KEY) || [];
       
+      // Filter out invalid items before setting
+      const validLocalHistory = localHistory.filter(item => validateHistoryItem(item));
+      
       // Set local data immediately for faster UI response
-      if (localHistory.length > 0) {
-        const sortedHistory = localHistory.sort((a, b) => b.lastWatched - a.lastWatched);
+      if (validLocalHistory.length > 0) {
+        const sortedHistory = validLocalHistory.sort((a, b) => b.lastWatched - a.lastWatched);
         set({ history: sortedHistory });
       }
       
       // If user is authenticated, try to sync with cloud in background
       if (auth.currentUser) {
         // Perform initial sync which will merge local and cloud data
-        const syncResult = await syncService.performInitialSync(localHistory, []);
+        const syncResult = await syncService.performInitialSync(validLocalHistory, []);
         if (syncResult?.watchHistory && syncResult.watchHistory.length > 0) {
-          set({ history: syncResult.watchHistory });
+          const validSyncedHistory = syncResult.watchHistory.filter(item => validateHistoryItem(item));
+          set({ history: validSyncedHistory });
           // Update local storage with merged data
-          await setItem(STORAGE_KEY, syncResult.watchHistory);
+          await setItem(STORAGE_KEY, validSyncedHistory);
         }
       }
     } catch (error) {
@@ -61,7 +119,8 @@ export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
   },
   
   addToHistory: async (item: WatchHistoryItem) => {
-    if (!item.id || !item.episodeId) {
+    // Validate the item before proceeding
+    if (!validateHistoryItem(item)) {
       logger.error('Invalid history item:', item);
       return;
     }
