@@ -66,47 +66,56 @@ interface APIEpisode {
 }
 
 // Add this component before the main VideoPlayer component
-const SkipButtons = React.memo(({ 
-  currentTime, 
+const SkipButtons = ({ 
+  position, 
   intro, 
   outro, 
   onSkipIntro, 
   onSkipOutro 
 }: { 
-  currentTime: number; 
-  intro?: { start: number; end: number }; 
-  outro?: { start: number; end: number }; 
-  onSkipIntro?: () => void; 
-  onSkipOutro?: () => void; 
+  position: number;
+  intro?: { start: number; end: number };
+  outro?: { start: number; end: number };
+  onSkipIntro?: () => void;
+  onSkipOutro?: () => void;
 }) => {
-  const showIntroButton = intro && currentTime >= intro.start && currentTime < intro.end;
-  const showOutroButton = outro && currentTime >= outro.start && currentTime < outro.end;
+  const showIntroButton = useMemo(() => {
+    if (!intro) return false;
+    return position >= intro.start && position < intro.end;
+  }, [position, intro]);
+
+  const showOutroButton = useMemo(() => {
+    if (!outro) return false;
+    return position >= outro.start && position < outro.end;
+  }, [position, outro]);
 
   if (!showIntroButton && !showOutroButton) return null;
 
   return (
     <View style={styles.skipButtonsContainer}>
-      {showIntroButton && (
-        <TouchableOpacity
+      {showIntroButton && intro && (
+        <Pressable 
           style={styles.skipButton}
           onPress={onSkipIntro}
-          activeOpacity={0.7}
+          android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
         >
+          <MaterialIcons name="double-arrow" size={20} color="white" />
           <Text style={styles.skipButtonText}>Skip Intro</Text>
-        </TouchableOpacity>
+        </Pressable>
       )}
-      {showOutroButton && (
-        <TouchableOpacity
+      {showOutroButton && outro && (
+        <Pressable 
           style={styles.skipButton}
           onPress={onSkipOutro}
-          activeOpacity={0.7}
+          android_ripple={{ color: 'rgba(255,255,255,0.2)' }}
         >
+          <MaterialIcons name="double-arrow" size={20} color="white" />
           <Text style={styles.skipButtonText}>Skip Outro</Text>
-        </TouchableOpacity>
+        </Pressable>
       )}
     </View>
   );
-});
+};
 
 // Add Quality type definition
 type Quality = {
@@ -830,56 +839,56 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             <ActivityIndicator size="large" color="#f4511e" />
           </View>
         )}
-        
-        {/* Always show skip buttons regardless of showControls state */}
-        <SkipButtons
-          currentTime={currentTime}
-          intro={intro}
-          outro={outro}
-          onSkipIntro={handleSkipIntro}
-          onSkipOutro={handleSkipOutro}
-        />
-        
-        {/* Always render controls but adjust opacity */}
-        <Animated.View 
-          style={[styles.controlsContainer, { opacity: controlsOpacity }]}
-          pointerEvents={showControls ? 'auto' : 'none'}
-        >
-          <ControlsOverlay
-            showControls={true}
-            isPlaying={isPlaying}
-            isFullscreen={isFullscreen}
-            currentTime={currentTime}
-            duration={duration}
-            title={title || ""}
-            onPlayPress={togglePlayPause}
-            onFullscreenPress={toggleFullscreen}
-            onSeek={handleSeek}
-            playbackSpeed={playbackSpeed}
-            onPlaybackSpeedChange={handlePlaybackSpeedChange}
-            qualities={availableQualities}
-            selectedQuality={currentQuality}
-            onQualityChange={handleQualityChange}
-            isQualityChanging={isQualityChanging}
-            subtitles={subtitles}
-            selectedSubtitle={selectedSubtitle}
-            onSubtitleChange={handleSubtitleChange}
-          />
-        </Animated.View>
-
-        {tapFeedbackVisible && (
-          <Animated.View 
-            style={[
-              styles.tapFeedback, 
-              { 
-                opacity: tapFeedbackOpacity,
-                left: tapFeedbackPosition.x - 10, // Center the 20px wide element
-                top: tapFeedbackPosition.y - 10, // Center the 20px tall element
-              }
-            ]} 
-          />
-        )}
       </Pressable>
+
+      {/* Move SkipButtons outside of Pressable but inside the main container */}
+      <SkipButtons
+        position={currentTime}
+        intro={intro}
+        outro={outro}
+        onSkipIntro={handleSkipIntro}
+        onSkipOutro={handleSkipOutro}
+      />
+        
+      {/* Always render controls but adjust opacity */}
+      <Animated.View 
+        style={[styles.controlsContainer, { opacity: controlsOpacity }]}
+        pointerEvents={showControls ? 'auto' : 'none'}
+      >
+        <ControlsOverlay
+          showControls={true}
+          isPlaying={isPlaying}
+          isFullscreen={isFullscreen}
+          currentTime={currentTime}
+          duration={duration}
+          title={title || ""}
+          onPlayPress={togglePlayPause}
+          onFullscreenPress={toggleFullscreen}
+          onSeek={handleSeek}
+          playbackSpeed={playbackSpeed}
+          onPlaybackSpeedChange={handlePlaybackSpeedChange}
+          qualities={availableQualities}
+          selectedQuality={currentQuality}
+          onQualityChange={handleQualityChange}
+          isQualityChanging={isQualityChanging}
+          subtitles={subtitles}
+          selectedSubtitle={selectedSubtitle}
+          onSubtitleChange={handleSubtitleChange}
+        />
+      </Animated.View>
+
+      {tapFeedbackVisible && (
+        <Animated.View 
+          style={[
+            styles.tapFeedback, 
+            { 
+              opacity: tapFeedbackOpacity,
+              left: tapFeedbackPosition.x - 10,
+              top: tapFeedbackPosition.y - 10,
+            }
+          ]} 
+        />
+      )}
     </Animated.View>
   );
 };
@@ -929,24 +938,40 @@ const styles = StyleSheet.create({
   },
   skipButtonsContainer: {
     position: 'absolute',
-    top: 60,
-    right: 16,
+    top: 80,
+    right: 20,
     alignItems: 'flex-end',
-    zIndex: 10, // Ensure it's above other elements
+    zIndex: 999,
+    elevation: 999,
+    width: 'auto',
   },
   skipButton: {
     backgroundColor: 'rgba(244, 81, 30, 0.9)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 8,
-    marginBottom: 8,
+    marginBottom: 12,
     alignItems: 'center',
     justifyContent: 'center',
+    minWidth: 120,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+    flexDirection: 'row',
+    gap: 8,
   },
   skipButtonText: {
     color: 'white',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.75)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   centerControls: {
     flex: 1,

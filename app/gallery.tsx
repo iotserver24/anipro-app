@@ -233,6 +233,7 @@ const ReelsView = ({ items, onClose }: { items: GalleryItem[]; onClose: () => vo
   // Add download functionality
   const downloadContent = useCallback(async (url: string, title: string) => {
     try {
+      // Check permissions first
       if (!permissionResponse?.granted) {
         const permission = await requestPermission();
         if (!permission.granted) {
@@ -241,27 +242,41 @@ const ReelsView = ({ items, onClose }: { items: GalleryItem[]; onClose: () => vo
         }
       }
 
-      const filename = url.split('/').pop() || 'download';
-      const fileUri = `${FileSystem.documentDirectory}${filename}`;
-
-      const downloadResumable = FileSystem.createDownloadResumable(
+      // Get file extension from URL
+      const ext = url.split('.').pop() || 'jpg';
+      
+      // Create filename with extension
+      const timestamp = Date.now();
+      const filename = `anisurge_${timestamp}.${ext}`;
+      
+      // Download directly to cache
+      const { uri } = await FileSystem.downloadAsync(
         url,
-        fileUri,
-        {}
+        FileSystem.cacheDirectory + filename
       );
 
-      Alert.alert('Downloading...', 'Please wait while we download your content.');
-
-      const { uri } = await downloadResumable.downloadAsync();
-      
-      if (uri) {
-        const asset = await MediaLibrary.createAssetAsync(uri);
-        await MediaLibrary.createAlbumAsync('Anime Gallery', asset, false);
-        Alert.alert('Success', 'Content saved to gallery!');
+      if (!uri) {
+        throw new Error('Download failed');
       }
-    } catch (err) {
-      console.error('Error downloading:', err);
-      Alert.alert('Error', 'Failed to download content');
+
+      // Save to gallery
+      const asset = await MediaLibrary.createAssetAsync(uri);
+      if (!asset) {
+        throw new Error('Failed to save to gallery');
+      }
+
+      // Create album if needed and move asset to it
+      await MediaLibrary.createAlbumAsync('Anime Gallery', asset, false);
+      
+      // Success!
+      Alert.alert('Success', 'Image saved to gallery!');
+
+      // Clean up
+      await FileSystem.deleteAsync(uri, { idempotent: true });
+
+    } catch (error) {
+      console.error('Download error:', error);
+      Alert.alert('Error', 'Failed to save image. Please try again.');
     }
   }, [permissionResponse, requestPermission]);
 
@@ -785,7 +800,22 @@ export default function Gallery() {
   // Add downloadContent function
   const downloadContent = useCallback(async (item: GalleryItem) => {
     try {
-      // Check permissions first
+      // Validate file type first
+      const urlParts = item.url.split('/');
+      const originalFileName = urlParts[urlParts.length - 1].toLowerCase();
+      
+      // Check if file ends with supported extensions
+      if (!originalFileName.endsWith('.jpg') && 
+          !originalFileName.endsWith('.jpeg') && 
+          !originalFileName.endsWith('.png')) {
+        Alert.alert(
+          'Unsupported File Type', 
+          'Only JPG and PNG files can be downloaded.'
+        );
+        return;
+      }
+
+      // Check permissions
       if (!permissionResponse?.granted) {
         const permission = await requestPermission();
         if (!permission.granted) {
@@ -797,33 +827,59 @@ export default function Gallery() {
       // Show download starting
       Alert.alert('Download Started', 'Your download will begin shortly...');
 
-      // Get file extension from URL
-      const ext = item.url.split('.').pop()?.toLowerCase() || 'jpg';
-      const fileName = `${item.id}.${ext}`;
+      // Get extension from validated filename
+      const ext = originalFileName.endsWith('.jpeg') ? 'jpg' : originalFileName.split('.').pop() || 'jpg';
       
+      // Create a safe filename without paths
+      const safeFileName = `anisurge_${Date.now()}.${ext}`.replace(/[/\\?%*:|"<>]/g, '-');
+      const fileUri = FileSystem.cacheDirectory + safeFileName;
+
+      // Ensure base cache directory exists
+      const dirInfo = await FileSystem.getInfoAsync(FileSystem.cacheDirectory);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(FileSystem.cacheDirectory, { intermediates: true });
+      }
+
       // Download file
       const { uri } = await FileSystem.downloadAsync(
         item.url,
-        FileSystem.cacheDirectory + fileName
+        fileUri
       );
+
+      if (!uri) {
+        throw new Error('Download failed');
+      }
 
       // Save to media library
       const asset = await MediaLibrary.createAssetAsync(uri);
       
+      // Create album if it doesn't exist and move asset to it
+      const album = await MediaLibrary.getAlbumAsync('Anisurge Gallery');
+      if (album) {
+        await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+      } else {
+        await MediaLibrary.createAlbumAsync('Anisurge Gallery', asset, false);
+      }
+
       // Delete cached file
       await FileSystem.deleteAsync(uri, { idempotent: true });
 
       // Show success message
-      Alert.alert('Success', 'Content saved to your gallery!');
+      Alert.alert('Success', 'Image saved to your gallery!');
     } catch (error) {
       console.error('Download error:', error);
-      Alert.alert('Download Failed', 'Failed to download content. Please try again.');
+      Alert.alert('Download Failed', 'Failed to download image. Please try again.');
     }
   }, [permissionResponse, requestPermission]);
 
   const renderItem = useCallback(({ item, index }: { item: GalleryItem; index: number }) => {
     const imageUri = getImageUri(item.url, item.type);
     const cachedImage = imageCache[imageUri];
+
+    // Check if file is downloadable (jpg or png)
+    const isDownloadable = item.url.toLowerCase().endsWith('.jpg') || 
+                          item.url.toLowerCase().endsWith('.jpeg') || 
+                          item.url.toLowerCase().endsWith('.png');
 
     // Update image cache
     if (!cachedImage) {
@@ -865,12 +921,14 @@ export default function Gallery() {
           style={[styles.gradient, { height: '60%' }]}
         >
           <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
-          <TouchableOpacity
-            style={styles.downloadButton}
-            onPress={() => downloadContent(item)}
-          >
-            <MaterialIcons name="file-download" size={24} color="white" />
-          </TouchableOpacity>
+          {isDownloadable && (
+            <TouchableOpacity
+              style={styles.downloadButton}
+              onPress={() => downloadContent(item)}
+            >
+              <MaterialIcons name="file-download" size={24} color="white" />
+            </TouchableOpacity>
+          )}
         </LinearGradient>
       </TouchableOpacity>
     );

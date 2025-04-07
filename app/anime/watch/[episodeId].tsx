@@ -1256,6 +1256,19 @@ export default function WatchEpisode() {
     setIsFullscreen(fullscreenState);
   };
 
+  // Add skip handlers
+  const handleSkipIntro = useCallback(() => {
+    if (videoData?.intro && videoRef.current) {
+      videoRef.current.setPositionAsync(videoData.intro.end * 1000);
+    }
+  }, [videoData?.intro]);
+
+  const handleSkipOutro = useCallback(() => {
+    if (videoData?.outro && videoRef.current) {
+      videoRef.current.setPositionAsync(videoData.outro.end * 1000);
+    }
+  }, [videoData?.outro]);
+
   // Memoize video props
   const videoPlayerProps = useMemo(() => ({
     source: { 
@@ -1309,6 +1322,8 @@ export default function WatchEpisode() {
       { width: '100%', aspectRatio: 16/9, backgroundColor: '#000' },
     intro: videoData?.intro,
     outro: videoData?.outro,
+    onSkipIntro: handleSkipIntro,
+    onSkipOutro: handleSkipOutro,
     isQualityChanging: isQualityChanging,
     savedQualityPosition: savedPosition,
     qualities: qualities,
@@ -1334,7 +1349,9 @@ export default function WatchEpisode() {
     addToHistory,
     qualities,
     selectedQuality,
-    subtitles
+    subtitles,
+    handleSkipIntro,
+    handleSkipOutro
   ]);
 
   // Add control visibility timeout
