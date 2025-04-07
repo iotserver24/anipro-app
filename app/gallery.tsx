@@ -800,21 +800,6 @@ export default function Gallery() {
   // Add downloadContent function
   const downloadContent = useCallback(async (item: GalleryItem) => {
     try {
-      // Validate file type first
-      const urlParts = item.url.split('/');
-      const originalFileName = urlParts[urlParts.length - 1].toLowerCase();
-      
-      // Check if file ends with supported extensions
-      if (!originalFileName.endsWith('.jpg') && 
-          !originalFileName.endsWith('.jpeg') && 
-          !originalFileName.endsWith('.png')) {
-        Alert.alert(
-          'Unsupported File Type', 
-          'Only JPG and PNG files can be downloaded.'
-        );
-        return;
-      }
-
       // Check permissions
       if (!permissionResponse?.granted) {
         const permission = await requestPermission();
@@ -827,12 +812,14 @@ export default function Gallery() {
       // Show download starting
       Alert.alert('Download Started', 'Your download will begin shortly...');
 
-      // Get extension from validated filename
-      const ext = originalFileName.endsWith('.jpeg') ? 'jpg' : originalFileName.split('.').pop() || 'jpg';
+      // Create a safe filename from the title
+      const safeTitle = item.title
+        .replace(/[^a-zA-Z0-9]/g, '_') // Replace non-alphanumeric with underscore
+        .toLowerCase()
+        .substring(0, 50); // Limit length to 50 chars
       
-      // Create a safe filename without paths
-      const safeFileName = `anisurge_${Date.now()}.${ext}`.replace(/[/\\?%*:|"<>]/g, '-');
-      const fileUri = FileSystem.cacheDirectory + safeFileName;
+      const filename = `${safeTitle}.jpg`;
+      const fileUri = FileSystem.cacheDirectory + filename;
 
       // Ensure base cache directory exists
       const dirInfo = await FileSystem.getInfoAsync(FileSystem.cacheDirectory);
@@ -876,11 +863,6 @@ export default function Gallery() {
     const imageUri = getImageUri(item.url, item.type);
     const cachedImage = imageCache[imageUri];
 
-    // Check if file is downloadable (jpg or png)
-    const isDownloadable = item.url.toLowerCase().endsWith('.jpg') || 
-                          item.url.toLowerCase().endsWith('.jpeg') || 
-                          item.url.toLowerCase().endsWith('.png');
-
     // Update image cache
     if (!cachedImage) {
       imageCache[imageUri] = {
@@ -921,14 +903,12 @@ export default function Gallery() {
           style={[styles.gradient, { height: '60%' }]}
         >
           <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
-          {isDownloadable && (
-            <TouchableOpacity
-              style={styles.downloadButton}
-              onPress={() => downloadContent(item)}
-            >
-              <MaterialIcons name="file-download" size={24} color="white" />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            style={styles.downloadButton}
+            onPress={() => downloadContent(item)}
+          >
+            <MaterialIcons name="file-download" size={24} color="white" />
+          </TouchableOpacity>
         </LinearGradient>
       </TouchableOpacity>
     );
