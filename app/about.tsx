@@ -643,6 +643,14 @@ export default function AboutScreen() {
                 {auth.currentUser ? "View Profile" : "Login / Register"}
               </Text>
             </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.profileButton}
+              onPress={() => router.push('/notifications')}
+            >
+              <MaterialIcons name="notifications" size={24} color="#fff" />
+              <Text style={styles.profileButtonText}>Notifications</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -653,13 +661,6 @@ export default function AboutScreen() {
             <Text style={styles.donationText}>
               If you enjoy using {APP_CONFIG.APP_NAME}, please consider supporting the development. Your donations help keep the app free and ad-free!
             </Text>
-            
-            <View style={styles.premiumInfoContainer}>
-              <MaterialIcons name="star" size={20} color="#FFD700" />
-              <Text style={styles.premiumInfoText}>
-                Donate ₹70 or more to unlock Premium status with exclusive features!
-              </Text>
-            </View>
             
             <View style={styles.premiumFeaturesContainer}>
               <Text style={styles.premiumFeaturesTitle}>Premium Benefits:</Text>
@@ -1480,23 +1481,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 10,
-  },
-  premiumInfoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 215, 0, 0.1)',
-    padding: 12,
-    borderRadius: 8,
-    marginVertical: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 215, 0, 0.3)',
-  },
-  premiumInfoText: {
-    color: '#fff',
-    marginLeft: 8,
-    fontSize: 15,
-    flex: 1,
-    fontWeight: '500',
   },
   premiumFeaturesContainer: {
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
