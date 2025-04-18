@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { APP_CONFIG } from '../constants/appConfig';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Video from 'react-native-video';
+import MediaLoader from '../components/MediaLoader';
 
 interface GalleryItem {
   id: string;
@@ -34,6 +35,12 @@ const SAFE_SCREEN_HEIGHT = screenHeight - BOTTOM_OFFSET; // Adjusted height for 
 const numColumns = screenWidth > 600 ? 3 : 2;
 const gap = 8;
 const itemWidth = (screenWidth - (gap * (numColumns + 1))) / numColumns;
+
+// Optimize image dimensions for better performance
+const IMAGE_DIMENSIONS = {
+  min: itemWidth * 0.8,
+  max: itemWidth * 1.6
+};
 
 // Add cache constants
 const CACHE_EXPIRY = 5 * 60 * 1000; // 5 minutes
@@ -505,152 +512,29 @@ export default function Gallery() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
-  const [galleryStatus, setGalleryStatus] = useState<GalleryStatus | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  
-  // Add state for fullscreen viewer
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredItems, setFilteredItems] = useState<GalleryItem[]>([]);
+  const [showSearch, setShowSearch] = useState(false);
+  const searchAnimation = useRef(new Animated.Value(0)).current;
   const [selectedItem, setSelectedItem] = useState<GalleryItem | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const [showControls, setShowControls] = useState(true);
   const controlsTimeout = useRef<NodeJS.Timeout>();
   const translateX = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(1)).current;
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filteredItems, setFilteredItems] = useState<GalleryItem[]>([]);
-  const [showSearch, setShowSearch] = useState(false);
-  const searchAnimation = useRef(new Animated.Value(0)).current;
-  const [showReels, setShowReels] = useState(false);
-  const [currentItems, setCurrentItems] = useState<GalleryItem[]>([]);
 
-  // Clear cache when section changes
-  const clearSectionCache = useCallback(async () => {
-    try {
-      await AsyncStorage.removeItem('current_section');
-      // Clear video cache
-      Object.keys(videoCache).forEach(key => {
-        delete videoCache[key];
-        const filename = key.split('/').pop();
-        if (filename) {
-          FileSystem.deleteAsync(`${FileSystem.cacheDirectory}${filename}`, { idempotent: true });
-        }
-      });
-    } catch (error) {
-      console.error('Error clearing cache:', error);
-    }
-  }, []);
-
-  // Handle section change
+  // Add handleSectionChange function
   const handleSectionChange = useCallback((section: GallerySection) => {
-    clearSectionCache();
     setSelectedSection(section);
-    setShowReels(false);
-  }, [clearSectionCache]);
+    setSearchQuery('');
+    setShowSearch(false);
+    searchAnimation.setValue(0);
+  }, [searchAnimation]);
 
-  // Handle reel opening
-  const handleOpenReels = useCallback((item: GalleryItem, allItems: GalleryItem[]) => {
-    try {
-      console.log('Opening reels with item:', item);
-      console.log('All items:', allItems);
-
-      if (!item || !item.url || !item.id) {
-        console.error('Invalid item:', item);
-        Alert.alert('Error', 'Invalid video selected');
-        return;
-      }
-
-      // Ensure we only process anitube items
-      const anitubeItems = allItems.filter(i => {
-        const isValid = i.type === 'anitube' && 
-                       i.url && 
-                       i.url.trim() !== '' && 
-                       i.id && 
-                       i.id.trim() !== '';
-        
-        if (!isValid) {
-          console.log('Filtered out invalid item:', i);
-        }
-        return isValid;
-      });
-      
-      console.log('Filtered anitube items:', anitubeItems);
-
-      if (!anitubeItems || anitubeItems.length === 0) {
-        console.error('No valid anitube items found');
-        Alert.alert('Error', 'No valid videos available');
-        return;
-      }
-
-      // Verify the selected item exists in the filtered list
-      const selectedIndex = anitubeItems.findIndex(i => i.id === item.id);
-      console.log('Selected index:', selectedIndex);
-      
-      if (selectedIndex === -1) {
-        console.error('Selected item not found in filtered items');
-        // Add the selected item to the list if it's not there
-        anitubeItems.unshift(item);
-      }
-
-      // Create the reordered list starting from selected item
-      const reorderedItems = [
-        ...anitubeItems.slice(selectedIndex === -1 ? 0 : selectedIndex),
-        ...anitubeItems.slice(0, selectedIndex === -1 ? 0 : selectedIndex)
-      ];
-
-      console.log('Reordered items:', reorderedItems);
-
-      // Set the items and show reels
-      setCurrentItems(reorderedItems);
-      setShowReels(true);
-
-    } catch (error) {
-      console.error('Error opening reels:', error);
-      Alert.alert('Error', 'Failed to open video player');
-    }
-  }, []);
-
-  // Fetch gallery status
-  const fetchGalleryStatus = useCallback(async () => {
-    try {
-      const response = await fetch(`${APP_CONFIG.API_BASE_URL}/gallery/status`);
-      if (!response.ok) throw new Error('Failed to fetch gallery status');
-      const data = await response.json();
-      setGalleryStatus(data);
-    } catch (error) {
-      console.error('Failed to fetch gallery status:', error);
-    }
-  }, []);
-
-  // Check if user is admin
-  useEffect(() => {
-    const checkAdminStatus = async () => {
-      try {
-        const response = await fetch(`${APP_CONFIG.API_BASE_URL}/auth/check-admin`);
-        if (response.ok) {
-          const { isAdmin: adminStatus } = await response.json();
-          setIsAdmin(adminStatus);
-        }
-      } catch (error) {
-        console.error('Failed to check admin status:', error);
-      }
-    };
-
-    checkAdminStatus();
-  }, []);
-
-  // Fetch content only if gallery is ready or user is admin
+  // Fetch content directly without status check
   const fetchContent = useCallback(async () => {
     try {
       setError(null);
-
-      // Check gallery status first
-      await fetchGalleryStatus();
-
-      // Only fetch content if gallery is ready or user is admin
-      if (!galleryStatus?.isReady && !isAdmin) {
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
 
       // Try to get cached data first
       const cachedData = await getCachedData(selectedSection);
@@ -676,7 +560,7 @@ export default function Gallery() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [selectedSection, galleryStatus?.isReady, isAdmin]);
+  }, [selectedSection]);
 
   const fetchFreshData = async () => {
     try {
@@ -860,17 +744,10 @@ export default function Gallery() {
   }, [permissionResponse, requestPermission]);
 
   const renderItem = useCallback(({ item, index }: { item: GalleryItem; index: number }) => {
-    const imageUri = getImageUri(item.url, item.type);
-    const cachedImage = imageCache[imageUri];
-
-    // Update image cache
-    if (!cachedImage) {
-      imageCache[imageUri] = {
-        uri: imageUri,
-        timestamp: Date.now()
-      };
-      clearOldImageCache();
-    }
+    // Calculate deterministic height based on item id for consistent layout
+    const itemHeight = item.height || (
+      itemWidth * (0.8 + (parseInt(item.id, 36) % 8) * 0.1)
+    );
 
     return (
       <TouchableOpacity 
@@ -878,7 +755,7 @@ export default function Gallery() {
           styles.itemContainer,
           {
             width: itemWidth,
-            height: item.height || itemWidth,
+            height: itemHeight,
             marginLeft: index % numColumns === 0 ? gap : 0,
             marginTop: index < numColumns ? gap : 0
           }
@@ -889,14 +766,17 @@ export default function Gallery() {
           resetControlsTimeout();
         }}
       >
-        <Image 
-          source={{ uri: imageUri }}
+        <MediaLoader
+          type="image"
+          source={{ uri: item.url }}
           style={[
             styles.image,
-            { height: item.height || itemWidth }
+            { height: itemHeight }
           ]}
-          cachePolicy="memory-disk"
-          loadingIndicatorSource={{ uri: imageUri }}
+          resizeMode="cover"
+          loadingType="spinner"
+          loadingSize={24}
+          loadingColor="#f4511e"
         />
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.9)']}
@@ -1094,76 +974,75 @@ export default function Gallery() {
 
   return (
     <View style={styles.container}>
-      {showReels && selectedSection === 'anitube' && currentItems.length > 0 ? (
-        <ReelsView 
-          items={currentItems}
-          onClose={() => {
-            setShowReels(false);
-            clearSectionCache();
-          }}
-        />
-      ) : (
-        <>
-          {renderHeader()}
+      <>
+        {renderHeader()}
 
-          {loading && !refreshing ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#f4511e" />
-              <Text style={styles.loadingText}>Loading content...</Text>
-            </View>
-          ) : error ? (
-            <View style={styles.errorContainer}>
-              <MaterialIcons name="error-outline" size={48} color="#666" />
-              <Text style={styles.errorText}>{error}</Text>
-              <TouchableOpacity style={styles.retryButton} onPress={fetchContent}>
-                <Text style={styles.retryButtonText}>Retry</Text>
-              </TouchableOpacity>
-            </View>
-          ) : !galleryStatus?.isReady && !isAdmin ? (
-            <View style={styles.comingSoonContainer}>
-              <MaterialIcons name="lock" size={48} color="#666" />
-              <Text style={styles.comingSoonTitle}>Gallery Coming Soon!</Text>
-              <Text style={styles.comingSoonMessage}>{galleryStatus?.message || 'Stay tuned for amazing content!'}</Text>
-            </View>
-          ) : items.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              {searchQuery ? (
-                <>
-                  <MaterialIcons name="search-off" size={48} color="#666" />
-                  <Text style={styles.emptyText}>No results found</Text>
-                </>
-              ) : (
-                <>
-                  <MaterialIcons name="favorite" size={48} color="#666" />
-                  <Text style={styles.emptyText}>
-                    No {selectedSection === 'waifu' ? 'Waifus' : 'Husbandos'} found
-                  </Text>
-                </>
-              )}
-            </View>
-          ) : (
-            <FlatList
-              data={filteredItems}
-              renderItem={renderItem}
-              keyExtractor={item => item.id}
-              numColumns={numColumns}
-              contentContainerStyle={styles.listContainer}
-              showsVerticalScrollIndicator={false}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={onRefresh}
-                  colors={['#f4511e']}
-                  tintColor="#f4511e"
-                />
-              }
-              columnWrapperStyle={styles.columnWrapper}
-            />
-          )}
+        {loading && !refreshing ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#f4511e" />
+            <Text style={styles.loadingText}>Loading content...</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.errorContainer}>
+            <MaterialIcons name="error-outline" size={48} color="#666" />
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity style={styles.retryButton} onPress={fetchContent}>
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : items.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            {searchQuery ? (
+              <>
+                <MaterialIcons name="search-off" size={48} color="#666" />
+                <Text style={styles.emptyText}>No results found</Text>
+              </>
+            ) : (
+              <>
+                <MaterialIcons name="favorite" size={48} color="#666" />
+                <Text style={styles.emptyText}>
+                  No {selectedSection === 'waifu' ? 'Waifus' : 'Husbandos'} found
+                </Text>
+              </>
+            )}
+          </View>
+        ) : (
+          <FlatList
+            data={filteredItems}
+            renderItem={renderItem}
+            keyExtractor={item => item.id}
+            numColumns={numColumns}
+            contentContainerStyle={styles.listContainer}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                colors={['#f4511e']}
+                tintColor="#f4511e"
+              />
+            }
+            columnWrapperStyle={styles.columnWrapper}
+            windowSize={3}
+            maxToRenderPerBatch={6}
+            initialNumToRender={6}
+            removeClippedSubviews={true}
+            updateCellsBatchingPeriod={100}
+            onEndReachedThreshold={0.5}
+            maintainVisibleContentPosition={{
+              minIndexForVisible: 0,
+              autoscrollToTopThreshold: 10
+            }}
+            getItemLayout={(data, index) => ({
+              length: itemWidth,
+              offset: itemWidth * Math.floor(index / numColumns),
+              index,
+            })}
+          />
+        )}
 
-          {renderFullscreenViewer()}
-        </>
-      )}
+        {renderFullscreenViewer()}
+      </>
     </View>
   );
 }

@@ -395,7 +395,7 @@ export default function Home() {
 
   const fetchNewEpisodes = async () => {
     try {
-      const latest = await animeAPI.getLatestCompleted();
+      const latest = await animeAPI.getRecentAnime();
       // Handle both array and object with results property
       const latestResults = Array.isArray(latest) ? latest : ((latest as any)?.results || []);
       const mappedLatest = latestResults?.map(mapToAnimeItem) || [];
