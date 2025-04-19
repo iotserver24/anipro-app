@@ -123,13 +123,13 @@ class AnimeAPI {
   }
 
   async getLatestCompleted(): Promise<AnimeResult[]> {
-    const response = await fetch(`${this.baseUrl}/latest-completed`);
+    const response = await fetch(`${this.baseUrl}${ENDPOINTS.LATEST_COMPLETED}`);
     const data = await response.json();
     return Array.isArray(data) ? data : data.results || [];
   }
 
   async getNewReleases(): Promise<AnimeResult[]> {
-    const response = await fetch(`${this.baseUrl}/recent-added`);
+    const response = await fetch(`${this.baseUrl}${ENDPOINTS.NEW_RELEASES}`);
     const data = await response.json();
     return Array.isArray(data) ? data : data.results || [];
   }
@@ -142,6 +142,18 @@ class AnimeAPI {
 
   async getAnimeByGenre(genre: string): Promise<AnimeResult[]> {
     const response = await fetch(`${this.baseUrl}/genre/${genre}`);
+    const data = await response.json();
+    return Array.isArray(data) ? data : data.results || [];
+  }
+
+  async getPopularAnime(): Promise<AnimeResult[]> {
+    const response = await fetch(`${this.baseUrl}${ENDPOINTS.POPULAR}`);
+    const data = await response.json();
+    return Array.isArray(data) ? data : data.results || [];
+  }
+
+  async getFavoriteAnime(): Promise<AnimeResult[]> {
+    const response = await fetch(`${this.baseUrl}${ENDPOINTS.FAVORITE}`);
     const data = await response.json();
     return Array.isArray(data) ? data : data.results || [];
   }

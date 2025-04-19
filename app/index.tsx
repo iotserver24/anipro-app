@@ -35,7 +35,10 @@ const ITEM_MARGIN = (width - ITEM_WIDTH) / 2;
 const CACHE_KEYS = {
   TRENDING_RECENT: 'home_trending_recent_cache',
   NEW_EPISODES: 'home_new_episodes_cache',
-  NEW_RELEASES: 'home_new_releases_cache'
+  NEW_RELEASES: 'home_new_releases_cache',
+  POPULAR: 'home_popular_cache',
+  FAVORITE: 'home_favorite_cache',
+  LATEST_COMPLETED: 'home_latest_completed_cache'
 };
 
 interface CachedData {
@@ -283,7 +286,8 @@ export default function Home() {
   const [notificationCount, setNotificationCount] = useState(0);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [hasShownAuthPrompt, setHasShownAuthPrompt] = useState(false);
-  const [newReleases, setNewReleases] = useState<AnimeItem[]>([]);
+  const [favoriteAnime, setFavoriteAnime] = useState<AnimeItem[]>([]);
+  const [latestCompleted, setLatestCompleted] = useState<AnimeItem[]>([]);
 
   const fetchAnime = async (bypassCache: boolean = false) => {
     try {
@@ -291,22 +295,25 @@ export default function Home() {
 
       if (!bypassCache) {
         // Try loading from cache first
-        const [trendingRecentCache, newEpisodesCache, newReleasesCache] = await Promise.all([
+        const [trendingRecentCache, newEpisodesCache, popularCache, favoriteCache, completedCache] = await Promise.all([
           AsyncStorage.getItem(CACHE_KEYS.TRENDING_RECENT),
           AsyncStorage.getItem(CACHE_KEYS.NEW_EPISODES),
-          AsyncStorage.getItem(CACHE_KEYS.NEW_RELEASES)
+          AsyncStorage.getItem(CACHE_KEYS.POPULAR),
+          AsyncStorage.getItem(CACHE_KEYS.FAVORITE),
+          AsyncStorage.getItem(CACHE_KEYS.LATEST_COMPLETED)
         ]);
 
         // Process each cache
         let needFetchTrending = true;
         let needFetchNewEpisodes = true;
-        let needFetchNewReleases = true;
+        let needFetchPopular = true;
+        let needFetchFavorite = true;
+        let needFetchCompleted = true;
 
         if (trendingRecentCache) {
           const { timestamp, data } = JSON.parse(trendingRecentCache);
           if (isTrendingRecentCacheValid(timestamp)) {
             setTrendingAnime(data.trending);
-            setRecentAnime(data.recent);
             needFetchTrending = false;
           }
         }
@@ -319,16 +326,33 @@ export default function Home() {
           }
         }
 
-        if (newReleasesCache) {
-          const { timestamp, data } = JSON.parse(newReleasesCache);
-          if (isNewEpisodesCacheValid(timestamp)) { // Using same validity as new episodes
-            setNewReleases(data);
-            needFetchNewReleases = false;
+        if (popularCache) {
+          const { timestamp, data } = JSON.parse(popularCache);
+          if (isNewEpisodesCacheValid(timestamp)) {
+            setPopularAnime(data);
+            needFetchPopular = false;
+          }
+        }
+
+        if (favoriteCache) {
+          const { timestamp, data } = JSON.parse(favoriteCache);
+          if (isNewEpisodesCacheValid(timestamp)) {
+            setFavoriteAnime(data);
+            needFetchFavorite = false;
+          }
+        }
+
+        if (completedCache) {
+          const { timestamp, data } = JSON.parse(completedCache);
+          if (isNewEpisodesCacheValid(timestamp)) {
+            setLatestCompleted(data);
+            needFetchCompleted = false;
           }
         }
 
         // Check if we have all data from cache
-        if (!needFetchTrending && !needFetchNewEpisodes && !needFetchNewReleases) {
+        if (!needFetchTrending && !needFetchNewEpisodes && 
+            !needFetchPopular && !needFetchFavorite && !needFetchCompleted) {
           setLoading(false);
           setRefreshing(false);
           return;
@@ -338,7 +362,9 @@ export default function Home() {
         const fetchPromises = [];
         if (needFetchTrending) fetchPromises.push(fetchTrendingAndRecent());
         if (needFetchNewEpisodes) fetchPromises.push(fetchNewEpisodes());
-        if (needFetchNewReleases) fetchPromises.push(fetchNewReleasesWithCache());
+        if (needFetchPopular) fetchPromises.push(fetchPopularAnime());
+        if (needFetchFavorite) fetchPromises.push(fetchFavoriteAnime());
+        if (needFetchCompleted) fetchPromises.push(fetchLatestCompleted());
 
         await Promise.all(fetchPromises);
         setLoading(false);
@@ -350,7 +376,9 @@ export default function Home() {
       await Promise.all([
         fetchTrendingAndRecent(),
         fetchNewEpisodes(),
-        fetchNewReleasesWithCache()
+        fetchPopularAnime(),
+        fetchFavoriteAnime(),
+        fetchLatestCompleted()
       ]);
 
     } catch (error) {
@@ -414,25 +442,54 @@ export default function Home() {
     }
   };
 
-  const fetchNewReleasesWithCache = async () => {
+  const fetchPopularAnime = async () => {
     try {
-      const releases = await animeAPI.getNewReleases();
-      // Handle both array and object with results property
-      const releasesResults = Array.isArray(releases) ? releases : ((releases as any)?.results || []);
-      const mappedReleases = releasesResults?.map(mapToAnimeItem) || [];
-
-      setNewReleases(mappedReleases);
+      const popular = await animeAPI.getPopularAnime();
+      const mappedPopular = popular?.map(mapToAnimeItem) || [];
+      setPopularAnime(mappedPopular);
 
       // Cache the data
       const cacheData = {
         timestamp: Date.now(),
-        data: mappedReleases
+        data: mappedPopular
       };
-      await AsyncStorage.setItem(CACHE_KEYS.NEW_RELEASES, JSON.stringify(cacheData));
-      return mappedReleases;
+      await AsyncStorage.setItem(CACHE_KEYS.POPULAR, JSON.stringify(cacheData));
     } catch (error) {
-      logger.error('Error fetching new releases:', error);
-      return [];
+      logger.error('Error fetching popular anime:', error);
+    }
+  };
+
+  const fetchFavoriteAnime = async () => {
+    try {
+      const favorite = await animeAPI.getFavoriteAnime();
+      const mappedFavorite = favorite?.map(mapToAnimeItem) || [];
+      setFavoriteAnime(mappedFavorite);
+
+      // Cache the data
+      const cacheData = {
+        timestamp: Date.now(),
+        data: mappedFavorite
+      };
+      await AsyncStorage.setItem(CACHE_KEYS.FAVORITE, JSON.stringify(cacheData));
+    } catch (error) {
+      logger.error('Error fetching favorite anime:', error);
+    }
+  };
+
+  const fetchLatestCompleted = async () => {
+    try {
+      const completed = await animeAPI.getLatestCompleted();
+      const mappedCompleted = completed?.map(mapToAnimeItem) || [];
+      setLatestCompleted(mappedCompleted);
+
+      // Cache the data
+      const cacheData = {
+        timestamp: Date.now(),
+        data: mappedCompleted
+      };
+      await AsyncStorage.setItem(CACHE_KEYS.LATEST_COMPLETED, JSON.stringify(cacheData));
+    } catch (error) {
+      logger.error('Error fetching latest completed anime:', error);
     }
   };
 
@@ -707,7 +764,9 @@ export default function Home() {
       await Promise.all([
         AsyncStorage.removeItem(CACHE_KEYS.TRENDING_RECENT),
         AsyncStorage.removeItem(CACHE_KEYS.NEW_EPISODES),
-        AsyncStorage.removeItem(CACHE_KEYS.NEW_RELEASES)
+        AsyncStorage.removeItem(CACHE_KEYS.POPULAR),
+        AsyncStorage.removeItem(CACHE_KEYS.FAVORITE),
+        AsyncStorage.removeItem(CACHE_KEYS.LATEST_COMPLETED)
       ]);
       // Fetch fresh data
       await fetchAnime(true);
@@ -1039,14 +1098,14 @@ export default function Home() {
           )}
         </View>
 
-        {/* Recent Anime Section */}
+        {/* Latest Completed Section */}
         <View style={[styles.section, { marginBottom: 16 }]}>
-          <Text style={styles.sectionTitle}>Recent Anime</Text>
+          <Text style={styles.sectionTitle}>Latest Completed</Text>
           {loading ? (
             <ActivityIndicator size="large" color="#f4511e" />
-          ) : recentAnime && recentAnime.length > 0 ? (
+          ) : latestCompleted && latestCompleted.length > 0 ? (
             <FlatList
-              data={recentAnime}
+              data={latestCompleted}
               renderItem={renderAnimeCard}
               keyExtractor={(item) => item.id}
               horizontal
@@ -1054,18 +1113,18 @@ export default function Home() {
               contentContainerStyle={styles.listContainer}
             />
           ) : (
-            <Text style={styles.noDataText}>No recent anime available</Text>
+            <Text style={styles.noDataText}>No completed anime available</Text>
           )}
         </View>
 
-        {/* New Releases Section */}
+        {/* Popular Anime Section */}
         <View style={[styles.section, { marginBottom: 16 }]}>
-          <Text style={styles.sectionTitle}>New Releases</Text>
+          <Text style={styles.sectionTitle}>Popular Anime</Text>
           {loading ? (
             <ActivityIndicator size="large" color="#f4511e" />
-          ) : newReleases && newReleases.length > 0 ? (
+          ) : popularAnime && popularAnime.length > 0 ? (
             <FlatList
-              data={newReleases}
+              data={popularAnime}
               renderItem={renderAnimeCard}
               keyExtractor={(item) => item.id}
               horizontal
@@ -1073,7 +1132,26 @@ export default function Home() {
               contentContainerStyle={styles.listContainer}
             />
           ) : (
-            <Text style={styles.noDataText}>No new releases available</Text>
+            <Text style={styles.noDataText}>No popular anime available</Text>
+          )}
+        </View>
+
+        {/* Most Favorite Section */}
+        <View style={[styles.section, { marginBottom: 16 }]}>
+          <Text style={styles.sectionTitle}>Most Favorite</Text>
+          {loading ? (
+            <ActivityIndicator size="large" color="#f4511e" />
+          ) : favoriteAnime && favoriteAnime.length > 0 ? (
+            <FlatList
+              data={favoriteAnime}
+              renderItem={renderAnimeCard}
+              keyExtractor={(item) => item.id}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.listContainer}
+            />
+          ) : (
+            <Text style={styles.noDataText}>No favorite anime available</Text>
           )}
         </View>
 
