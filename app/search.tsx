@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useMyListStore } from '../store/myListStore';
 import { API_BASE, ENDPOINTS } from '../constants/api';
-import LoadingAnimation from '../components/LoadingAnimation';
+import { LoadingAnimation } from '../components/LoadingAnimation';
 
 // Add genre type
 type Genre = {

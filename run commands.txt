@@ -43,7 +43,7 @@ node scripts/check-version.js
 node scripts/update-version.js <version> <versionCode>  
 example: node scripts/update-version.js 1.0.0 100
 
-
+cd android
 ./gradlew assembleRelease
 ./gradlew installRelease
 

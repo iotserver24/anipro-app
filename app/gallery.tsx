@@ -16,6 +16,7 @@ interface GalleryItem {
   url: string;
   createdAt: string;
   height?: number;
+  mediaType?: 'image' | 'video' | 'gif';
 }
 
 interface GalleryStatus {
@@ -505,6 +506,24 @@ const ReelsView = ({ items, onClose }: { items: GalleryItem[]; onClose: () => vo
   );
 };
 
+// Add media type detection function
+const getMediaType = (url: string): 'image' | 'video' | 'gif' => {
+  const extension = url.split('.').pop()?.toLowerCase();
+  if (extension === 'mp4' || extension === 'webm') return 'video';
+  if (extension === 'gif') return 'gif';
+  return 'image';
+};
+
+// Add sorting and grouping function
+const sortAndGroupItems = (items: GalleryItem[]) => {
+  // Sort videos first, then images and GIFs
+  return [...items].sort((a, b) => {
+    if (a.mediaType === 'video' && b.mediaType !== 'video') return -1;
+    if (a.mediaType !== 'video' && b.mediaType === 'video') return 1;
+    return 0;
+  });
+};
+
 export default function Gallery() {
   const [selectedSection, setSelectedSection] = useState<GallerySection>('waifu');
   const [items, setItems] = useState<GalleryItem[]>([]);
@@ -522,6 +541,8 @@ export default function Gallery() {
   const controlsTimeout = useRef<NodeJS.Timeout>();
   const translateX = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(1)).current;
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
 
   // Add handleSectionChange function
   const handleSectionChange = useCallback((section: GallerySection) => {
@@ -571,15 +592,13 @@ export default function Gallery() {
       // Cache the fresh data
       await setCachedData(selectedSection, data);
       
-      // Add random heights for Pinterest-like layout
-      const itemsWithHeight = data.map((item: GalleryItem) => ({
+      // Add media type for each item and sort them
+      const itemsWithMediaType = data.map((item: GalleryItem) => ({
         ...item,
-        height: item.type === 'anitube' ? 
-          itemWidth * (9/16) : 
-          itemWidth * (Math.random() * (1.6 - 0.8) + 0.8)
+        mediaType: getMediaType(item.url)
       }));
       
-      setItems(itemsWithHeight);
+      setItems(sortAndGroupItems(itemsWithMediaType));
       setLoading(false);
       setRefreshing(false);
     } catch (err) {
@@ -597,10 +616,10 @@ export default function Gallery() {
     fetchContent();
   }, [selectedSection]);
 
-  // Add search functionality
+  // Modify useEffect for search to include sorting
   useEffect(() => {
     if (!searchQuery.trim()) {
-      setFilteredItems(items);
+      setFilteredItems(sortAndGroupItems(items));
       return;
     }
 
@@ -608,7 +627,7 @@ export default function Gallery() {
     const filtered = items.filter(item => 
       item.title.toLowerCase().includes(query)
     );
-    setFilteredItems(filtered);
+    setFilteredItems(sortAndGroupItems(filtered));
   }, [searchQuery, items]);
 
   // Add navigation handlers for fullscreen view
@@ -744,10 +763,17 @@ export default function Gallery() {
   }, [permissionResponse, requestPermission]);
 
   const renderItem = useCallback(({ item, index }: { item: GalleryItem; index: number }) => {
-    // Calculate deterministic height based on item id for consistent layout
-    const itemHeight = item.height || (
-      itemWidth * (0.8 + (parseInt(item.id, 36) % 8) * 0.1)
-    );
+    // Set portrait aspect ratios for all media types
+    const itemHeight = itemWidth * 1.5; // 2:3 portrait aspect ratio for all items
+
+    const handlePress = () => {
+      setSelectedItem(item);
+      setSelectedIndex(index);
+      resetControlsTimeout();
+      if (item.mediaType === 'video') {
+        setIsPlaying(true);
+      }
+    };
 
     return (
       <TouchableOpacity 
@@ -757,17 +783,13 @@ export default function Gallery() {
             width: itemWidth,
             height: itemHeight,
             marginLeft: index % numColumns === 0 ? gap : 0,
-            marginTop: index < numColumns ? gap : 0
+            marginTop: gap
           }
         ]}
-        onPress={() => {
-          setSelectedItem(item);
-          setSelectedIndex(index);
-          resetControlsTimeout();
-        }}
+        onPress={handlePress}
       >
         <MediaLoader
-          type="image"
+          type={item.mediaType || 'image'}
           source={{ uri: item.url }}
           style={[
             styles.image,
@@ -777,10 +799,13 @@ export default function Gallery() {
           loadingType="spinner"
           loadingSize={24}
           loadingColor="#f4511e"
+          paused={true}
+          muted={true}
+          repeat={true}
         />
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.9)']}
-          style={[styles.gradient, { height: '60%' }]}
+          style={[styles.gradient, { height: '40%' }]} // Adjusted gradient height
         >
           <Text style={styles.title} numberOfLines={2}>{item.title}</Text>
           <TouchableOpacity
@@ -790,11 +815,16 @@ export default function Gallery() {
             <MaterialIcons name="file-download" size={24} color="white" />
           </TouchableOpacity>
         </LinearGradient>
+        {item.mediaType === 'video' && (
+          <View style={styles.videoIndicator}>
+            <MaterialIcons name="play-circle-outline" size={24} color="white" />
+          </View>
+        )}
       </TouchableOpacity>
     );
   }, [downloadContent, resetControlsTimeout]);
 
-  // Add fullscreen modal component
+  // Update fullscreen modal component to support videos
   const renderFullscreenViewer = () => (
     <Modal
       visible={!!selectedItem}
@@ -813,19 +843,32 @@ export default function Gallery() {
           activeOpacity={1}
           onPress={toggleControls}
         >
-          <Animated.Image
-            source={{ uri: selectedItem?.url }}
-            style={[
-              styles.fullscreenImage,
-              {
-                transform: [
-                  { translateX },
-                  { scale }
-                ]
-              }
-            ]}
-            resizeMode="contain"
-          />
+          {selectedItem?.mediaType === 'video' ? (
+            <MediaLoader
+              type="video"
+              source={{ uri: selectedItem.url }}
+              style={styles.fullscreenMedia}
+              resizeMode="contain"
+              paused={false}
+              muted={false}
+              repeat={true}
+              showPlayIcon={false}
+            />
+          ) : (
+            <Animated.Image
+              source={{ uri: selectedItem?.url }}
+              style={[
+                styles.fullscreenMedia,
+                {
+                  transform: [
+                    { translateX },
+                    { scale }
+                  ]
+                }
+              ]}
+              resizeMode="contain"
+            />
+          )}
         </TouchableOpacity>
 
         {showControls && (
@@ -864,13 +907,15 @@ export default function Gallery() {
               colors={['transparent', 'rgba(0,0,0,0.7)']}
               style={styles.fullscreenControls}
             >
-              <Text style={styles.fullscreenTitle}>{selectedItem?.title}</Text>
-              <TouchableOpacity
-                style={styles.fullscreenDownload}
-                onPress={() => selectedItem && downloadContent(selectedItem)}
-              >
-                <MaterialIcons name="file-download" size={28} color="white" />
-              </TouchableOpacity>
+              <View style={styles.fullscreenControlsContent}>
+                <Text style={styles.fullscreenTitle}>{selectedItem?.title}</Text>
+                <TouchableOpacity
+                  style={styles.fullscreenButton}
+                  onPress={() => selectedItem && downloadContent(selectedItem)}
+                >
+                  <MaterialIcons name="file-download" size={28} color="white" />
+                </TouchableOpacity>
+              </View>
             </LinearGradient>
           </>
         )}
@@ -1012,7 +1057,10 @@ export default function Gallery() {
             renderItem={renderItem}
             keyExtractor={item => item.id}
             numColumns={numColumns}
-            contentContainerStyle={styles.listContainer}
+            contentContainerStyle={[
+              styles.listContainer,
+              { alignItems: 'flex-start' } // Ensure items align properly
+            ]}
             showsVerticalScrollIndicator={false}
             refreshControl={
               <RefreshControl
@@ -1034,8 +1082,8 @@ export default function Gallery() {
               autoscrollToTopThreshold: 10
             }}
             getItemLayout={(data, index) => ({
-              length: itemWidth,
-              offset: itemWidth * Math.floor(index / numColumns),
+              length: itemWidth * 1.5, // Portrait height
+              offset: (itemWidth * 1.5 + gap) * Math.floor(index / numColumns),
               index,
             })}
           />
@@ -1234,7 +1282,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  fullscreenImage: {
+  fullscreenMedia: {
     width: screenWidth,
     height: screenHeight,
   },
@@ -1286,7 +1334,13 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 20,
   },
-  fullscreenDownload: {
+  fullscreenControlsContent: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  fullscreenButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -1423,5 +1477,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     marginHorizontal: 32,
+  },
+  itemControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  videoIndicator: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderRadius: 12,
+    padding: 4,
   },
 }); 
