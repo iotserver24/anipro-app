@@ -557,6 +557,18 @@ export default function ProfileScreen() {
             <Text style={styles.progressText}>
               {progressPercentage.toFixed(0)}% to Premium
             </Text>
+            
+            <View style={styles.premiumMissingFeatures}>
+              <Text style={styles.premiumMissingTitle}>Unlock Premium to get:</Text>
+              <View style={styles.premiumMissingItem}>
+                <MaterialIcons name="star" size={14} color="#FFD700" />
+                <Text style={styles.premiumMissingText}>Premium Avatars</Text>
+              </View>
+              <View style={styles.premiumMissingItem}>
+                <MaterialIcons name="comment" size={14} color="#FFD700" />
+                <Text style={styles.premiumMissingText}>Unlimited Comments (No Rate Limits)</Text>
+              </View>
+            </View>
           </View>
           
           <TouchableOpacity 
@@ -605,6 +617,10 @@ export default function ProfileScreen() {
           <View style={styles.premiumBenefitItem}>
             <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
             <Text style={styles.premiumBenefitText}>Early Access to Features</Text>
+          </View>
+          <View style={styles.premiumBenefitItem}>
+            <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
+            <Text style={styles.premiumBenefitText}>Unlimited Comments (No Rate Limits)</Text>
           </View>
         </View>
         
@@ -763,6 +779,13 @@ export default function ProfileScreen() {
                       <View style={styles.featureItem}>
                         <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
                         <Text style={styles.featureText}>Custom App Themes</Text>
+                      </View>
+                    )}
+
+                    {donationStatus.features.premiumAvatars && (
+                      <View style={styles.featureItem}>
+                        <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
+                        <Text style={styles.featureText}>Unlimited Comments (No Rate Limits)</Text>
                       </View>
                     )}
                   </View>
@@ -1351,6 +1374,28 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   premiumBenefitText: {
+    color: '#ccc',
+    fontSize: 14,
+    marginLeft: 8,
+  },
+  premiumMissingFeatures: {
+    marginTop: 12,
+    padding: 12,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 8,
+  },
+  premiumMissingTitle: {
+    color: '#FFD700',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  premiumMissingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  premiumMissingText: {
     color: '#ccc',
     fontSize: 14,
     marginLeft: 8,

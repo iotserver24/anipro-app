@@ -700,6 +700,10 @@ export default function AboutScreen() {
                 <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
                 <Text style={styles.premiumFeatureText}>Early Access to Features</Text>
               </View>
+              <View style={styles.premiumFeatureItem}>
+                <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
+                <Text style={styles.premiumFeatureText}>Unlimited Comments (No Rate Limits)</Text>
+              </View>
             </View>
             
             <View style={styles.donationButtonsContainer}>
