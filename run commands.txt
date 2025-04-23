@@ -10,6 +10,7 @@ cd android
 
 ./gradlew assembleRelease
 ./gradlew installRelease
+./rename-apks.ps1
 
 
 ./gradlew clean
@@ -46,6 +47,7 @@ example: node scripts/update-version.js 1.0.0 100
 cd android
 ./gradlew assembleRelease
 ./gradlew installRelease
+./rename-apks.ps1
 
 
 
