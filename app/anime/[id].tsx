@@ -185,6 +185,9 @@ export default function AnimeDetails() {
   const [showCommentsModal, setShowCommentsModal] = useState(false);
   const bookmarkButtonScale = useRef(new Animated.Value(1)).current;
   const playButtonScale = useRef(new Animated.Value(1)).current;
+  
+  // Add new state for skeleton loading
+  const [isPageLoaded, setIsPageLoaded] = useState(false);
 
   // Define all useCallback hooks at the top to maintain consistent hook order
   
@@ -562,8 +565,16 @@ export default function AnimeDetails() {
   // Effects and other functions after all hooks
 
   useEffect(() => {
+    // Mark page as loaded immediately to show skeleton UI
+    setIsPageLoaded(true);
+    
+    // Use setTimeout to defer API requests until after the UI is rendered
     if (id) {
-      fetchAnimeDetails();
+      const timer = setTimeout(() => {
+        fetchAnimeDetails();
+      }, 100); // Short delay to ensure UI renders first
+      
+      return () => clearTimeout(timer);
     }
   }, [id]);
 
@@ -571,6 +582,8 @@ export default function AnimeDetails() {
     try {
       console.log('Fetching anime details for ID:', id);
       console.log('API URL:', `https://con.anisurge.me/anime/zoro/info?id=${id}`);
+      
+      // Fetch data in parallel for better performance
       const data = await animeAPI.getAnimeDetails(id as string);
       console.log('Anime details response:', data);
       
@@ -618,6 +631,10 @@ export default function AnimeDetails() {
       setEpisodeList(data.episodes || []);
     } catch (error) {
       console.error('Error fetching anime details:', error);
+      // Show error toast
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Failed to load anime details. Please try again.', ToastAndroid.SHORT);
+      }
     } finally {
       setLoading(false);
       setEpisodesLoading(false);
@@ -1101,7 +1118,83 @@ export default function AnimeDetails() {
     );
   };
 
-  if (loading) {
+  // Render a skeleton loading UI
+  const renderSkeletonUI = () => {
+    return (
+      <View style={styles.container}>
+        {/* Skeleton Header */}
+        <View style={styles.headerContainer}>
+          <View style={[styles.backgroundImage, { backgroundColor: '#1a1a1a' }]} />
+          
+          <LinearGradient
+            colors={['rgba(18, 18, 18, 0.3)', '#121212']}
+            style={styles.headerGradient}
+          >
+            <View style={styles.headerContent}>
+              <View style={[styles.posterContainer, { backgroundColor: '#2a2a2a' }]} />
+
+              <View style={styles.infoContainer}>
+                <View style={{ height: 30, width: '80%', backgroundColor: '#2a2a2a', borderRadius: 4, marginBottom: 12 }} />
+                
+                <View style={styles.metaInfo}>
+                  <View style={[styles.ratingBadge, { backgroundColor: '#2a2a2a', width: 60 }]} />
+                  <View style={[styles.statusBadge, { backgroundColor: '#2a2a2a', width: 80 }]} />
+                </View>
+              </View>
+            </View>
+          </LinearGradient>
+        </View>
+        
+        {/* Skeleton Synopsis */}
+        <View style={styles.section}>
+          <View style={styles.playButtonContainer}>
+            <View style={[styles.watchNowButton, { backgroundColor: '#2a2a2a' }]}>
+              <View style={{ width: 100, height: 18, backgroundColor: '#333' }} />
+            </View>
+          </View>
+
+          <View style={styles.synopsisContainer}>
+            <Text style={styles.sectionTitle}>Synopsis</Text>
+            
+            <View style={{ height: 16, width: '60%', backgroundColor: '#2a2a2a', borderRadius: 4, marginBottom: 12 }} />
+
+            <View style={{ height: 14, width: '100%', backgroundColor: '#2a2a2a', borderRadius: 4, marginBottom: 8 }} />
+            <View style={{ height: 14, width: '95%', backgroundColor: '#2a2a2a', borderRadius: 4, marginBottom: 8 }} />
+            <View style={{ height: 14, width: '90%', backgroundColor: '#2a2a2a', borderRadius: 4, marginBottom: 8 }} />
+            <View style={{ height: 14, width: '85%', backgroundColor: '#2a2a2a', borderRadius: 4 }} />
+          </View>
+          
+          {/* Skeleton Action Buttons */}
+          <View style={styles.actionButtonsContainer}>
+            <View style={[styles.actionButton, { backgroundColor: '#2a2a2a' }]} />
+            <View style={[styles.actionButton, { backgroundColor: '#2a2a2a' }]} />
+            <View style={[styles.actionButton, styles.shareButton, { backgroundColor: '#2a2a2a' }]} />
+          </View>
+        </View>
+        
+        {/* Skeleton Episodes */}
+        <View style={styles.section}>
+          <View style={styles.tabBar} />
+          
+          <View style={styles.audioSelector} />
+          
+          <View style={styles.searchContainer}>
+            <View style={[styles.searchInputContainer, { backgroundColor: '#2a2a2a' }]} />
+            <View style={[styles.searchModeButton, { backgroundColor: '#2a2a2a' }]} />
+          </View>
+          
+          {/* Skeleton Episodes List */}
+          <View style={{ gap: 8 }}>
+            {[...Array(5)].map((_, i) => (
+              <View key={i} style={[styles.episodeCard, { height: 80, backgroundColor: '#2a2a2a' }]} />
+            ))}
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  if (!isPageLoaded) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#f4511e" />
@@ -1109,10 +1202,23 @@ export default function AnimeDetails() {
     );
   }
 
-  if (!animeData) {
+  if (loading && !animeData) {
+    return renderSkeletonUI();
+  }
+
+  if (!loading && !animeData) {
     return (
       <View style={styles.errorContainer}>
         <Text style={styles.errorText}>Failed to load anime details</Text>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={() => {
+            setLoading(true);
+            fetchAnimeDetails();
+          }}
+        >
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -1705,5 +1811,19 @@ const styles = StyleSheet.create({
     color: '#f4511e',
     fontSize: 14,
     fontWeight: '500',
+  },
+  retryButton: {
+    backgroundColor: '#f4511e',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 16,
+    width: 120,
+    alignSelf: 'center',
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 }); 
