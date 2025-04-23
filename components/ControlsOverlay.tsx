@@ -70,13 +70,13 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
   const [showSubtitleOptions, setShowSubtitleOptions] = useState(false);
   const speedOptions = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
-  // Filter out thumbnail subtitles
+  // Filter out thumbnail subtitles - Memoized for performance
   const filteredSubtitles = useMemo(() => 
     subtitles.filter(sub => sub.lang !== 'thumbnails'),
     [subtitles]
   );
 
-  // Group subtitles by language region for better organization
+  // Group subtitles by language region - Memoized for performance
   const groupedSubtitles = useMemo(() => {
     const groups: { [key: string]: Array<Subtitle & { id: string }> } = {
       'English': [],
@@ -86,7 +86,6 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
     };
 
     filteredSubtitles.forEach((sub, index) => {
-      // Create a unique ID for each subtitle
       const subtitleWithId = {
         ...sub,
         id: `${sub.lang}_${index}`
@@ -106,7 +105,7 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
     return groups;
   }, [filteredSubtitles]);
 
-  // Add selectedSubtitleId state to track the specific selected subtitle
+  // Memoized selectedSubtitleId
   const [selectedSubtitleId, setSelectedSubtitleId] = useState<string | null>(() => {
     if (selectedSubtitle && filteredSubtitles.length > 0) {
       const firstMatch = filteredSubtitles.findIndex(sub => sub.lang === selectedSubtitle);
@@ -115,6 +114,7 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
     return null;
   });
 
+  // Optimized handlers with minimal state updates
   const handleSpeedSelect = (speed: number) => {
     onPlaybackSpeedChange(speed);
     setShowSpeedOptions(false);
@@ -227,7 +227,7 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
           style={styles.playPauseButton}
           onPress={onPlayPress}
           activeOpacity={0.3}
-          delayPressIn={0} 
+          delayPressIn={0}
           hitSlop={{ top: 25, bottom: 25, left: 25, right: 25 }}
         >
           <MaterialIcons
@@ -252,22 +252,6 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
         colors={["transparent", "rgba(0,0,0,0.7)"]}
         style={styles.bottomControls}
       >
-        {/* Play/pause button moved above the progress bar */}
-        <View style={styles.controlsRow}>
-          <TouchableOpacity
-            style={styles.controlButton}
-            onPress={onPlayPress}
-            activeOpacity={0.5}
-            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-          >
-            <MaterialIcons
-              name={isPlaying ? "pause" : "play-arrow"}
-              size={20}
-              color="white"
-            />
-          </TouchableOpacity>
-        </View>
-        
         {/* Progress bar moved to bottom */}
         <View style={styles.progressContainer}>
           <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
@@ -386,10 +370,7 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
                     styles.subtitleOptionButton,
                     !selectedSubtitle && styles.selectedSubtitleButton
                   ]}
-                  onPress={() => {
-                    onSubtitleChange(null);
-                    setShowSubtitleOptions(false);
-                  }}
+                  onPress={() => handleSubtitleSelect(null)}
                 >
                   <Text style={[
                     styles.subtitleOptionText,
@@ -410,9 +391,7 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
                           styles.subtitleOptionButton,
                           selectedSubtitle === sub.lang && selectedSubtitleId === sub.id && styles.selectedSubtitleButton
                         ]}
-                        onPress={() => {
-                          handleSubtitleSelect(sub.lang, sub.id);
-                        }}
+                        onPress={() => handleSubtitleSelect(sub.lang, sub.id)}
                       >
                         <Text style={[
                           styles.subtitleOptionText,
@@ -436,9 +415,7 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
                           styles.subtitleOptionButton,
                           selectedSubtitle === sub.lang && selectedSubtitleId === sub.id && styles.selectedSubtitleButton
                         ]}
-                        onPress={() => {
-                          handleSubtitleSelect(sub.lang, sub.id);
-                        }}
+                        onPress={() => handleSubtitleSelect(sub.lang, sub.id)}
                       >
                         <Text style={[
                           styles.subtitleOptionText,
@@ -462,9 +439,7 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
                           styles.subtitleOptionButton,
                           selectedSubtitle === sub.lang && selectedSubtitleId === sub.id && styles.selectedSubtitleButton
                         ]}
-                        onPress={() => {
-                          handleSubtitleSelect(sub.lang, sub.id);
-                        }}
+                        onPress={() => handleSubtitleSelect(sub.lang, sub.id)}
                       >
                         <Text style={[
                           styles.subtitleOptionText,
@@ -488,9 +463,7 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
                           styles.subtitleOptionButton,
                           selectedSubtitle === sub.lang && selectedSubtitleId === sub.id && styles.selectedSubtitleButton
                         ]}
-                        onPress={() => {
-                          handleSubtitleSelect(sub.lang, sub.id);
-                        }}
+                        onPress={() => handleSubtitleSelect(sub.lang, sub.id)}
                       >
                         <Text style={[
                           styles.subtitleOptionText,
@@ -532,33 +505,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  spacer: {
-    flex: 1,
-  },
   topRightControls: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
   topControlButton: {
-    backgroundColor: "rgba(0,0,0,0.2)",
+    backgroundColor: "rgba(0,0,0,0.4)",
     paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingVertical: 8,
     borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
     flexDirection: "row",
     gap: 4,
-    marginTop: -2,
   },
   topButtonText: {
     color: "white",
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: "600",
     textShadowColor: "rgba(0,0,0,0.75)",
     textShadowOffset: { width: 1, height: 1 },
     textShadowRadius: 2,
-    marginTop: -4,
   },
   topFullscreenButton: {
     width: 40,
@@ -603,12 +571,11 @@ const styles = StyleSheet.create({
   bottomControls: {
     padding: 12,
     paddingTop: 16,
-    paddingBottom: 16, // Reduced padding as progress bar is now at bottom
+    paddingBottom: 16,
   },
   progressContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: 8, // Added margin top instead of bottom
   },
   timeText: {
     color: "white",
@@ -623,25 +590,7 @@ const styles = StyleSheet.create({
   slider: {
     flex: 1,
     marginHorizontal: 6,
-    height: 40, // Increased touch area
-  },
-  controlsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8, // Changed from marginTop to marginBottom
-  },
-  rightControls: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  controlButton: {
-    width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginHorizontal: 3,
   },
   qualityChanging: {
     opacity: 0.5,
