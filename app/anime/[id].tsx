@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, FlatList, Alert, TextInput, ActivityIndicator, Platform, Animated, SectionList, Share, Dimensions, ToastAndroid, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, FlatList, Alert, TextInput, ActivityIndicator, Platform, Animated, SectionList, Share, Dimensions, ToastAndroid, Linking, Easing } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -185,6 +185,7 @@ export default function AnimeDetails() {
   const [showCommentsModal, setShowCommentsModal] = useState(false);
   const bookmarkButtonScale = useRef(new Animated.Value(1)).current;
   const playButtonScale = useRef(new Animated.Value(1)).current;
+  const shimmerAnimation = useRef(new Animated.Value(0)).current;
   
   // Add new state for skeleton loading
   const [isPageLoaded, setIsPageLoaded] = useState(false);
@@ -577,6 +578,28 @@ export default function AnimeDetails() {
       return () => clearTimeout(timer);
     }
   }, [id]);
+
+  useEffect(() => {
+    const startShimmerAnimation = () => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(shimmerAnimation, {
+            toValue: 1,
+            duration: 1000,
+            easing: Easing.linear,
+            useNativeDriver: true
+          }),
+          Animated.timing(shimmerAnimation, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true
+          })
+        ])
+      ).start();
+    };
+
+    startShimmerAnimation();
+  }, []);
 
   const fetchAnimeDetails = async () => {
     try {
@@ -1120,77 +1143,71 @@ export default function AnimeDetails() {
 
   // Render a skeleton loading UI
   const renderSkeletonUI = () => {
+    const translateX = shimmerAnimation.interpolate({
+      inputRange: [0, 1],
+      outputRange: [-200, 400]
+    });
+
+    const shimmerStyle = {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+      transform: [{ translateX }]
+    };
+
     return (
-      <View style={styles.container}>
-        {/* Skeleton Header */}
-        <View style={styles.headerContainer}>
-          <View style={[styles.backgroundImage, { backgroundColor: '#1a1a1a' }]} />
-          
-          <LinearGradient
-            colors={['rgba(18, 18, 18, 0.3)', '#121212']}
-            style={styles.headerGradient}
-          >
-            <View style={styles.headerContent}>
-              <View style={[styles.posterContainer, { backgroundColor: '#2a2a2a' }]} />
-
-              <View style={styles.infoContainer}>
-                <View style={{ height: 30, width: '80%', backgroundColor: '#2a2a2a', borderRadius: 4, marginBottom: 12 }} />
-                
-                <View style={styles.metaInfo}>
-                  <View style={[styles.ratingBadge, { backgroundColor: '#2a2a2a', width: 60 }]} />
-                  <View style={[styles.statusBadge, { backgroundColor: '#2a2a2a', width: 80 }]} />
-                </View>
-              </View>
+      <ScrollView style={styles.container}>
+        {/* Header Skeleton */}
+        <View style={styles.skeletonHeader}>
+          <View style={[styles.skeletonImage, { overflow: 'hidden' }]}>
+            <Animated.View style={shimmerStyle} />
+          </View>
+          <View style={styles.skeletonHeaderContent}>
+            <View style={[styles.skeletonTitle, { overflow: 'hidden' }]}>
+              <Animated.View style={shimmerStyle} />
             </View>
-          </LinearGradient>
-        </View>
-        
-        {/* Skeleton Synopsis */}
-        <View style={styles.section}>
-          <View style={styles.playButtonContainer}>
-            <View style={[styles.watchNowButton, { backgroundColor: '#2a2a2a' }]}>
-              <View style={{ width: 100, height: 18, backgroundColor: '#333' }} />
+            <View style={[styles.skeletonSubtitle, { overflow: 'hidden' }]}>
+              <Animated.View style={shimmerStyle} />
             </View>
           </View>
-
-          <View style={styles.synopsisContainer}>
-            <Text style={styles.sectionTitle}>Synopsis</Text>
-            
-            <View style={{ height: 16, width: '60%', backgroundColor: '#2a2a2a', borderRadius: 4, marginBottom: 12 }} />
-
-            <View style={{ height: 14, width: '100%', backgroundColor: '#2a2a2a', borderRadius: 4, marginBottom: 8 }} />
-            <View style={{ height: 14, width: '95%', backgroundColor: '#2a2a2a', borderRadius: 4, marginBottom: 8 }} />
-            <View style={{ height: 14, width: '90%', backgroundColor: '#2a2a2a', borderRadius: 4, marginBottom: 8 }} />
-            <View style={{ height: 14, width: '85%', backgroundColor: '#2a2a2a', borderRadius: 4 }} />
-          </View>
-          
-          {/* Skeleton Action Buttons */}
-          <View style={styles.actionButtonsContainer}>
-            <View style={[styles.actionButton, { backgroundColor: '#2a2a2a' }]} />
-            <View style={[styles.actionButton, { backgroundColor: '#2a2a2a' }]} />
-            <View style={[styles.actionButton, styles.shareButton, { backgroundColor: '#2a2a2a' }]} />
-          </View>
         </View>
-        
-        {/* Skeleton Episodes */}
-        <View style={styles.section}>
-          <View style={styles.tabBar} />
-          
-          <View style={styles.audioSelector} />
-          
-          <View style={styles.searchContainer}>
-            <View style={[styles.searchInputContainer, { backgroundColor: '#2a2a2a' }]} />
-            <View style={[styles.searchModeButton, { backgroundColor: '#2a2a2a' }]} />
+
+        {/* Synopsis Skeleton */}
+        <View style={styles.skeletonSection}>
+          <View style={[styles.skeletonSynopsisTitle, { overflow: 'hidden' }]}>
+            <Animated.View style={shimmerStyle} />
           </View>
-          
-          {/* Skeleton Episodes List */}
-          <View style={{ gap: 8 }}>
-            {[...Array(5)].map((_, i) => (
-              <View key={i} style={[styles.episodeCard, { height: 80, backgroundColor: '#2a2a2a' }]} />
-            ))}
-          </View>
+          {[1, 2, 3].map((_, index) => (
+            <View key={index} style={[styles.skeletonSynopsisLine, { overflow: 'hidden' }]}>
+              <Animated.View style={shimmerStyle} />
+            </View>
+          ))}
         </View>
-      </View>
+
+        {/* Action Buttons Skeleton */}
+        <View style={styles.skeletonActions}>
+          {[1, 2].map((_, index) => (
+            <View key={index} style={[styles.skeletonButton, { overflow: 'hidden' }]}>
+              <Animated.View style={shimmerStyle} />
+            </View>
+          ))}
+        </View>
+
+        {/* Episodes List Skeleton */}
+        <View style={styles.skeletonSection}>
+          <View style={[styles.skeletonEpisodesTitle, { overflow: 'hidden' }]}>
+            <Animated.View style={shimmerStyle} />
+          </View>
+          {[1, 2, 3, 4].map((_, index) => (
+            <View key={index} style={[styles.skeletonEpisodeItem, { overflow: 'hidden' }]}>
+              <Animated.View style={shimmerStyle} />
+            </View>
+          ))}
+        </View>
+      </ScrollView>
     );
   };
 
@@ -1825,5 +1842,77 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: 'bold',
+  },
+  skeletonHeader: {
+    padding: 16,
+    flexDirection: 'row',
+    backgroundColor: '#1a1a1a',
+  },
+  skeletonImage: {
+    width: 120,
+    height: 180,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 8,
+    marginRight: 16,
+  },
+  skeletonHeaderContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  skeletonTitle: {
+    height: 24,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  skeletonSubtitle: {
+    height: 16,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 4,
+    width: '80%',
+  },
+  skeletonSection: {
+    padding: 16,
+    backgroundColor: '#1a1a1a',
+    marginTop: 8,
+  },
+  skeletonSynopsisTitle: {
+    height: 20,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 4,
+    width: '40%',
+    marginBottom: 16,
+  },
+  skeletonSynopsisLine: {
+    height: 16,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  skeletonActions: {
+    flexDirection: 'row',
+    padding: 16,
+    backgroundColor: '#1a1a1a',
+    marginTop: 8,
+    gap: 16,
+  },
+  skeletonButton: {
+    height: 40,
+    flex: 1,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 20,
+  },
+  skeletonEpisodesTitle: {
+    height: 20,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 4,
+    width: '30%',
+    marginBottom: 16,
+  },
+  skeletonEpisodeItem: {
+    height: 60,
+    backgroundColor: '#2a2a2a',
+    borderRadius: 8,
+    marginBottom: 12,
   },
 }); 
