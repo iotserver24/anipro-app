@@ -694,40 +694,6 @@ export default function WatchEpisode() {
   const lastProgressUpdateRef = useRef<number>(0);
   // Add a ref to track the last progress value to avoid duplicate updates
   const lastProgressValueRef = useRef<number>(0);
-  
-  // Add state for UI loading
-  const [isPageLoaded, setIsPageLoaded] = useState(false);
-  const [showSkeletonUI, setShowSkeletonUI] = useState(true);
-
-  useEffect(() => {
-    // Mark page as loaded immediately to render UI first
-    setIsPageLoaded(true);
-    setShowSkeletonUI(true);
-    
-    // Delay API requests until after UI renders
-    const timer = setTimeout(() => {
-      if (resumeTime) {
-        const parsedTime = parseFloat(resumeTime as string);
-        setResumePosition(parsedTime);
-      }
-      
-      // Fetch data
-      fetchAnimeInfo();
-      fetchEpisodeData();
-      
-      // Count anime episode view
-      try {
-        fetch('https://anisurge.me/api/anime-count', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' }
-        });
-      } catch (err) {
-        console.error('Error updating anime count:', err);
-      }
-    }, 100); // Short delay to ensure UI renders first
-    
-    return () => clearTimeout(timer);
-  }, [episodeId, animeId]);
 
   useEffect(() => {
     // If resumeTime is provided, use it directly and skip getting from history
@@ -991,7 +957,6 @@ export default function WatchEpisode() {
       setError('Failed to load episode. Please try again.');
     } finally {
       setLoading(false);
-      setShowSkeletonUI(false);
     }
   };
 
@@ -1737,73 +1702,33 @@ export default function WatchEpisode() {
     }
   }, [isFullscreen]);
 
-  // Add a skeleton loading UI
-  const renderSkeletonUI = () => {
+  if (loading) {
     return (
       <View style={styles.container}>
-        {/* Skeleton Video Player */}
-        <View style={[styles.video, {backgroundColor: '#1a1a1a'}]}>
-          <View style={styles.skeletonPlayButton}>
-            <MaterialIcons name="play-circle-outline" size={64} color="#2a2a2a" />
-          </View>
-        </View>
-        
-        {/* Skeleton Controls */}
-        <View style={{padding: 16}}>
-          {/* Skeleton Title */}
-          <View style={styles.skeletonTitle} />
-          
-          {/* Skeleton Episode Info */}
-          <View style={styles.skeletonEpisodeInfo} />
-          
-          {/* Skeleton Episode List Title */}
-          <View style={[styles.skeletonText, {marginTop: 24, marginBottom: 16}]} />
-          
-          {/* Skeleton Audio Status */}
-          <View style={styles.skeletonAudioStatus} />
-          
-          {/* Skeleton Search Bar */}
-          <View style={[styles.searchContainer, {backgroundColor: '#2a2a2a', height: 40, marginVertical: 16}]} />
-          
-          {/* Skeleton Episode List */}
-          <View style={{gap: 8, marginTop: 16}}>
-            {[...Array(5)].map((_, i) => (
-              <View key={i} style={styles.skeletonEpisode} />
-            ))}
-          </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#f4511e" />
+          <Text style={styles.loadingText}>Loading video...</Text>
         </View>
       </View>
     );
-  };
-
-  // Render loading state, error state, or content
-  if (!isPageLoaded) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#f4511e" />
-      </View>
-    );
-  }
-
-  if (showSkeletonUI && loading) {
-    return renderSkeletonUI();
   }
 
   if (error) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity 
-          style={styles.retryButton}
-          onPress={() => {
-            setLoading(true);
-            setError(null);
-            setShowSkeletonUI(true);
-            fetchEpisodeData();
-          }}
-        >
-          <Text style={styles.retryButtonText}>Retry</Text>
-        </TouchableOpacity>
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={() => {
+              setRetryCount(0);
+              setError(null);
+              fetchEpisodeData();
+            }}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -1850,46 +1775,31 @@ export default function WatchEpisode() {
             zIndex: 9999,
           }
         ]}>
-          {/* This makes the Status Bar translucent in fullscreen mode */}
-          {isFullscreen && Platform.OS === 'ios' && (
-            <StatusBar translucent backgroundColor="transparent" />
-          )}
+          <VideoPlayer {...videoPlayerProps} />
           
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#f4511e" />
-              <Text style={styles.loadingText}>Loading video...</Text>
-            </View>
-          ) : (
+          {!isFullscreen && (
             <>
-              {/* Video Player */}
-              <TouchableOpacity
-                activeOpacity={1}
-                style={[isFullscreen ? styles.fullscreenVideo : styles.video]}
-                onPress={handleSingleTap}
-                onPress={(event) => {
-                  // Get the X location of the press within the component
-                  const locationX = event.nativeEvent.locationX;
-                  
-                  if (lastTap && Date.now() - lastTap < DOUBLE_TAP_DELAY) {
-                    // Double tap detected
-                    handleDoubleTap(locationX);
-                    setLastTap(null); // Reset last tap after handling double tap
-                  } else {
-                    // Single tap - set last tap and schedule a future check
-                    setLastTap(Date.now());
-                    // After DOUBLE_TAP_DELAY, if no second tap occurred, handle single tap
-                    setTimeout(() => {
-                      if (lastTap && Date.now() - lastTap >= DOUBLE_TAP_DELAY) {
-                        handleSingleTap();
-                        setLastTap(null); // Reset last tap after handling
-                      }
-                    }, DOUBLE_TAP_DELAY);
+              <EpisodeControls
+                currentEpisodeIndex={currentEpisodeIndex}
+                episodes={episodes}
+                onPrevious={handlePreviousEpisode}
+                onNext={handleNextEpisode}
+                onDownload={handleDownload}
+                onComments={handleShowComments}
+                downloadUrl={videoData?.download || null}
+              />
+              
+              <AnimeInfo 
+                animeInfo={animeInfo} 
+                onNavigateToAnime={() => {
+                  if (animeId) {
+                    router.push({
+                      pathname: "/anime/[id]",
+                      params: { id: animeId }
+                    });
                   }
                 }}
-              >
-                <VideoPlayer {...videoPlayerProps} />
-              </TouchableOpacity>
+              />
 
               <ScrollView style={styles.controls}>
                 {/* Episodes */}
@@ -2122,17 +2032,13 @@ const styles = StyleSheet.create({
   },
   retryButton: {
     backgroundColor: '#f4511e',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 8,
-    marginTop: 16,
-    alignSelf: 'center',
-    minWidth: 120,
   },
   retryButtonText: {
-    color: 'white',
+    color: '#fff',
     fontWeight: 'bold',
-    textAlign: 'center',
   },
   episodeList: {
     backgroundColor: '#1a1a1a',
@@ -2473,53 +2379,5 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: 'white',
     marginBottom: 16,
-  },
-  skeletonPlayButton: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#2a2a2a',
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  skeletonTitle: {
-    width: '80%',
-    height: 24,
-    backgroundColor: '#2a2a2a',
-    borderRadius: 4,
-    marginBottom: 12,
-    opacity: 0.7,
-  },
-  skeletonEpisodeInfo: {
-    width: '60%',
-    height: 16,
-    backgroundColor: '#2a2a2a',
-    borderRadius: 4,
-    marginTop: 8,
-    marginBottom: 16,
-    opacity: 0.7,
-  },
-  skeletonText: {
-    width: '40%',
-    height: 18,
-    backgroundColor: '#2a2a2a',
-    borderRadius: 4,
-    opacity: 0.7,
-  },
-  skeletonAudioStatus: {
-    width: '70%',
-    height: 40,
-    backgroundColor: '#2a2a2a',
-    borderRadius: 8,
-    marginBottom: 16,
-    opacity: 0.7,
-  },
-  skeletonEpisode: {
-    width: '100%',
-    height: 56,
-    backgroundColor: '#2a2a2a',
-    borderRadius: 8,
-    marginBottom: 8,
-    opacity: 0.7,
   },
 });
