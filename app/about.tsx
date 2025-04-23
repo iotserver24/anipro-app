@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Image, Alert, Platform, ImageBackground, NativeModules } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Image, Alert, Platform, ImageBackground, NativeModules, ActivityIndicator } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -516,6 +516,34 @@ export default function AboutScreen() {
     });
   };
 
+  const [hasPremium, setHasPremium] = useState(false);
+  const [checkingPremium, setCheckingPremium] = useState(true);
+
+  // Add useEffect to check premium status
+  useEffect(() => {
+    checkPremiumStatus();
+  }, []);
+
+  const checkPremiumStatus = async () => {
+    try {
+      const user = getCurrentUser();
+      if (!user) {
+        setHasPremium(false);
+        setCheckingPremium(false);
+        return;
+      }
+
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        setHasPremium(userDoc.data().isPremium === true);
+      }
+    } catch (error) {
+      logger.error('About', `Error checking premium status: ${error}`);
+    } finally {
+      setCheckingPremium(false);
+    }
+  };
+
   return (
     <>
       <Stack.Screen
@@ -670,22 +698,30 @@ export default function AboutScreen() {
               </View>
               <View style={styles.premiumFeatureItem}>
                 <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
-                <Text style={styles.premiumFeatureText}>Ad-Free Experience</Text>
-              </View>
-              <View style={styles.premiumFeatureItem}>
-                <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
                 <Text style={styles.premiumFeatureText}>Early Access to Features</Text>
               </View>
             </View>
             
             <View style={styles.donationButtonsContainer}>
-              <TouchableOpacity 
-                style={styles.premiumButton}
-                onPress={handlePremiumUpgrade}
-              >
-                <MaterialIcons name="verified" size={20} color="#FFFFFF" />
-                <Text style={styles.donationButtonText}>Premium Upgrade</Text>
-              </TouchableOpacity>
+              {checkingPremium ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="small" color="#f4511e" />
+                  <Text style={styles.loadingText}>Checking premium status...</Text>
+                </View>
+              ) : !hasPremium ? (
+                <TouchableOpacity 
+                  style={styles.premiumButton}
+                  onPress={handlePremiumUpgrade}
+                >
+                  <MaterialIcons name="verified" size={20} color="#FFFFFF" />
+                  <Text style={styles.donationButtonText}>Premium Upgrade</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.premiumStatusContainer}>
+                  <MaterialIcons name="verified" size={20} color="#4CAF50" />
+                  <Text style={styles.premiumStatusText}>You have Premium access!</Text>
+                </View>
+              )}
               
               <TouchableOpacity 
                 style={styles.donateButton}
@@ -1503,5 +1539,34 @@ const styles = StyleSheet.create({
     color: '#ccc',
     marginLeft: 8,
     fontSize: 14,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  loadingText: {
+    color: '#ccc',
+    marginLeft: 8,
+    fontSize: 14,
+  },
+  premiumStatusContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+  },
+  premiumStatusText: {
+    color: '#4CAF50',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 }); 

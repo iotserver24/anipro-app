@@ -604,10 +604,6 @@ export default function ProfileScreen() {
           </View>
           <View style={styles.premiumBenefitItem}>
             <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
-            <Text style={styles.premiumBenefitText}>Ad-Free Experience</Text>
-          </View>
-          <View style={styles.premiumBenefitItem}>
-            <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
             <Text style={styles.premiumBenefitText}>Early Access to Features</Text>
           </View>
         </View>
@@ -707,7 +703,7 @@ export default function ProfileScreen() {
             )}
           </View>
 
-          {/* Donation Status Section */}
+          {/* Donation Status Section */} 
           <View style={styles.infoSection}>
             <Text style={styles.infoLabel}>Supporter Status</Text>
             {donationLoading ? (
@@ -853,36 +849,9 @@ export default function ProfileScreen() {
           <Text style={styles.benefitText}>Exclusive premium avatars</Text>
         </View>
         <View style={styles.benefitItem}>
-          <MaterialIcons name="block" size={24} color="#FFD700" />
-          <Text style={styles.benefitText}>Ad-free experience</Text>
-        </View>
-        <View style={styles.benefitItem}>
           <MaterialIcons name="timer" size={24} color="#FFD700" />
           <Text style={styles.benefitText}>Early access to new features</Text>
         </View>
-        <View style={styles.benefitItem}>
-          <MaterialIcons name="color-lens" size={24} color="#FFD700" />
-          <Text style={styles.benefitText}>Custom themes (VIP only)</Text>
-        </View>
-
-        {!authenticated || (donationStatus && donationStatus.tier === DonationTier.NONE) ? (
-          <TouchableOpacity 
-            style={styles.premiumButton}
-            onPress={handleDonate}
-          >
-            <LinearGradient
-              colors={['#f4511e', '#e91e63']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.donateGradient}
-            >
-              <MaterialIcons name="star" size={18} color="#fff" />
-              <Text style={styles.donateText}>
-                {authenticated ? 'Upgrade to Premium' : 'Login to Upgrade'}
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        ) : null}
       </View>
 
       {/* Add an extra info section about email verification if not verified */}
