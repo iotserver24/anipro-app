@@ -516,11 +516,9 @@ const getMediaType = (url: string): 'image' | 'video' | 'gif' => {
 
 // Add sorting and grouping function
 const sortAndGroupItems = (items: GalleryItem[]) => {
-  // Sort videos first, then images and GIFs
+  // Sort by createdAt timestamp (newest first)
   return [...items].sort((a, b) => {
-    if (a.mediaType === 'video' && b.mediaType !== 'video') return -1;
-    if (a.mediaType !== 'video' && b.mediaType === 'video') return 1;
-    return 0;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
   });
 };
 
