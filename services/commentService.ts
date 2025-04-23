@@ -27,6 +27,7 @@ export type Comment = {
   userName: string;
   userAvatar?: string;
   content: string;
+  gifUrl?: string;
   likes: number;
   createdAt: Timestamp;
 };
@@ -38,6 +39,7 @@ type CommentToSave = {
   userName: string;
   userAvatar?: string;
   content: string;
+  gifUrl?: string;
   likes: number;
   createdAt: Timestamp;
 };
@@ -58,6 +60,11 @@ export const addComment = async (comment: Omit<Comment, 'id' | 'likes' | 'create
     // Only add userAvatar if it exists and is not undefined
     if (comment.userAvatar) {
       cleanComment.userAvatar = comment.userAvatar;
+    }
+    
+    // Add gifUrl if it exists
+    if (comment.gifUrl) {
+      cleanComment.gifUrl = comment.gifUrl;
     }
     
     // Generate a unique ID using timestamp and userId to avoid duplicates

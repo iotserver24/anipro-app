@@ -16,6 +16,7 @@ import {
   ToastAndroid,
   Animated
 } from 'react-native';
+import { Video } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { 
@@ -38,6 +39,7 @@ import { logger } from '../utils/logger';
 import UserDonationBadge from './UserDonationBadge';
 import { getUserPremiumStatus } from '../services/donationService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import GifPicker from './GifPicker';
 
 type CommentSectionProps = {
   animeId: string;
@@ -179,6 +181,29 @@ const CommentItem = ({
           
           <Text style={styles.commentText}>{comment.content}</Text>
           
+          {/* Display GIF if present - now supporting MP4 */}
+          {comment.gifUrl && (
+            <View style={styles.gifContainer}>
+              {comment.gifUrl.endsWith('.mp4') ? (
+                <Video 
+                  source={{ uri: comment.gifUrl }}
+                  style={styles.commentGif}
+                  resizeMode="contain"
+                  isLooping
+                  shouldPlay
+                  isMuted={true}
+                  useNativeControls={false}
+                />
+              ) : (
+                <Image 
+                  source={{ uri: comment.gifUrl }} 
+                  style={styles.commentGif}
+                  resizeMode="contain"
+                />
+              )}
+            </View>
+          )}
+          
           <View style={styles.commentActions}>
             <TouchableOpacity style={styles.likeButton} onPress={onLike}>
               <MaterialIcons 
@@ -223,6 +248,10 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
   const [forceRefresh, setForceRefresh] = useState(0); // Counter to force re-renders
+  
+  // Add GIF picker state
+  const [showGifPicker, setShowGifPicker] = useState(false);
+  const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
   
   // Add state to track keyboard visibility
   const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -386,15 +415,15 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
     await loadComments();
   };
 
-  // Modify handleSubmitComment to better handle keyboard and UI transitions
+  // Modify handleSubmitComment to include GIF
   const handleSubmitComment = async () => {
     if (!isAuthenticated()) {
       setShowAuthModal(true);
       return;
     }
 
-    if (!commentText.trim()) {
-      Alert.alert('Error', 'Please enter a comment');
+    if (!commentText.trim() && !selectedGifUrl) {
+      Alert.alert('Error', 'Please enter a comment or select a GIF');
       return;
     }
     
@@ -492,16 +521,23 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
       // Save the commented text locally before clearing
       const commentContent = commentText.trim();
       
-      // Clear input text before updating UI
+      // Clear input text and selected GIF before updating UI
       setCommentText('');
       
-      const comment = {
+      const comment: Omit<Comment, 'id' | 'likes' | 'createdAt'> = {
         animeId,
         userId: currentUser.uid,
         userName: '@' + (userData.username || 'user'), // Add @ symbol for display
         content: commentContent,
         userAvatar: userAvatarUrl // Add avatar URL from user profile
       };
+      
+      // Add GIF URL if selected
+      if (selectedGifUrl) {
+        comment.gifUrl = selectedGifUrl;
+        // Clear selected GIF after adding to comment
+        setSelectedGifUrl(null);
+      }
       
       // Optimistically add comment to UI immediately
       const optimisticComment: Comment = {
@@ -718,11 +754,16 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
     });
   }, [animeId, forceRefresh, showProfileTooltip]);
 
+  // Handle GIF selection
+  const handleSelectGif = (gifUrl: string) => {
+    setSelectedGifUrl(gifUrl);
+  };
+
   return (
     <KeyboardAvoidingView 
-      style={styles.container}
+      style={[styles.container, fullscreen && styles.fullscreenContainer]} 
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={fullscreen ? 90 : 60}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       {/* Comments header */}
       {!fullscreen && (
@@ -787,15 +828,72 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
           </TouchableOpacity>
         ) : (
           <>
-            <TextInput
-              style={styles.input}
-              placeholder="Add a comment..."
-              placeholderTextColor="#999"
-              value={commentText}
-              onChangeText={setCommentText}
-              multiline={true}
-              maxLength={280}
-            />
+            <View style={styles.inputRow}>
+              {/* Display GIF preview if selected */}
+              {selectedGifUrl && (
+                <View style={styles.selectedGifContainer}>
+                  {selectedGifUrl.endsWith('.mp4') ? (
+                    <Video
+                      source={{ uri: selectedGifUrl }}
+                      style={styles.selectedGifPreview}
+                      resizeMode="cover"
+                      isLooping
+                      shouldPlay
+                      isMuted={true}
+                      useNativeControls={false}
+                    />
+                  ) : (
+                    <Image 
+                      source={{ uri: selectedGifUrl }} 
+                      style={styles.selectedGifPreview} 
+                      resizeMode="cover"
+                    />
+                  )}
+                  <TouchableOpacity 
+                    style={styles.removeGifButton}
+                    onPress={() => setSelectedGifUrl(null)}
+                  >
+                    <MaterialIcons name="close" size={16} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              )}
+              
+              <TextInput
+                style={[styles.input, selectedGifUrl && styles.inputWithGif]}
+                placeholder="Add a comment..."
+                placeholderTextColor="#999"
+                value={commentText}
+                onChangeText={setCommentText}
+                multiline={true}
+                maxLength={280}
+              />
+            </View>
+            
+            <View style={styles.actionButtonsRow}>
+              {/* GIF Button */}
+              <TouchableOpacity 
+                style={styles.gifButton}
+                onPress={() => setShowGifPicker(true)}
+              >
+                <Text style={styles.gifButtonText}>GIF</Text>
+              </TouchableOpacity>
+              
+              {/* Submit Button */}
+              <TouchableOpacity 
+                style={[
+                  styles.submitButton,
+                  (submitting || (!isPremiumUser && commentCooldown > 0)) && styles.disabledButton
+                ]}
+                onPress={handleSubmitComment}
+                disabled={submitting || (!isPremiumUser && commentCooldown > 0)}
+              >
+                {submitting ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <MaterialIcons name="send" size={24} color="#fff" />
+                )}
+              </TouchableOpacity>
+            </View>
             
             {/* Show cooldown indicator for non-premium users */}
             {!isPremiumUser && commentCooldown > 0 && (
@@ -826,24 +924,16 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
                 </TouchableOpacity>
               </View>
             )}
-            
-            <TouchableOpacity 
-              style={[
-                styles.submitButton,
-                (submitting || (!isPremiumUser && commentCooldown > 0)) && styles.disabledButton
-              ]}
-              onPress={handleSubmitComment}
-              disabled={submitting || (!isPremiumUser && commentCooldown > 0)}
-            >
-              {submitting ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <MaterialIcons name="send" size={24} color="#fff" />
-              )}
-            </TouchableOpacity>
           </>
         )}
       </View>
+      
+      {/* GIF Picker Modal */}
+      <GifPicker 
+        isVisible={showGifPicker}
+        onClose={() => setShowGifPicker(false)}
+        onSelectGif={handleSelectGif}
+      />
       
       <AuthModal 
         isVisible={showAuthModal}
@@ -887,25 +977,48 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#1a1a1a',
     borderTopWidth: 1,
     borderTopColor: '#333',
     paddingVertical: 10,
     paddingHorizontal: 16,
   },
+  inputRow: {
+    flexDirection: 'column',
+    width: '100%',
+  },
+  actionButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+  },
   input: {
-    flex: 1,
     color: '#fff',
     fontSize: 14,
     minHeight: 40,
-    maxHeight: 100, // Limit height to prevent excessive expansion
+    maxHeight: 100,
     backgroundColor: '#232323',
     borderRadius: 24,
     paddingHorizontal: 16,
     paddingTop: 10,
     paddingBottom: 10,
+    width: '100%',
+  },
+  inputWithGif: {
+    marginTop: 8,
+  },
+  gifButton: {
+    backgroundColor: '#333',
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginRight: 8,
+  },
+  gifButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 12,
   },
   submitButton: {
     backgroundColor: '#f4511e',
@@ -914,7 +1027,6 @@ const styles = StyleSheet.create({
     height: 44,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 12,
   },
   disabledButton: {
     opacity: 0.5,
@@ -1044,6 +1156,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginHorizontal: 4,
     fontWeight: 'bold',
+  },
+  selectedGifContainer: {
+    position: 'relative',
+    height: 100,
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  selectedGifPreview: {
+    width: '100%',
+    height: '100%',
+  },
+  removeGifButton: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gifContainer: {
+    marginTop: 8,
+    marginBottom: 8,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+  commentGif: {
+    width: '100%',
+    height: 180,
   },
 });
 

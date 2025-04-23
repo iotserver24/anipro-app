@@ -79,6 +79,36 @@ The app includes a user avatar system that allows users to select profile pictur
 
 To add new avatars, use the admin panel at https://anisurge.me/admin/avatars. All users will automatically get access to new avatars without needing to update the app.
 
+## GIF Support in Comments
+
+The app includes GIF support in the comment section, allowing users to add animated GIFs to their comments.
+
+### Setting Up Tenor API Key
+
+To enable GIF functionality, follow these steps:
+
+1. Create a Google Cloud project and enable the Tenor API at [https://console.cloud.google.com/](https://console.cloud.google.com/)
+2. Generate an API key for the Tenor API
+3. Update the API key in `constants/apiKeys.ts`:
+
+```typescript
+export const TENOR_API_KEY = 'YOUR_TENOR_API_KEY';
+```
+
+### How It Works
+
+1. Users can click the "GIF" button in the comment input section
+2. The GIF picker modal displays trending GIFs from Tenor
+3. Users can search for specific GIFs
+4. Selected GIFs are displayed in the comments using video format for better compatibility
+
+### For Developers
+
+- GIF picker is implemented in `components/GifPicker.tsx`
+- The Comment type in `services/commentService.ts` has been extended to include `gifUrl`
+- Comments with GIFs are displayed in `components/CommentSection.tsx`
+- The app uses MP4 format for GIFs when available for better compatibility
+
 ## Development
 
 ### Prerequisites
