@@ -408,19 +408,6 @@ const ReelsView = ({ items, onClose }: { items: GalleryItem[]; onClose: () => vo
                 >
                   <MaterialIcons name="file-download" size={24} color="white" />
                 </TouchableOpacity>
-                {currentIndex > 0 && (
-                  <TouchableOpacity
-                    style={styles.navigationButton}
-                    onPress={() => {
-                      scrollViewRef.current?.scrollToIndex({
-                        index: currentIndex - 1,
-                        animated: true
-                      });
-                    }}
-                  >
-                    <MaterialIcons name="keyboard-arrow-up" size={24} color="white" />
-                  </TouchableOpacity>
-                )}
               </View>
 
               <View style={styles.reelFooter}>
@@ -441,20 +428,6 @@ const ReelsView = ({ items, onClose }: { items: GalleryItem[]; onClose: () => vo
                         color="white"
                       />
                     </TouchableOpacity>
-                    
-                    {currentIndex < items.length - 1 && (
-                      <TouchableOpacity
-                        style={styles.navigationButton}
-                        onPress={() => {
-                          scrollViewRef.current?.scrollToIndex({
-                            index: currentIndex + 1,
-                            animated: true
-                          });
-                        }}
-                      >
-                        <MaterialIcons name="keyboard-arrow-down" size={24} color="white" />
-                      </TouchableOpacity>
-                    )}
                   </View>
                 </View>
               </View>
@@ -531,8 +504,6 @@ export default function Gallery() {
   const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredItems, setFilteredItems] = useState<GalleryItem[]>([]);
-  const [showSearch, setShowSearch] = useState(false);
-  const searchAnimation = useRef(new Animated.Value(0)).current;
   const [selectedItem, setSelectedItem] = useState<GalleryItem | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const [showControls, setShowControls] = useState(true);
@@ -546,9 +517,7 @@ export default function Gallery() {
   const handleSectionChange = useCallback((section: GallerySection) => {
     setSelectedSection(section);
     setSearchQuery('');
-    setShowSearch(false);
-    searchAnimation.setValue(0);
-  }, [searchAnimation]);
+  }, []);
 
   // Fetch content directly without status check
   const fetchContent = useCallback(async () => {
@@ -686,17 +655,6 @@ export default function Gallery() {
     setShowControls(prev => !prev);
     resetControlsTimeout();
   }, [resetControlsTimeout]);
-
-  // Add toggle search animation
-  const toggleSearch = useCallback(() => {
-    setShowSearch(prev => !prev);
-    Animated.spring(searchAnimation, {
-      toValue: showSearch ? 0 : 1,
-      useNativeDriver: false,
-      friction: 8,
-      tension: 50
-    }).start();
-  }, [showSearch]);
 
   // Add downloadContent function
   const downloadContent = useCallback(async (item: GalleryItem) => {
@@ -883,24 +841,6 @@ export default function Gallery() {
               <MaterialIcons name="close" size={24} color="white" />
             </TouchableOpacity>
 
-            {selectedIndex > 0 && (
-              <TouchableOpacity
-                style={[styles.navigationButton, styles.prevButton]}
-                onPress={() => navigateGallery('prev')}
-              >
-                <MaterialIcons name="chevron-left" size={40} color="white" />
-              </TouchableOpacity>
-            )}
-
-            {selectedIndex < items.length - 1 && (
-              <TouchableOpacity
-                style={[styles.navigationButton, styles.nextButton]}
-                onPress={() => navigateGallery('next')}
-              >
-                <MaterialIcons name="chevron-right" size={40} color="white" />
-              </TouchableOpacity>
-            )}
-
             <LinearGradient
               colors={['transparent', 'rgba(0,0,0,0.7)']}
               style={styles.fullscreenControls}
@@ -924,53 +864,6 @@ export default function Gallery() {
   // Modify the header section to include search
   const renderHeader = () => (
     <View style={styles.header}>
-      <View style={styles.headerTop}>
-        <Text style={styles.headerTitle}>Gallery</Text>
-        <TouchableOpacity
-          style={styles.searchButton}
-          onPress={toggleSearch}
-        >
-          <MaterialIcons 
-            name={showSearch ? "close" : "search"} 
-            size={24} 
-            color="white" 
-          />
-        </TouchableOpacity>
-      </View>
-
-      <Animated.View style={[
-        styles.searchContainer,
-        {
-          maxHeight: searchAnimation.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0, 50]
-          }),
-          opacity: searchAnimation,
-          marginBottom: searchAnimation.interpolate({
-            inputRange: [0, 1],
-            outputRange: [0, 16]
-          })
-        }
-      ]}>
-        <MaterialIcons name="search" size={20} color="#666" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search gallery..."
-          placeholderTextColor="#666"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCapitalize="none"
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity
-            style={styles.clearButton}
-            onPress={() => setSearchQuery('')}
-          >
-            <MaterialIcons name="close" size={20} color="#666" />
-          </TouchableOpacity>
-        )}
-      </Animated.View>
-
       <View style={styles.sectionContainer}>
         <TouchableOpacity
           style={[styles.sectionButton, selectedSection === 'waifu' && styles.sectionButtonActive]}
@@ -998,6 +891,26 @@ export default function Gallery() {
             Husbandos
           </Text>
         </TouchableOpacity>
+      </View>
+
+      <View style={styles.searchContainer}>
+        <MaterialIcons name="search" size={20} color="#666" />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search gallery..."
+          placeholderTextColor="#666"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          autoCapitalize="none"
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity
+            style={styles.clearButton}
+            onPress={() => setSearchQuery('')}
+          >
+            <MaterialIcons name="close" size={20} color="#666" />
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   );
@@ -1057,7 +970,7 @@ export default function Gallery() {
             numColumns={numColumns}
             contentContainerStyle={[
               styles.listContainer,
-              { alignItems: 'flex-start' } // Ensure items align properly
+              { paddingBottom: 80 }
             ]}
             showsVerticalScrollIndicator={false}
             refreshControl={
@@ -1069,18 +982,18 @@ export default function Gallery() {
               />
             }
             columnWrapperStyle={styles.columnWrapper}
-            windowSize={3}
-            maxToRenderPerBatch={6}
-            initialNumToRender={6}
-            removeClippedSubviews={true}
-            updateCellsBatchingPeriod={100}
+            windowSize={21}
+            maxToRenderPerBatch={10}
+            initialNumToRender={12}
+            removeClippedSubviews={false}
+            updateCellsBatchingPeriod={50}
             onEndReachedThreshold={0.5}
             maintainVisibleContentPosition={{
               minIndexForVisible: 0,
               autoscrollToTopThreshold: 10
             }}
             getItemLayout={(data, index) => ({
-              length: itemWidth * 1.5, // Portrait height
+              length: itemWidth * 1.5 + gap,
               offset: (itemWidth * 1.5 + gap) * Math.floor(index / numColumns),
               index,
             })}
@@ -1102,26 +1015,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#333',
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#fff',
-    marginBottom: 16,
-  },
-  searchButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    gap: 16,
   },
   searchContainer: {
     flexDirection: 'row',
@@ -1130,18 +1024,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    marginBottom: 16,
-    overflow: 'hidden',
-  },
-  searchInput: {
-    flex: 1,
-    color: 'white',
-    fontSize: 16,
-    marginLeft: 8,
-    paddingVertical: 4,
-  },
-  clearButton: {
-    padding: 4,
   },
   sectionContainer: {
     flexDirection: 'row',
