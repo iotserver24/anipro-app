@@ -17,6 +17,7 @@ import {
   Animated
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { 
   Comment, 
   addComment, 
@@ -35,6 +36,8 @@ import UserProfileModal from './UserProfileModal';
 import { migrateCommentsWithAvatars } from '../services/commentService';
 import { logger } from '../utils/logger';
 import UserDonationBadge from './UserDonationBadge';
+import { getUserPremiumStatus } from '../services/donationService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type CommentSectionProps = {
   animeId: string;
@@ -226,6 +229,12 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
   const keyboardDidShowListener = useRef<any>(null);
   const keyboardDidHideListener = useRef<any>(null);
   
+  // Add premium status state
+  const [isPremiumUser, setIsPremiumUser] = useState(false);
+  const [lastCommentTime, setLastCommentTime] = useState<Date | null>(null);
+  const [commentCooldown, setCommentCooldown] = useState(0);
+  const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
   // Add keyboard event listeners
   useEffect(() => {
     keyboardDidShowListener.current = Keyboard.addListener(
@@ -277,6 +286,62 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
       };
     }, [animeId])
   );
+
+  // Load premium status when component mounts
+  useEffect(() => {
+    const loadPremiumStatus = async () => {
+      if (isAuthenticated()) {
+        try {
+          const premiumStatus = await getUserPremiumStatus();
+          setIsPremiumUser(premiumStatus.isPremium);
+          
+          // Load last comment time from storage
+          const lastCommentTimeStr = await AsyncStorage.getItem('lastCommentTime');
+          if (lastCommentTimeStr) {
+            setLastCommentTime(new Date(parseInt(lastCommentTimeStr)));
+          }
+        } catch (error) {
+          console.error('Error loading premium status:', error);
+          setIsPremiumUser(false);
+        }
+      }
+    };
+    
+    loadPremiumStatus();
+  }, []);
+  
+  // Update cooldown timer
+  useEffect(() => {
+    if (!isPremiumUser && lastCommentTime) {
+      const updateCooldown = () => {
+        const now = new Date();
+        const timeSinceLastComment = now.getTime() - lastCommentTime.getTime();
+        const cooldownTime = 60000; // 60000ms = 1 minute
+        
+        if (timeSinceLastComment < cooldownTime) {
+          // Calculate remaining seconds
+          const remainingMs = cooldownTime - timeSinceLastComment;
+          const remainingSeconds = Math.ceil(remainingMs / 1000);
+          setCommentCooldown(remainingSeconds);
+          
+          // Schedule next update
+          cooldownTimerRef.current = setTimeout(updateCooldown, 1000);
+        } else {
+          setCommentCooldown(0);
+        }
+      };
+      
+      // Start the countdown
+      updateCooldown();
+      
+      // Clear timer on cleanup
+      return () => {
+        if (cooldownTimerRef.current) {
+          clearTimeout(cooldownTimerRef.current);
+        }
+      };
+    }
+  }, [isPremiumUser, lastCommentTime]);
 
   // Function to load comments
   const loadComments = async () => {
@@ -331,6 +396,32 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
     if (!commentText.trim()) {
       Alert.alert('Error', 'Please enter a comment');
       return;
+    }
+    
+    // Check rate limit for non-premium users
+    if (!isPremiumUser && lastCommentTime) {
+      const now = new Date();
+      const timeSinceLastComment = now.getTime() - lastCommentTime.getTime();
+      
+      if (timeSinceLastComment < 60000) { // 60000ms = 1 minute
+        // Show premium upgrade prompt
+        Alert.alert(
+          'Comment Rate Limit',
+          `Please wait ${commentCooldown} seconds before posting another comment.\n\nPremium users can comment without limits!`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { 
+              text: 'Upgrade to Premium', 
+              onPress: () => {
+                // Navigate to profile/premium page
+                router.navigate('/profile');
+              },
+              style: 'default'
+            }
+          ]
+        );
+        return;
+      }
     }
 
     // Dismiss keyboard first to prevent layout jumping
@@ -433,6 +524,13 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
             c.id === optimisticComment.id ? addedComment : c
           )
         );
+        
+        // Update last comment time for non-premium users
+        if (!isPremiumUser) {
+          const now = new Date();
+          setLastCommentTime(now);
+          await AsyncStorage.setItem('lastCommentTime', now.getTime().toString());
+        }
         
         // Show success message
         if (Platform.OS === 'android') {
@@ -678,42 +776,75 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
       </View>
       
       {/* Comment Input - Fixed position at bottom */}
-      <View style={[
-        styles.inputContainer,
-        Platform.OS === 'android' && styles.androidInputContainer
-      ]}>
-        <TextInput
-          style={styles.commentInput}
-          placeholder={isAuthenticated() ? "Add a comment..." : "Sign in to comment..."}
-          placeholderTextColor="#666"
-          value={commentText}
-          onChangeText={setCommentText}
-          multiline
-          maxLength={300}
-          onFocus={() => {
-            if (!isAuthenticated()) {
-              Keyboard.dismiss();
-              setShowAuthModal(true);
-            }
-          }}
-        />
-        <TouchableOpacity 
-          style={[
-            styles.submitButton, 
-            (!commentText.trim() || submitting) && styles.disabledButton
-          ]}
-          onPress={handleSubmitComment}
-          disabled={!commentText.trim() || submitting}
-        >
-          {submitting ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <MaterialIcons name="send" size={20} color="#fff" />
-          )}
-        </TouchableOpacity>
+      <View style={styles.inputContainer}>
+        {!isAuthenticated() ? (
+          <TouchableOpacity 
+            style={styles.loginToComment}
+            onPress={() => setShowAuthModal(true)}
+          >
+            <MaterialIcons name="login" size={20} color="#fff" />
+            <Text style={styles.loginText}>Login to comment</Text>
+          </TouchableOpacity>
+        ) : (
+          <>
+            <TextInput
+              style={styles.input}
+              placeholder="Add a comment..."
+              placeholderTextColor="#999"
+              value={commentText}
+              onChangeText={setCommentText}
+              multiline={true}
+              maxLength={280}
+            />
+            
+            {/* Show cooldown indicator for non-premium users */}
+            {!isPremiumUser && commentCooldown > 0 && (
+              <View style={styles.cooldownContainer}>
+                <MaterialIcons name="timer" size={14} color="#f4511e" />
+                <Text style={styles.cooldownText}>
+                  {commentCooldown}s
+                </Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    Alert.alert(
+                      'Comment Cooldown',
+                      'Non-premium users can post one comment per minute.\n\nUpgrade to Premium to comment without limits!',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        { 
+                          text: 'Upgrade to Premium', 
+                          onPress: () => {
+                            // Navigate to profile/premium page
+                            router.navigate('/profile');
+                          }
+                        }
+                      ]
+                    );
+                  }}
+                >
+                  <MaterialIcons name="info-outline" size={14} color="#f4511e" />
+                </TouchableOpacity>
+              </View>
+            )}
+            
+            <TouchableOpacity 
+              style={[
+                styles.submitButton,
+                (submitting || (!isPremiumUser && commentCooldown > 0)) && styles.disabledButton
+              ]}
+              onPress={handleSubmitComment}
+              disabled={submitting || (!isPremiumUser && commentCooldown > 0)}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <MaterialIcons name="send" size={24} color="#fff" />
+              )}
+            </TouchableOpacity>
+          </>
+        )}
       </View>
       
-      {/* Auth Modal */}
       <AuthModal 
         isVisible={showAuthModal}
         onClose={() => setShowAuthModal(false)}
@@ -764,7 +895,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 16,
   },
-  commentInput: {
+  input: {
     flex: 1,
     color: '#fff',
     fontSize: 14,
@@ -884,9 +1015,35 @@ const styles = StyleSheet.create({
   commentsContainerWithKeyboard: {
     paddingBottom: Platform.OS === 'android' ? 48 : 0, // Add additional padding when keyboard is visible
   },
-  androidInputContainer: {
-    position: 'relative', // Make sure it's not floating on Android
-    zIndex: 1, // Ensure it stays above content
+  loginToComment: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    backgroundColor: '#f4511e',
+    borderRadius: 24,
+  },
+  loginText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  cooldownContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    position: 'absolute',
+    top: 8,
+    right: 64,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  cooldownText: {
+    color: '#f4511e',
+    fontSize: 12,
+    marginHorizontal: 4,
+    fontWeight: 'bold',
   },
 });
 
