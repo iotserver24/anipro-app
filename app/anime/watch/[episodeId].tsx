@@ -248,89 +248,90 @@ const ControlsOverlay = React.memo(({
   );
 });
 
-const EpisodeItem = React.memo(({ episode, onPress, onLongPress, mode, isCurrentEpisode }: {
+// Add this type definition near the top with other types
+type EpisodeItemProps = {
   episode: APIEpisode;
-  onPress: () => void;
-  onLongPress: () => void;
-  mode: 'sub' | 'dub';
   isCurrentEpisode: boolean;
-}) => (
-  <TouchableOpacity
-    style={[
-      {
-        backgroundColor: '#1a1a1a',
-        borderRadius: 8,
-        overflow: 'hidden',
-        marginBottom: 8,
-      },
-      episode.isFiller && {
-        borderLeftWidth: 3,
-        borderLeftColor: '#f4511e',
-      },
-      isCurrentEpisode && {
-        backgroundColor: '#333',
-      }
-    ]}
-    onPress={onPress}
-    onLongPress={onLongPress}
-  >
-    <View style={{
-      flexDirection: 'row',
-      alignItems: 'center',
-      padding: 12,
-    }}>
-      <View style={{
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: '#222',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-      }}>
-        <Text style={{
-          color: '#fff',
-          fontSize: 16,
-          fontWeight: '500',
-        }}>{episode.number}</Text>
-      </View>
-      <View style={{
-        flex: 1,
-        marginRight: 12,
-      }}>
-        <Text style={{
-          color: '#999',
-          fontSize: 14,
-          marginTop: 4,
-        }} numberOfLines={1}>
-          {episode.title}
-        </Text>
-        <View style={{
-          flexDirection: 'row',
-          gap: 8,
-        }}>
-          {mode === 'dub' && episode.isDubbed && (
-            <Text style={{
-              color: '#4CAF50',
-              fontSize: 12,
-              fontWeight: '600',
-            }}>DUB</Text>
-          )}
-          {episode.isFiller && (
-            <Text style={{
-              color: '#f4511e',
-              fontSize: 12,
-              fontWeight: '600',
-            }}>FILLER</Text>
-          )}
+  onPress: () => void;
+  mode: 'sub' | 'dub';
+};
+
+// Add the EpisodeItem component definition before the main WatchEpisode component
+const EpisodeItem = React.memo(({ episode, isCurrentEpisode, onPress, mode }: EpisodeItemProps) => {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.episodeCard,
+        isCurrentEpisode && styles.currentEpisodeCard,
+        pressed && styles.pressedEpisodeCard,
+        episode.isFiller && styles.fillerEpisodeCard
+      ]}
+    >
+      <LinearGradient
+        colors={isCurrentEpisode ? 
+          ['#f4511e22', '#f4511e11', '#f4511e00'] : 
+          ['transparent', 'transparent']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={styles.episodeGradient}
+      >
+        <View style={styles.episodeContent}>
+          {/* Episode Number Circle */}
+          <View style={[
+            styles.episodeNumberContainer,
+            isCurrentEpisode && styles.currentEpisodeNumberContainer
+          ]}>
+            <Text style={[
+              styles.episodeNumber,
+              isCurrentEpisode && styles.currentEpisodeNumber
+            ]}>
+              {episode.number}
+            </Text>
+          </View>
+
+          {/* Episode Info */}
+          <View style={styles.episodeInfo}>
+            <Text 
+              style={[
+                styles.episodeTitle,
+                isCurrentEpisode && styles.currentEpisodeTitle
+              ]} 
+              numberOfLines={2}
+            >
+              {episode.title || `Episode ${episode.number}`}
+            </Text>
+            
+            {/* Badges */}
+            <View style={styles.badgeContainer}>
+              {mode === 'dub' && episode.isDubbed && (
+                <View style={styles.dubBadge}>
+                  <MaterialIcons name="record-voice-over" size={12} color="#4CAF50" />
+                  <Text style={styles.dubBadgeText}>DUB</Text>
+                </View>
+              )}
+              {episode.isFiller && (
+                <View style={styles.fillerBadge}>
+                  <MaterialIcons name="info-outline" size={12} color="#f4511e" />
+                  <Text style={styles.fillerBadgeText}>FILLER</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Right Icon */}
+          <View style={styles.episodeRightIcon}>
+            {isCurrentEpisode ? (
+              <MaterialIcons name="play-circle-filled" size={24} color="#f4511e" />
+            ) : (
+              <MaterialIcons name="play-circle-outline" size={24} color="#666" />
+            )}
+          </View>
         </View>
-      </View>
-      {isCurrentEpisode && (
-        <MaterialIcons name="play-circle-filled" size={24} color="#f4511e" />
-      )}
-    </View>
-  </TouchableOpacity>
-));
+      </LinearGradient>
+    </Pressable>
+  );
+});
 
 // Add this type near the top with other type definitions
 type Quality = {
@@ -694,6 +695,8 @@ export default function WatchEpisode() {
   const lastProgressUpdateRef = useRef<number>(0);
   // Add a ref to track the last progress value to avoid duplicate updates
   const lastProgressValueRef = useRef<number>(0);
+  // Add this state near other state declarations in WatchEpisode component
+  const [isAnimeInfoVisible, setIsAnimeInfoVisible] = useState(false);
 
   useEffect(() => {
     // If resumeTime is provided, use it directly and skip getting from history
@@ -1789,17 +1792,33 @@ export default function WatchEpisode() {
                 downloadUrl={videoData?.download || null}
               />
               
-              <AnimeInfo 
-                animeInfo={animeInfo} 
-                onNavigateToAnime={() => {
-                  if (animeId) {
-                    router.push({
-                      pathname: "/anime/[id]",
-                      params: { id: animeId }
-                    });
-                  }
-                }}
-              />
+              <Pressable 
+                style={styles.animeInfoToggle}
+                onPress={() => setIsAnimeInfoVisible(!isAnimeInfoVisible)}
+              >
+                <View style={styles.animeInfoToggleContent}>
+                  <Text style={styles.animeInfoToggleText}>Anime Info</Text>
+                  <MaterialIcons 
+                    name={isAnimeInfoVisible ? "keyboard-arrow-up" : "keyboard-arrow-down"} 
+                    size={24} 
+                    color="#f4511e" 
+                  />
+                </View>
+              </Pressable>
+
+              {isAnimeInfoVisible && (
+                <AnimeInfo 
+                  animeInfo={animeInfo} 
+                  onNavigateToAnime={() => {
+                    if (animeId) {
+                      router.push({
+                        pathname: "/anime/[id]",
+                        params: { id: animeId }
+                      });
+                    }
+                  }}
+                />
+              )}
 
               <ScrollView style={styles.controls}>
                 {/* Episodes */}
@@ -1808,19 +1827,6 @@ export default function WatchEpisode() {
                     {categoryAsSubOrDub === 'dub' ? 'Dubbed Episodes' : 'Subbed Episodes'}
                   </Text>
                   
-                  {/* Remove the audio selector and replace with a simple status indicator */}
-                  <View style={styles.audioStatusContainer}>
-                    <MaterialIcons 
-                      name={categoryAsSubOrDub === 'dub' ? "record-voice-over" : "subtitles"} 
-                      size={20} 
-                      color="#f4511e" 
-                    />
-                    <Text style={styles.audioStatusText}>
-                      {categoryAsSubOrDub === 'dub' ? 'English Dub' : 'Original with Subtitles'}
-                      {' '}({filteredEpisodes.length} episodes)
-                    </Text>
-                  </View>
-
                   {/* Search Bar */}
                   <View style={styles.searchContainer}>
                     <MaterialIcons name="search" size={24} color="#666" />
@@ -1858,9 +1864,6 @@ export default function WatchEpisode() {
                                 resumeTime: "0" // Force start from beginning
                               }
                             });
-                          }}
-                          onLongPress={() => {
-                            // Implement long press action
                           }}
                           mode={categoryAsSubOrDub}
                           isCurrentEpisode={episode.id === episodeId}
@@ -2163,18 +2166,35 @@ const styles = StyleSheet.create({
   },
   episodeCard: {
     backgroundColor: '#1a1a1a',
-    borderRadius: 8,
-    overflow: 'hidden',
+    borderRadius: 12,
     marginBottom: 8,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.22,
+    shadowRadius: 2.22,
+  },
+  currentEpisodeCard: {
+    backgroundColor: '#2a2a2a',
+    borderColor: '#f4511e33',
+    borderWidth: 1,
+  },
+  pressedEpisodeCard: {
+    opacity: 0.7,
   },
   fillerEpisodeCard: {
     borderLeftWidth: 3,
     borderLeftColor: '#f4511e',
   },
+  episodeGradient: {
+    width: '100%',
+  },
   episodeContent: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
+    gap: 12,
   },
   episodeNumberContainer: {
     width: 40,
@@ -2183,21 +2203,75 @@ const styles = StyleSheet.create({
     backgroundColor: '#222',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#333',
   },
-  episodeBadges: {
+  currentEpisodeNumberContainer: {
+    backgroundColor: '#f4511e11',
+    borderColor: '#f4511e',
+  },
+  episodeNumber: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  currentEpisodeNumber: {
+    color: '#f4511e',
+    fontWeight: '700',
+  },
+  episodeInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  episodeTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    opacity: 0.9,
+  },
+  currentEpisodeTitle: {
+    color: '#fff',
+    opacity: 1,
+    fontWeight: '600',
+  },
+  badgeContainer: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
+    marginTop: 4,
+  },
+  dubBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4CAF5011',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    gap: 4,
+  },
+  dubBadgeText: {
+    color: '#4CAF50',
+    fontSize: 12,
+    fontWeight: '600',
   },
   fillerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f4511e11',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    gap: 4,
+  },
+  fillerBadgeText: {
     color: '#f4511e',
     fontSize: 12,
     fontWeight: '600',
   },
-  dubBadge: {
-    color: '#4CAF50', 
-    fontSize: 12,
-    fontWeight: '600',
+  episodeRightIcon: {
+    width: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalContainer: {
     flex: 1,
@@ -2379,5 +2453,28 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: 'white',
     marginBottom: 16,
+  },
+  animeInfoToggle: {
+    backgroundColor: '#1a1a1a',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 12,
+    overflow: 'hidden',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.22,
+    shadowRadius: 2.22,
+  },
+  animeInfoToggleContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+  },
+  animeInfoToggleText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
