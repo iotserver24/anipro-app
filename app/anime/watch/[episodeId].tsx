@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput, BackHandler, Platform, Linking, Modal, Alert, Animated, Image } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput, BackHandler, Platform, Linking, Modal, Alert, Animated, Image, Easing } from 'react-native';
 import { useLocalSearchParams, router, Stack, useNavigation } from 'expo-router';
 import Video from 'react-native-video';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -622,6 +622,97 @@ const AnimeInfo = React.memo(({
         </View>
       </View>
     </TouchableOpacity>
+  );
+});
+
+// Add these components after your existing component definitions and before WatchEpisode
+const SkeletonLoader = React.memo(() => {
+  const shimmerAnimation = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const startShimmerAnimation = () => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(shimmerAnimation, {
+            toValue: 1,
+            duration: 1000,
+            easing: Easing.linear,
+            useNativeDriver: true
+          }),
+          Animated.timing(shimmerAnimation, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true
+          })
+        ])
+      ).start();
+    };
+
+    startShimmerAnimation();
+  }, []);
+
+  const translateX = shimmerAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-200, 400]
+  });
+
+  const shimmerStyle = {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    transform: [{ translateX }]
+  };
+
+  return (
+    <View style={styles.skeletonContainer}>
+      {/* Video Player Skeleton */}
+      <View style={[styles.skeletonVideo, { overflow: 'hidden' }]}>
+        <Animated.View style={shimmerStyle} />
+      </View>
+
+      {/* Controls Skeleton */}
+      <View style={styles.skeletonControls}>
+        <View style={styles.skeletonControlsRow}>
+          {[1, 2, 3, 4].map((_, index) => (
+            <View key={index} style={[styles.skeletonControlButton, { overflow: 'hidden' }]}>
+              <Animated.View style={shimmerStyle} />
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* Anime Info Skeleton */}
+      <View style={[styles.skeletonAnimeInfo, { overflow: 'hidden' }]}>
+        <View style={styles.skeletonAnimeInfoHeader}>
+          <View style={[styles.skeletonAnimeImage, { overflow: 'hidden' }]}>
+            <Animated.View style={shimmerStyle} />
+          </View>
+          <View style={styles.skeletonAnimeDetails}>
+            <View style={[styles.skeletonTitle, { overflow: 'hidden' }]}>
+              <Animated.View style={shimmerStyle} />
+            </View>
+            <View style={[styles.skeletonSubtitle, { overflow: 'hidden' }]}>
+              <Animated.View style={shimmerStyle} />
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* Episodes List Skeleton */}
+      <View style={styles.skeletonEpisodesList}>
+        <View style={[styles.skeletonEpisodesHeader, { overflow: 'hidden' }]}>
+          <Animated.View style={shimmerStyle} />
+        </View>
+        {[1, 2, 3, 4, 5].map((_, index) => (
+          <View key={index} style={[styles.skeletonEpisodeItem, { overflow: 'hidden' }]}>
+            <Animated.View style={shimmerStyle} />
+          </View>
+        ))}
+      </View>
+    </View>
   );
 });
 
@@ -1708,10 +1799,19 @@ export default function WatchEpisode() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#f4511e" />
-          <Text style={styles.loadingText}>Loading video...</Text>
-        </View>
+        <Stack.Screen 
+          options={{
+            headerShown: true,
+            title: 'Loading...',
+            statusBarStyle: 'light',
+            statusBarTranslucent: true,
+            headerStyle: {
+              backgroundColor: '#000',
+            },
+            headerTintColor: '#fff',
+          }} 
+        />
+        <SkeletonLoader />
       </View>
     );
   }
@@ -2476,5 +2576,82 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  // Add new skeleton styles
+  skeletonContainer: {
+    flex: 1,
+    backgroundColor: '#121212',
+    padding: 16,
+  },
+  skeletonVideo: {
+    width: '100%',
+    aspectRatio: 16/9,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  skeletonControls: {
+    marginBottom: 16,
+  },
+  skeletonControlsRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 24,
+  },
+  skeletonControlButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1a1a1a',
+  },
+  skeletonAnimeInfo: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  skeletonAnimeInfoHeader: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  skeletonAnimeImage: {
+    width: 100,
+    height: 150,
+    backgroundColor: '#222',
+    borderRadius: 8,
+  },
+  skeletonAnimeDetails: {
+    flex: 1,
+    gap: 8,
+  },
+  skeletonTitle: {
+    height: 24,
+    backgroundColor: '#222',
+    borderRadius: 4,
+    width: '80%',
+  },
+  skeletonSubtitle: {
+    height: 16,
+    backgroundColor: '#222',
+    borderRadius: 4,
+    width: '60%',
+  },
+  skeletonEpisodesList: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 12,
+    gap: 12,
+  },
+  skeletonEpisodesHeader: {
+    height: 24,
+    backgroundColor: '#222',
+    borderRadius: 4,
+    width: '40%',
+    marginBottom: 8,
+  },
+  skeletonEpisodeItem: {
+    height: 64,
+    backgroundColor: '#222',
+    borderRadius: 8,
   },
 });
