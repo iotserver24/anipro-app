@@ -249,70 +249,71 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Optimize screen tap handler
   const handleScreenTap = useCallback((event: any) => {
-    // Immediately respond to tap without waiting
+    // Immediately toggle controls visibility
+    setShowControls(prev => !prev);
+
+    // Handle double tap logic
     const now = Date.now();
     const tapX = event.nativeEvent.locationX;
 
-    // Handle double tap (for seek) with immediate feedback
     if (now - lastTapRef.current < 300 && Math.abs(tapX - lastTapXRef.current) < 40) {
-      // Provide immediate visual feedback
       if (tapX < dimensions.width / 2) {
-        // Update UI immediately before starting the seek
-        setCurrentTime(Math.max(0, currentTime - 10));
         handleSeek(Math.max(0, currentTime - 10));
       } else {
-        // Update UI immediately before starting the seek
-        setCurrentTime(Math.min(duration, currentTime + 10));
         handleSeek(Math.min(duration, currentTime + 10));
       }
       return;
     }
 
-    // Store last tap info
     lastTapRef.current = now;
     lastTapXRef.current = tapX;
-
-    // Toggle controls visibility with animation for smoother transition
-    Animated.timing(controlsOpacity, {
-      toValue: showControls ? 0 : 1,
-      duration: 150, // Fast animation for responsiveness
-      useNativeDriver: true,
-    }).start();
-
-    // Toggle state after a very brief delay to allow animation to start
-    setShowControls(!showControls);
 
     // Clear existing timeout
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current);
-      controlsTimeoutRef.current = null;
     }
 
-    // Set auto-hide timeout if showing controls while playing
+    // Set auto-hide timeout only if showing controls
     if (!showControls && isPlaying) {
       controlsTimeoutRef.current = setTimeout(() => {
-        Animated.timing(controlsOpacity, {
-          toValue: 0,
-          duration: 150,
-          useNativeDriver: true,
-        }).start(() => {
-          setShowControls(false);
-        });
+        setShowControls(false);
+      }, 3000);
+    }
+  }, [showControls, isPlaying, currentTime, duration, dimensions.width]);
+
+  // Optimize controls visibility effect
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    
+    if (showControls && isPlaying && !isFullscreen) {
+      timeout = setTimeout(() => {
+        setShowControls(false);
       }, 3000);
     }
 
-    // Visual feedback for tap
-    setTapFeedbackPosition({ x: event.nativeEvent.locationX, y: event.nativeEvent.locationY });
-    setTapFeedbackVisible(true);
-    tapFeedbackOpacity.setValue(0.7);
-    Animated.timing(tapFeedbackOpacity, {
-      toValue: 0,
-      duration: 300,
-      useNativeDriver: true,
-    }).start(() => {
-      setTapFeedbackVisible(false);
-    });
-  }, [showControls, isPlaying, currentTime, duration, dimensions.width, controlsOpacity, tapFeedbackOpacity]);
+    return () => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    };
+  }, [showControls, isPlaying, isFullscreen]);
+
+  // Add separate effect for fullscreen controls
+  useEffect(() => {
+    let timeout: NodeJS.Timeout;
+    
+    if (showControls && isPlaying && isFullscreen) {
+      timeout = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    }
+
+    return () => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    };
+  }, [showControls, isPlaying, isFullscreen]);
 
   // Optimize seek handler
   const handleSeek = useCallback(async (value: number) => {
@@ -459,32 +460,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }
     }
   }, [isFullscreen, onFullscreenChange, containerWidthAnim, containerHeightAnim]);
-
-  // Set up and tear down
-  useEffect(() => {
-    // Auto-hide controls after delay if playing
-    if (showControls && isPlaying) {
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-      controlsTimeoutRef.current = setTimeout(() => {
-        // Animate the controls fading out
-        Animated.timing(controlsOpacity, {
-          toValue: 0,
-          duration: 150, // Fast animation for smoother feel
-          useNativeDriver: true,
-        }).start(() => {
-          setShowControls(false);
-        });
-      }, 3000);
-    }
-
-    return () => {
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
-    };
-  }, [showControls, isPlaying, controlsOpacity]);
 
   // Clean up on component unmount
   useEffect(() => {
@@ -803,7 +778,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       <Pressable
         style={[styles.videoWrapper]}
         onPress={handleScreenTap}
-        hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+        hitSlop={{ top: 0, bottom: 0, left: 0, right: 0 }}
         android_ripple={{ color: 'transparent' }}
       >
         <Video
@@ -850,13 +825,16 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         onSkipOutro={handleSkipOutro}
       />
         
-      {/* Always render controls but adjust opacity */}
-      <Animated.View 
-        style={[styles.controlsContainer, { opacity: controlsOpacity }]}
-        pointerEvents={showControls ? 'auto' : 'none'}
+      {/* Always render controls but manage visibility through opacity */}
+      <View 
+        style={[
+          styles.controlsContainer,
+          { opacity: showControls ? 1 : 0 },
+          { pointerEvents: showControls ? 'auto' : 'none' }
+        ]}
       >
         <ControlsOverlay
-          showControls={true}
+          showControls={showControls}
           isPlaying={isPlaying}
           isFullscreen={isFullscreen}
           currentTime={currentTime}
@@ -875,7 +853,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           selectedSubtitle={selectedSubtitle}
           onSubtitleChange={handleSubtitleChange}
         />
-      </Animated.View>
+      </View>
 
       {tapFeedbackVisible && (
         <Animated.View 
