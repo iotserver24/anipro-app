@@ -889,6 +889,10 @@ export default function AboutScreen() {
             <TouchableOpacity onPress={sendFeedback}>
               <InfoRow icon="feedback" label="Send Feedback" value="Send" isLink />
             </TouchableOpacity>
+            <SectionDivider />
+            <TouchableOpacity onPress={() => router.push('/character-select')}>
+              <InfoRow icon="chat" label="Chat with Anime Characters" value="Chat" isLink />
+            </TouchableOpacity>
           </View>
         </View>
 
