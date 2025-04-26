@@ -487,14 +487,17 @@ Remember to maintain your characteristic confidence and subtle manipulation in e
       console.error('Error Type:', error.constructor.name);
       console.error('Error Message:', error.message);
       
-      const errorMessage: Message = {
-        id: Date.now().toString(),
-        text: "I apologize, but I'm having trouble connecting right now. Please try again in a moment.",
-        sender: 'ai',
-        timestamp: new Date(),
-        characterId: character.id
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      // Only show error message if it's not the initial greeting and there are existing messages
+      if (messages.length > 1) {
+        const errorMessage: Message = {
+          id: Date.now().toString(),
+          text: "I apologize, but I'm having trouble connecting right now. Please try again in a moment.",
+          sender: 'ai',
+          timestamp: new Date(),
+          characterId: character.id
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      }
     } finally {
       setIsLoading(false);
     }
