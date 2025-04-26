@@ -843,10 +843,10 @@ Architecture: ${deviceInfo.deviceArchitecture}
           <View style={styles.infoCard}>
             <TouchableOpacity 
               style={styles.supportButton}
-              onPress={() => router.push('/chat')}
+              onPress={() => router.push('/character-select')}
             >
               <MaterialIcons name="chat" size={24} color="#fff" style={styles.buttonIcon} />
-              <Text style={styles.supportButtonText}>Chat with AI Assistant</Text>
+              <Text style={styles.supportButtonText}>Chat with Anime Characters</Text>
             </TouchableOpacity>
             
             <SectionDivider />
@@ -1092,7 +1092,7 @@ const DebugSection = ({
   deviceInfo 
 }: { 
   updateInfo: UpdateInfo | null, 
-  simulatedArch: string | null,
+  simulatedArch: string | null, 
   onSimulate: (arch: string | null) => Promise<void>,
   deviceInfo: DeviceInfo
 }) => {
