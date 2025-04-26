@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,27 +11,171 @@ import {
   Animated,
   TextInput,
   StatusBar,
+  Alert,
 } from 'react-native';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { AVAILABLE_CHARACTERS, Character } from '../constants/characters';
 import { MaterialIcons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
+import { getCurrentUser } from '../services/userService';
+import { doc, getDoc, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore';
+import { db } from '../services/firebase';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.85;
 const CARD_HEIGHT = 180;
 const FEATURED_CARD_HEIGHT = 220;
+const FEATURED_COUNT = 3; // Number of featured characters to show
+
+interface PersonalCharacter extends Character {
+  isPersonal: boolean;
+  createdBy: string;
+}
 
 export default function CharacterSelectScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const scrollY = useRef(new Animated.Value(0)).current;
+  const scrollViewRef = useRef<ScrollView>(null);
   const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
+  const [featuredCharacters, setFeaturedCharacters] = useState<Character[]>([]);
+  const [isPremium, setIsPremium] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [personalCharacters, setPersonalCharacters] = useState<PersonalCharacter[]>([]);
 
-  // Featured characters
-  const featuredCharacters = AVAILABLE_CHARACTERS.filter(char => 
-    ['zero-two', 'gojo', 'marin'].includes(char.id)
+  // Check premium status
+  useEffect(() => {
+    checkPremiumStatus();
+    fetchPersonalCharacters();
+  }, []);
+
+  // Initialize random featured characters
+  useEffect(() => {
+    shuffleFeaturedCharacters();
+    // Shuffle every 30 seconds
+    const interval = setInterval(shuffleFeaturedCharacters, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Add useFocusEffect to reload characters when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      if (isPremium) {
+        console.log('Screen focused, reloading personal characters...');
+        fetchPersonalCharacters();
+      }
+    }, [isPremium])
   );
+
+  const checkPremiumStatus = async () => {
+    try {
+      const user = getCurrentUser();
+      if (!user) {
+        setIsPremium(false);
+        return;
+      }
+
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        setIsPremium(userDoc.data().isPremium === true);
+      }
+    } catch (error) {
+      console.error('Error checking premium status:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchPersonalCharacters = async () => {
+    try {
+      const user = getCurrentUser();
+      if (!user) return;
+
+      setIsLoading(true);
+      const q = query(
+        collection(db, 'personal-characters'),
+        where('createdBy', '==', user.uid)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const characters: PersonalCharacter[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        characters.push(doc.data() as PersonalCharacter);
+      });
+      
+      setPersonalCharacters(characters);
+      console.log(`Loaded ${characters.length} personal characters`);
+    } catch (error) {
+      console.error('Error fetching personal characters:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteCharacter = async (characterId: string) => {
+    try {
+      const user = getCurrentUser();
+      if (!user) return;
+
+      Alert.alert(
+        'Delete Character',
+        'Are you sure you want to delete this character? This action cannot be undone.',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await deleteDoc(doc(db, 'personal-characters', characterId));
+                setPersonalCharacters(prev => prev.filter(char => char.id !== characterId));
+                Alert.alert('Success', 'Character deleted successfully');
+              } catch (error) {
+                console.error('Error deleting character:', error);
+                Alert.alert('Error', 'Failed to delete character');
+              }
+            }
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('Error in deleteCharacter:', error);
+    }
+  };
+
+  const shuffleFeaturedCharacters = () => {
+    const shuffled = [...AVAILABLE_CHARACTERS]
+      .sort(() => Math.random() - 0.5)
+      .slice(0, FEATURED_COUNT);
+    setFeaturedCharacters(shuffled);
+  };
+
+  const handleCreateCharacter = () => {
+    if (!isPremium) {
+      Alert.alert(
+        'Premium Feature',
+        'Creating personal characters is a premium feature. Upgrade to premium to unlock this feature!',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Upgrade to Premium',
+            onPress: () => router.push('/profile')
+          }
+        ]
+      );
+      return;
+    }
+    
+    // Navigate to create character screen instead of scrolling
+    router.push('/create-character');
+  };
 
   const renderFeaturedCard = (character: Character) => {
     return (
@@ -144,6 +288,19 @@ export default function CharacterSelectScreen() {
     extrapolate: 'clamp',
   });
 
+  const handleCharacterSelect = (character: Character | PersonalCharacter) => {
+    setSelectedCharacter(character);
+    setTimeout(() => {
+      router.push({
+        pathname: '/chat',
+        params: { 
+          characterId: character.id,
+          isPersonal: 'isPersonal' in character ? 'true' : 'false'
+        }
+      });
+    }, 200);
+  };
+
   return (
     <>
       <StatusBar barStyle="light-content" />
@@ -182,6 +339,7 @@ export default function CharacterSelectScreen() {
         </Animated.View>
 
         <Animated.ScrollView
+          ref={scrollViewRef}
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -194,7 +352,15 @@ export default function CharacterSelectScreen() {
           {/* Featured Section */}
           {searchQuery.length === 0 && (
             <View style={styles.featuredSection}>
-              <Text style={styles.sectionTitle}>Featured Characters</Text>
+              <View style={styles.featuredHeader}>
+                <Text style={styles.sectionTitle}>Featured Characters</Text>
+                <TouchableOpacity 
+                  style={styles.shuffleButton}
+                  onPress={shuffleFeaturedCharacters}
+                >
+                  <MaterialIcons name="shuffle" size={20} color="#f4511e" />
+                </TouchableOpacity>
+              </View>
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -236,7 +402,109 @@ export default function CharacterSelectScreen() {
               filteredCharacters.map(renderCharacterCard)
             )}
           </View>
+
+          {/* Personal Characters Section with Create Button */}
+          {isPremium && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Your Characters</Text>
+              
+              <TouchableOpacity
+                style={styles.createCharacterCard}
+                onPress={() => router.push('/create-character')}
+              >
+                <LinearGradient
+                  colors={['#2c3e50', '#34495e']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.createCardGradient}
+                >
+                  <View style={styles.createCardContent}>
+                    <View style={styles.createIconContainer}>
+                      <MaterialIcons name="add-circle-outline" size={32} color="#fff" />
+                    </View>
+                    <View style={styles.createTextContainer}>
+                      <Text style={styles.createCardTitle}>Create New Character</Text>
+                      <Text style={styles.createCardSubtitle}>Design your own unique AI companion</Text>
+                    </View>
+                  </View>
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <View style={styles.personalCharactersGrid}>
+                {personalCharacters.map((character) => (
+                  <View key={character.id} style={styles.personalCharacterCard}>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => deleteCharacter(character.id)}
+                    >
+                      <MaterialIcons name="delete" size={20} color="#fff" />
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity
+                      style={styles.cardContent}
+                      onPress={() => handleCharacterSelect(character)}
+                    >
+                      <Image 
+                        source={{ uri: character.avatar }} 
+                        style={styles.personalCharacterAvatar}
+                      />
+                      <LinearGradient
+                        colors={[character.primaryColor, character.secondaryColor]}
+                        style={styles.personalCharacterInfo}
+                      >
+                        <Text style={styles.personalCharacterName} numberOfLines={1}>
+                          {character.name}
+                        </Text>
+                        <View style={styles.personalTagContainer}>
+                          {character.personalityTags.slice(0, 2).map((tag, index) => (
+                            <View key={index} style={styles.personalTag}>
+                              <Text style={styles.personalTagText} numberOfLines={1}>
+                                {tag}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                        <Text style={styles.personalCharacterDesc} numberOfLines={2}>
+                          {character.description}
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                
+                {personalCharacters.length === 0 && (
+                  <View style={styles.emptyState}>
+                    <MaterialIcons name="person-add" size={48} color="#666" />
+                    <Text style={styles.emptyStateText}>No Characters Yet</Text>
+                    <Text style={styles.emptyStateSubtext}>
+                      Create your first character above to get started
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
         </Animated.ScrollView>
+
+        {/* Add floating action button for non-premium users */}
+        <TouchableOpacity
+          style={[
+            styles.floatingButton,
+            !isPremium && styles.floatingButtonDisabled
+          ]}
+          onPress={handleCreateCharacter}
+        >
+          <LinearGradient
+            colors={isPremium ? ['#2c3e50', '#34495e'] : ['#444', '#333']}
+            style={styles.floatingButtonGradient}
+          >
+            <MaterialIcons 
+              name="add-circle-outline" 
+              size={24} 
+              color="#fff" 
+            />
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
     </>
   );
@@ -268,11 +536,11 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
     marginHorizontal: 16,
-    marginBottom: 12,
+    marginBottom: 16,
   },
   featuredContainer: {
     paddingHorizontal: 16,
@@ -326,7 +594,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   featuredTag: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'rgba(44, 62, 80, 0.6)',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -410,7 +678,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   tag: {
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: 'rgba(44, 62, 80, 0.6)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,
@@ -445,5 +713,191 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     marginTop: 8,
+  },
+  createButton: {
+    borderRadius: 8,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  createButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  createButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  personalCharactersGrid: {
+    padding: 16,
+    paddingTop: 8,
+  },
+  personalCharacterCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    marginBottom: 16,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    position: 'relative',
+  },
+  deleteButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(255, 59, 48, 0.8)',
+    borderRadius: 12,
+    padding: 6,
+    zIndex: 1,
+  },
+  cardContent: {
+    flexDirection: 'row',
+    padding: 12,
+  },
+  personalCharacterAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginRight: 12,
+  },
+  personalCharacterInfo: {
+    flex: 1,
+    borderRadius: 12,
+    padding: 12,
+  },
+  personalCharacterName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  personalTagContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 8,
+  },
+  personalTag: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginRight: 6,
+    marginBottom: 4,
+  },
+  personalTagText: {
+    color: '#fff',
+    fontSize: 12,
+  },
+  personalCharacterDesc: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    lineHeight: 18,
+  },
+  emptyState: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  emptyStateText: {
+    color: '#666',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 16,
+  },
+  emptyStateSubtext: {
+    color: '#666',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  featuredHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  shuffleButton: {
+    padding: 8,
+  },
+  section: {
+    paddingTop: 24,
+  },
+  createCharacterCard: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  createCardGradient: {
+    width: '100%',
+  },
+  createCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+  },
+  createIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  createTextContainer: {
+    flex: 1,
+  },
+  createCardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  createCardSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  floatingButton: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    overflow: 'hidden',
+  },
+  floatingButtonDisabled: {
+    opacity: 0.8,
+  },
+  floatingButtonGradient: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 }); 

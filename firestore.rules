@@ -27,6 +27,12 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isPremium == true;
     }
 
+    // Function to check if a user has premium access
+    function hasPremiumAccess() {
+      return request.auth != null && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isPremium == true;
+    }
+
     // Function to validate avatar update
     function canUseAvatar(avatarId) {
       return isValidAvatarId(avatarId) && (
@@ -94,6 +100,50 @@ service cloud.firestore {
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['watchHistory', 'watchlist', 'lastSync']) || 
                        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastSync'])
                      );
+    }
+
+    // Personal characters collection
+    match /personal-characters/{characterId} {
+      // Allow reading personal characters if:
+      // 1. User is authenticated and verified
+      // 2. User has premium access
+      // 3. Character belongs to the user
+      allow read: if isAuthenticatedAndVerified() &&
+                   hasPremiumAccess() &&
+                   resource.data.createdBy == request.auth.uid;
+      
+      // Allow creating personal characters if:
+      // 1. User is authenticated and verified
+      // 2. User has premium access
+      // 3. Character is being created for the authenticated user
+      // 4. Required fields are present and valid
+      allow create: if isAuthenticatedAndVerified() &&
+                     hasPremiumAccess() &&
+                     request.resource.data.createdBy == request.auth.uid &&
+                     request.resource.data.name is string &&
+                     request.resource.data.description is string &&
+                     request.resource.data.personality is string &&
+                     request.resource.data.personalityTags is list &&
+                     request.resource.data.features is list &&
+                     request.resource.data.avatar is string;
+      
+      // Allow updating personal characters if:
+      // 1. User is authenticated and verified
+      // 2. User has premium access
+      // 3. Character belongs to the user
+      // 4. Not trying to change the createdBy field
+      allow update: if isAuthenticatedAndVerified() &&
+                     hasPremiumAccess() &&
+                     resource.data.createdBy == request.auth.uid &&
+                     request.resource.data.createdBy == resource.data.createdBy;
+      
+      // Allow deleting personal characters if:
+      // 1. User is authenticated and verified
+      // 2. User has premium access
+      // 3. Character belongs to the user
+      allow delete: if isAuthenticatedAndVerified() &&
+                     hasPremiumAccess() &&
+                     resource.data.createdBy == request.auth.uid;
     }
   }
 }

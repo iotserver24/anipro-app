@@ -11,12 +11,17 @@ import {
   Image,
   ActivityIndicator,
   Keyboard,
-  Alert
+  Alert,
+  Modal,
+  FlatList
 } from 'react-native';
 import { Stack, useLocalSearchParams, router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCharacterById, Character } from '../constants/characters';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../services/firebase';
+import * as ImagePicker from 'expo-image-picker';
 
 // Message type definition
 interface Message {
@@ -25,6 +30,13 @@ interface Message {
   sender: 'user' | 'ai';
   timestamp: Date;
   characterId?: string;
+  image?: string; // Base64 encoded image
+}
+
+// Personal character interface
+interface PersonalCharacter extends Character {
+  isPersonal: boolean;
+  createdBy: string;
 }
 
 // Text formatting types
@@ -33,30 +45,282 @@ interface TextSegment {
   style?: any;
 }
 
+// Model interface
+interface AIModel {
+  id: string;
+  name: string;
+  description: string;
+  supportsImages: boolean;
+  contextLength: number;
+}
+
+// Available models
+const AVAILABLE_MODELS: AIModel[] = [
+  // Massive Context Models (1M+ tokens)
+  {
+    id: 'google/gemini-2.0-flash-exp:free',
+    name: 'Gemini 2.0 Flash',
+    description: 'Fastest multimodal model with massive context',
+    supportsImages: true,
+    contextLength: 1048576
+  },
+  {
+    id: 'google/gemini-2.5-pro-exp-03-25:free',
+    name: 'Gemini 2.5 Pro',
+    description: 'Advanced multimodal model with extensive reasoning',
+    supportsImages: true,
+    contextLength: 1000000
+  },
+  {
+    id: 'google/gemini-flash-1.5-8b-exp:free',
+    name: 'Gemini Flash 1.5',
+    description: 'Fast and efficient multimodal model',
+    supportsImages: true,
+    contextLength: 1000000
+  },
+
+  // Very Large Context (200K-1M tokens)
+  {
+    id: 'meta-llama/llama-4-scout:free',
+    name: 'Llama 4 Scout',
+    description: 'Advanced multimodal model with massive context',
+    supportsImages: true,
+    contextLength: 512000
+  },
+  {
+    id: 'meta-llama/llama-4-maverick:free',
+    name: 'Llama 4 Maverick',
+    description: 'High-capacity multimodal model with large context',
+    supportsImages: true,
+    contextLength: 256000
+  },
+
+  // Large Context (128K-200K tokens)
+  {
+    id: 'deepseek/deepseek-v3-base:free',
+    name: 'DeepSeek V3 Base',
+    description: 'Advanced base model with large context',
+    supportsImages: false,
+    contextLength: 163840
+  },
+  {
+    id: 'microsoft/mai-ds-r1:free',
+    name: 'Microsoft MAI DS R1',
+    description: 'Specialized for data science tasks',
+    supportsImages: false,
+    contextLength: 163840
+  },
+  {
+    id: 'deepseek/deepseek-chat-v3-0324:free',
+    name: 'DeepSeek Chat V3',
+    description: 'Latest chat-optimized model',
+    supportsImages: false,
+    contextLength: 163840
+  },
+  {
+    id: 'deepseek/deepseek-r1:free',
+    name: 'DeepSeek R1',
+    description: 'Advanced reasoning model',
+    supportsImages: false,
+    contextLength: 163840
+  },
+  {
+    id: 'deepseek/deepseek-chat:free',
+    name: 'DeepSeek V3',
+    description: 'General-purpose chat model',
+    supportsImages: false,
+    contextLength: 163840
+  },
+
+  // Medium-Large Context (96K-128K tokens)
+  {
+    id: 'mistralai/mistral-nemo:free',
+    name: 'Mistral Nemo',
+    description: 'Advanced Mistral model',
+    supportsImages: false,
+    contextLength: 128000
+  },
+  {
+    id: 'meta-llama/llama-3.2-1b-instruct:free',
+    name: 'Llama 3.2 1B',
+    description: 'Efficient small model with large context',
+    supportsImages: false,
+    contextLength: 131000
+  },
+  {
+    id: 'meta-llama/llama-3.2-11b-vision-instruct:free',
+    name: 'Llama 3.2 Vision',
+    description: 'Vision-language model with strong capabilities',
+    supportsImages: true,
+    contextLength: 131072
+  },
+  {
+    id: 'nvidia/llama-3.1-nemotron-ultra-253b-v1:free',
+    name: 'Nemotron Ultra 253B',
+    description: 'NVIDIA\'s largest model',
+    supportsImages: false,
+    contextLength: 131072
+  },
+  {
+    id: 'nvidia/llama-3.3-nemotron-super-49b-v1:free',
+    name: 'Nemotron Super 49B',
+    description: 'Balanced large model',
+    supportsImages: false,
+    contextLength: 131072
+  },
+  {
+    id: 'google/gemma-3-12b-it:free',
+    name: 'Gemma 3 12B',
+    description: 'Efficient medium-sized Gemma with vision',
+    supportsImages: true,
+    contextLength: 131072
+  },
+  {
+    id: 'google/gemma-3-4b-it:free',
+    name: 'Gemma 3 4B',
+    description: 'Compact Gemma model with vision',
+    supportsImages: true,
+    contextLength: 131072
+  },
+  {
+    id: 'moonshotai/kimi-vl-a3b-thinking:free',
+    name: 'Kimi VL A3B',
+    description: 'Specialized vision-language model',
+    supportsImages: true,
+    contextLength: 131072
+  },
+  {
+    id: 'qwen/qwen2.5-vl-72b-instruct:free',
+    name: 'Qwen 2.5 VL 72B',
+    description: 'Large multimodal Qwen model',
+    supportsImages: true,
+    contextLength: 131072
+  },
+
+  // Medium Context (64K-96K tokens)
+  {
+    id: 'mistralai/mistral-small-3.1-24b-instruct:free',
+    name: 'Mistral Small 3.1',
+    description: 'Efficient multimodal model with 24B parameters',
+    supportsImages: true,
+    contextLength: 96000
+  },
+  {
+    id: 'google/gemma-3-27b-it:free',
+    name: 'Gemma 3 27B',
+    description: 'Largest Gemma model with vision support',
+    supportsImages: true,
+    contextLength: 96000
+  },
+  {
+    id: 'agentica-org/deepcoder-14b-preview:free',
+    name: 'Deepcoder 14B',
+    description: 'Specialized for coding tasks',
+    supportsImages: false,
+    contextLength: 96000
+  },
+  {
+    id: 'qwen/qwen-2.5-vl-7b-instruct:free',
+    name: 'Qwen 2.5 VL 7B',
+    description: 'Efficient vision-language model',
+    supportsImages: true,
+    contextLength: 64000
+  },
+  {
+    id: 'qwen/qwen2.5-vl-3b-instruct:free',
+    name: 'Qwen 2.5 VL 3B',
+    description: 'Compact vision-language model',
+    supportsImages: true,
+    contextLength: 64000
+  },
+
+  // Standard Context (32K-64K tokens)
+  {
+    id: 'google/learnlm-1.5-pro-experimental:free',
+    name: 'LearnLM 1.5 Pro',
+    description: 'Experimental model with vision capabilities',
+    supportsImages: true,
+    contextLength: 40960
+  },
+  {
+    id: 'google/gemma-3-1b-it:free',
+    name: 'Gemma 3 1B',
+    description: 'Smallest Gemma model with vision support',
+    supportsImages: true,
+    contextLength: 32768
+  },
+  {
+    id: 'bytedance-research/ui-tars-72b:free',
+    name: 'UI-TARS 72B',
+    description: 'Advanced vision-language model for UI understanding',
+    supportsImages: true,
+    contextLength: 32768
+  },
+
+  // Small Context Models
+  {
+    id: 'qwen/qwen2.5-vl-32b-instruct:free',
+    name: 'Qwen 2.5 VL 32B',
+    description: 'Vision-language model',
+    supportsImages: true,
+    contextLength: 8192
+  },
+  {
+    id: 'allenai/molmo-7b-d:free',
+    name: 'Molmo 7B D',
+    description: 'Vision-capable research model',
+    supportsImages: true,
+    contextLength: 4096
+  }
+];
+
 // OpenRouter API configuration
 const OPENROUTER_API_KEY = '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';
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 export default function ChatScreen() {
-  const { characterId } = useLocalSearchParams();
-  const [character, setCharacter] = useState<Character | undefined>();
+  const { characterId, isPersonal } = useLocalSearchParams();
+  const [character, setCharacter] = useState<Character | PersonalCharacter | undefined>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [selectedModel, setSelectedModel] = useState<AIModel>(AVAILABLE_MODELS[0]);
+  const [showModelSelector, setShowModelSelector] = useState(false);
+  const [showImageDialog, setShowImageDialog] = useState(false);
+  const [imageInputText, setImageInputText] = useState('');
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
 
   // Load character
   useEffect(() => {
-    const selectedCharacter = getCharacterById(characterId as string);
-    if (!selectedCharacter) {
-      Alert.alert('Error', 'Character not found');
-      router.back();
-      return;
-    }
-    setCharacter(selectedCharacter);
-  }, [characterId]);
+    const loadCharacter = async () => {
+      try {
+        if (isPersonal === 'true') {
+          // Load personal character from Firestore
+          const characterDoc = await getDoc(doc(db, 'personal-characters', characterId as string));
+          if (!characterDoc.exists()) {
+            throw new Error('Personal character not found');
+          }
+          setCharacter(characterDoc.data() as PersonalCharacter);
+        } else {
+          // Load predefined character
+          const selectedCharacter = getCharacterById(characterId as string);
+          if (!selectedCharacter) {
+            throw new Error('Character not found');
+          }
+          setCharacter(selectedCharacter);
+        }
+      } catch (error) {
+        console.error('Error loading character:', error);
+        Alert.alert('Error', 'Character not found');
+        router.back();
+      }
+    };
+
+    loadCharacter();
+  }, [characterId, isPersonal]);
 
   // Load saved messages
   useEffect(() => {
@@ -145,6 +409,76 @@ export default function ChatScreen() {
     );
   };
 
+  const pickImage = async () => {
+    if (!selectedModel.supportsImages) {
+      Alert.alert('Error', 'Current model does not support image input');
+      return;
+    }
+
+    Alert.alert(
+      'Select Image',
+      'How would you like to select your image?',
+      [
+        {
+          text: 'Full Image',
+          onPress: async () => {
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              allowsEditing: false,
+              quality: 0.8,
+              base64: true,
+            });
+
+            if (!result.canceled && result.assets[0].base64) {
+              setSelectedImage(result.assets[0].base64);
+              setShowImageDialog(true);
+            }
+          }
+        },
+        {
+          text: 'Crop Image',
+          onPress: async () => {
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ImagePicker.MediaTypeOptions.Images,
+              allowsEditing: true,
+              aspect: [4, 3],
+              quality: 0.8,
+              base64: true,
+            });
+
+            if (!result.canceled && result.assets[0].base64) {
+              setSelectedImage(result.assets[0].base64);
+              setShowImageDialog(true);
+            }
+          }
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        }
+      ]
+    );
+  };
+
+  const sendImageWithText = () => {
+    if (!selectedImage) return;
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      text: imageInputText || 'Sent an image',
+      sender: 'user',
+      timestamp: new Date(),
+      image: selectedImage
+    };
+    setMessages(prev => [...prev, userMessage]);
+    sendMessage(userMessage);
+    
+    // Reset states
+    setSelectedImage(null);
+    setImageInputText('');
+    setShowImageDialog(false);
+  };
+
   useEffect(() => {
     const keyboardDidShowListener = Keyboard.addListener(
       'keyboardDidShow',
@@ -161,21 +495,61 @@ export default function ChatScreen() {
     };
   }, []);
 
-  const sendMessage = async () => {
-    if (!inputText.trim() || !character) return;
+  const sendMessage = async (userMsg?: Message) => {
+    if ((!inputText.trim() && !userMsg) || !character) return;
 
-    const userMessage: Message = {
+    const userMessage = userMsg || {
       id: Date.now().toString(),
       text: inputText.trim(),
       sender: 'user',
       timestamp: new Date()
     };
 
-    setMessages(prev => [...prev, userMessage]);
-    setInputText('');
+    if (!userMsg) {
+      setMessages(prev => [...prev, userMessage]);
+      setInputText('');
+    }
+    
     setIsLoading(true);
 
     try {
+      const messages_for_api = messages.map(msg => {
+        if (msg.image) {
+          return {
+            role: msg.sender === 'user' ? 'user' : 'assistant',
+            content: [
+              { type: 'text', text: msg.text },
+              { 
+                type: 'image_url',
+                image_url: { url: `data:image/jpeg;base64,${msg.image}` }
+              }
+            ]
+          };
+        }
+        return {
+          role: msg.sender === 'user' ? 'user' : 'assistant',
+          content: msg.text
+        };
+      });
+
+      if (userMessage.image) {
+        messages_for_api.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Please describe this image in detail:' },
+            { 
+              type: 'image_url',
+              image_url: { url: `data:image/jpeg;base64,${userMessage.image}` }
+            }
+          ]
+        });
+      } else {
+        messages_for_api.push({
+          role: 'user',
+          content: userMessage.text
+        });
+      }
+
       const response = await fetch(OPENROUTER_API_URL, {
         method: 'POST',
         headers: {
@@ -185,17 +559,17 @@ export default function ChatScreen() {
           'X-Title': 'AniPro Chat'
         },
         body: JSON.stringify({
-          model: character.model,
+          model: selectedModel.id,
           messages: [
             { role: 'system', content: character.systemPrompt },
-            ...messages.map(msg => ({
-              role: msg.sender === 'user' ? 'user' : 'assistant',
-              content: msg.text
-            })),
-            { role: 'user', content: userMessage.text }
+            ...messages_for_api
           ],
-          temperature: 0.7,
-          max_tokens: 150
+          temperature: 0.8,
+          max_tokens: 4096,
+          top_p: 0.9,
+          frequency_penalty: 0.5,
+          presence_penalty: 0.5,
+          stop: null
         })
       });
 
@@ -312,7 +686,7 @@ export default function ChatScreen() {
       >
         {isAI && character && (
           <Image
-            source={character.avatar}
+            source={typeof character.avatar === 'string' ? { uri: character.avatar } : character.avatar}
             style={styles.avatar}
           />
         )}
@@ -320,6 +694,13 @@ export default function ChatScreen() {
           styles.messageBubble,
           isAI ? [styles.aiMessageBubble, { backgroundColor: character?.secondaryColor }] : styles.userMessageBubble,
         ]}>
+          {message.image && (
+            <Image
+              source={{ uri: `data:image/jpeg;base64,${message.image}` }}
+              style={styles.messageImage}
+              resizeMode="contain"
+            />
+          )}
           {renderFormattedText(message.text)}
           <Text style={styles.timestamp}>
             {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -328,6 +709,102 @@ export default function ChatScreen() {
       </View>
     );
   };
+
+  const renderModelSelector = () => (
+    <Modal
+      visible={showModelSelector}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => setShowModelSelector(false)}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Select AI Model</Text>
+          <FlatList
+            data={AVAILABLE_MODELS}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={[
+                  styles.modelItem,
+                  selectedModel.id === item.id && styles.selectedModelItem
+                ]}
+                onPress={() => {
+                  setSelectedModel(item);
+                  setShowModelSelector(false);
+                }}
+              >
+                <Text style={styles.modelName}>{item.name}</Text>
+                <Text style={styles.modelDescription}>{item.description}</Text>
+                {item.supportsImages && (
+                  <Text style={styles.modelFeature}>Supports Images</Text>
+                )}
+              </TouchableOpacity>
+            )}
+          />
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => setShowModelSelector(false)}
+          >
+            <Text style={styles.closeButtonText}>Close</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderImageDialog = () => (
+    <Modal
+      visible={showImageDialog}
+      transparent={true}
+      animationType="slide"
+      onRequestClose={() => {
+        setShowImageDialog(false);
+        setSelectedImage(null);
+        setImageInputText('');
+      }}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Send Image</Text>
+          {selectedImage && (
+            <Image
+              source={{ uri: `data:image/jpeg;base64,${selectedImage}` }}
+              style={styles.previewImage}
+              resizeMode="contain"
+            />
+          )}
+          <TextInput
+            style={styles.imageInputText}
+            value={imageInputText}
+            onChangeText={setImageInputText}
+            placeholder="Add a message with your image..."
+            placeholderTextColor="#666"
+            multiline
+            maxLength={500}
+          />
+          <View style={styles.modalButtons}>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.cancelButton]}
+              onPress={() => {
+                setShowImageDialog(false);
+                setSelectedImage(null);
+                setImageInputText('');
+              }}
+            >
+              <Text style={styles.modalButtonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.sendButton]}
+              onPress={sendImageWithText}
+            >
+              <Text style={styles.modalButtonText}>Send</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 
   if (!character) {
     return null;
@@ -343,15 +820,25 @@ export default function ChatScreen() {
           },
           headerTintColor: '#fff',
           headerRight: () => (
-            <TouchableOpacity
-              onPress={clearChat}
-              style={styles.clearButton}
-            >
-              <MaterialIcons name="delete-outline" size={24} color="#fff" />
-            </TouchableOpacity>
+            <View style={styles.headerButtons}>
+              <TouchableOpacity
+                onPress={() => setShowModelSelector(true)}
+                style={styles.headerButton}
+              >
+                <MaterialIcons name="settings" size={24} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={clearChat}
+                style={styles.headerButton}
+              >
+                <MaterialIcons name="delete-outline" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
           ),
         }}
       />
+      {renderModelSelector()}
+      {renderImageDialog()}
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={[styles.container, { backgroundColor: '#121212' }]}
@@ -383,19 +870,32 @@ export default function ChatScreen() {
             multiline
             maxLength={500}
           />
+          {selectedModel.supportsImages && (
+            <TouchableOpacity
+              style={[styles.imageButton, !isLoading && styles.imageButtonEnabled]}
+              onPress={pickImage}
+              disabled={isLoading}
+            >
+              <MaterialIcons 
+                name="image" 
+                size={24} 
+                color={isLoading ? '#666' : '#fff'} 
+              />
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={[
               styles.sendButton,
               { backgroundColor: character.primaryColor },
               !inputText.trim() && styles.sendButtonDisabled
             ]}
-            onPress={sendMessage}
+            onPress={() => sendMessage()}
             disabled={!inputText.trim() || isLoading}
           >
             <MaterialIcons 
               name="send" 
               size={24} 
-              color={inputText.trim() ? '#fff' : '#666'} 
+              color={inputText.trim() && !isLoading ? '#fff' : '#666'} 
             />
           </TouchableOpacity>
         </View>
@@ -451,6 +951,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
   },
+  messageImage: {
+    width: 200,
+    height: 150,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
   timestamp: {
     color: 'rgba(255, 255, 255, 0.5)',
     fontSize: 12,
@@ -475,6 +981,18 @@ const styles = StyleSheet.create({
     maxHeight: 100,
     marginRight: 8,
   },
+  imageButton: {
+    backgroundColor: '#2C2C2C',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  imageButtonEnabled: {
+    backgroundColor: '#4a4a4a',
+  },
   sendButton: {
     backgroundColor: '#f4511e',
     width: 48,
@@ -497,7 +1015,70 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 14,
   },
-  // New text formatting styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: 16,
+    width: '90%',
+    maxHeight: '80%',
+  },
+  modalTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  modelItem: {
+    padding: 16,
+    borderRadius: 8,
+    backgroundColor: '#2C2C2C',
+    marginBottom: 8,
+  },
+  selectedModelItem: {
+    backgroundColor: '#f4511e',
+  },
+  modelName: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  modelDescription: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 14,
+  },
+  modelFeature: {
+    color: '#4CAF50',
+    fontSize: 12,
+    marginTop: 4,
+  },
+  closeButton: {
+    backgroundColor: '#f4511e',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  closeButtonText: {
+    color: '#fff',
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  headerButtons: {
+    flexDirection: 'row',
+  },
+  headerButton: {
+    marginHorizontal: 8,
+    padding: 8,
+  },
+  // Text formatting styles
   boldText: {
     fontWeight: 'bold',
   },
@@ -521,8 +1102,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: 4,
   },
-  clearButton: {
-    marginRight: 8,
-    padding: 8,
+  previewImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  imageInputText: {
+    backgroundColor: '#2C2C2C',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    fontSize: 16,
+    minHeight: 80,
+    textAlignVertical: 'top',
+    marginBottom: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#2C2C2C',
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 }); 
