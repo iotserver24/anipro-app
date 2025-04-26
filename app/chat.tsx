@@ -16,11 +16,12 @@ import {
   FlatList
 } from 'react-native';
 import { Stack, useLocalSearchParams, router } from 'expo-router';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCharacterById, Character } from '../constants/characters';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
+import useCharacterStore from '../stores/characterStore';
 import * as ImagePicker from 'expo-image-picker';
 
 // Message type definition
@@ -292,6 +293,7 @@ export default function ChatScreen() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const { downloadedCharacters } = useCharacterStore();
 
   // Load character
   useEffect(() => {
@@ -305,7 +307,26 @@ export default function ChatScreen() {
           }
           setCharacter(characterDoc.data() as PersonalCharacter);
         } else {
-          // Load predefined character
+          // First try to get from downloaded characters
+          const downloadedChar = downloadedCharacters[characterId as string];
+          if (downloadedChar) {
+            // Transform the downloaded character to match expected format
+            const transformedChar = {
+              ...downloadedChar,
+              avatar: downloadedChar.avatarUrl || downloadedChar.avatar, // Handle both formats
+              features: downloadedChar.features || [],
+              personalityTags: downloadedChar.personalityTags || [],
+              primaryColor: downloadedChar.primaryColor || '#f4511e',
+              secondaryColor: downloadedChar.secondaryColor || '#2C2C2C',
+              systemPrompt: downloadedChar.systemPrompt || `You are ${downloadedChar.name} from ${downloadedChar.anime}.`,
+              greeting: downloadedChar.greeting || `Hello! I'm ${downloadedChar.name}!`,
+              model: downloadedChar.model || 'meta-llama/llama-4-maverick:free'
+            };
+            setCharacter(transformedChar);
+            return;
+          }
+          
+          // If not found in downloaded characters, try predefined characters
           const selectedCharacter = getCharacterById(characterId as string);
           if (!selectedCharacter) {
             throw new Error('Character not found');
@@ -320,7 +341,7 @@ export default function ChatScreen() {
     };
 
     loadCharacter();
-  }, [characterId, isPersonal]);
+  }, [characterId, isPersonal, downloadedCharacters]);
 
   // Load saved messages
   useEffect(() => {
@@ -822,16 +843,10 @@ export default function ChatScreen() {
           headerRight: () => (
             <View style={styles.headerButtons}>
               <TouchableOpacity
+                style={styles.headerButton}
                 onPress={() => setShowModelSelector(true)}
-                style={styles.headerButton}
               >
-                <MaterialIcons name="settings" size={24} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={clearChat}
-                style={styles.headerButton}
-              >
-                <MaterialIcons name="delete-outline" size={24} color="#fff" />
+                <MaterialIcons name="settings" size={24} color="#007AFF" />
               </TouchableOpacity>
             </View>
           ),
@@ -1073,10 +1088,11 @@ const styles = StyleSheet.create({
   },
   headerButtons: {
     flexDirection: 'row',
+    alignItems: 'center',
   },
   headerButton: {
-    marginHorizontal: 8,
-    padding: 8,
+    marginLeft: 15,
+    padding: 5,
   },
   // Text formatting styles
   boldText: {

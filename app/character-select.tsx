@@ -21,6 +21,7 @@ import { BlurView } from 'expo-blur';
 import { getCurrentUser } from '../services/userService';
 import { doc, getDoc, collection, query, where, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
+import useCharacterStore from '../stores/characterStore';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = width * 0.85;
@@ -42,6 +43,7 @@ export default function CharacterSelectScreen() {
   const [isPremium, setIsPremium] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [personalCharacters, setPersonalCharacters] = useState<PersonalCharacter[]>([]);
+  const { downloadedCharacters } = useCharacterStore();
 
   // Check premium status
   useEffect(() => {
@@ -147,8 +149,34 @@ export default function CharacterSelectScreen() {
     }
   };
 
+  const getAllCharacters = () => {
+    // Get downloaded characters
+    const downloadedChars = Object.values(downloadedCharacters).map(char => ({
+      ...char,
+      avatar: { uri: char.avatarUrl },
+      isDownloaded: true
+    }));
+
+    // Get predefined characters
+    const predefinedChars = AVAILABLE_CHARACTERS.map(char => ({
+      ...char,
+      isDownloaded: false
+    }));
+
+    // Combine and remove duplicates (prefer downloaded version if exists)
+    const allChars = [...downloadedChars];
+    predefinedChars.forEach(preChar => {
+      if (!downloadedChars.some(dChar => dChar.id === preChar.id)) {
+        allChars.push(preChar);
+      }
+    });
+
+    return allChars;
+  };
+
   const shuffleFeaturedCharacters = () => {
-    const shuffled = [...AVAILABLE_CHARACTERS]
+    const allCharacters = getAllCharacters();
+    const shuffled = [...allCharacters]
       .sort(() => Math.random() - 0.5)
       .slice(0, FEATURED_COUNT);
     setFeaturedCharacters(shuffled);
@@ -177,7 +205,7 @@ export default function CharacterSelectScreen() {
     router.push('/create-character');
   };
 
-  const renderFeaturedCard = (character: Character) => {
+  const renderFeaturedCard = (character: Character & { isDownloaded?: boolean }) => {
     return (
       <TouchableOpacity
         key={character.id}
@@ -212,6 +240,11 @@ export default function CharacterSelectScreen() {
                   <Text style={styles.featuredTagText}>{tag}</Text>
                 </View>
               ))}
+              {character.isDownloaded && (
+                <View style={[styles.featuredTag, { backgroundColor: '#4CAF50' }]}>
+                  <Text style={styles.featuredTagText}>Downloaded</Text>
+                </View>
+              )}
             </View>
           </View>
         </LinearGradient>
@@ -219,7 +252,7 @@ export default function CharacterSelectScreen() {
     );
   };
 
-  const renderCharacterCard = (character: Character) => {
+  const renderCharacterCard = (character: Character & { isDownloaded?: boolean }) => {
     return (
       <TouchableOpacity
         key={character.id}
@@ -247,7 +280,15 @@ export default function CharacterSelectScreen() {
               resizeMode="cover"
             />
             <View style={styles.characterInfo}>
-              <Text style={styles.characterName}>{character.name}</Text>
+              <View style={styles.characterNameContainer}>
+                <Text style={styles.characterName}>{character.name}</Text>
+                {character.isDownloaded && (
+                  <View style={styles.downloadedBadge}>
+                    <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
+                    <Text style={styles.downloadedText}>Downloaded</Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.animeTitle}>{character.anime}</Text>
               <View style={styles.tagContainer}>
                 {character.personalityTags.map((tag, index) => (
@@ -270,7 +311,7 @@ export default function CharacterSelectScreen() {
     );
   };
 
-  const filteredCharacters = AVAILABLE_CHARACTERS.filter(char => {
+  const filteredCharacters = getAllCharacters().filter(char => {
     if (searchQuery.length === 0) return true;
     
     const searchLower = searchQuery.toLowerCase();
@@ -312,6 +353,22 @@ export default function CharacterSelectScreen() {
           },
           headerTintColor: '#fff',
           headerShadowVisible: false,
+          headerRight: () => (
+            <View style={{ flexDirection: 'row', gap: 16, marginRight: 8 }}>
+              <TouchableOpacity
+                onPress={() => router.push('/chat-history')}
+                style={styles.headerButton}
+              >
+                <MaterialIcons name="history" size={24} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push('/character-store')}
+                style={styles.headerButton}
+              >
+                <MaterialIcons name="store" size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          ),
         }}
       />
       <View style={styles.container}>
@@ -661,11 +718,15 @@ const styles = StyleSheet.create({
   characterInfo: {
     flex: 1,
   },
+  characterNameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
   characterName: {
     fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 4,
   },
   animeTitle: {
     fontSize: 14,
@@ -899,5 +960,25 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  downloadedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  downloadedText: {
+    color: '#4CAF50',
+    fontSize: 12,
+    marginLeft: 4,
+    fontWeight: '500',
   },
 }); 
