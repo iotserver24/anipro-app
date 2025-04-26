@@ -16,7 +16,9 @@ interface Character {
   features: string[];
   personalityTags: string[];
   avatarUrl: string;
+  backgroundUrl: string;
   version: string;
+  chatCount: number;
 }
 
 interface CharacterStore {
@@ -28,13 +30,12 @@ interface CharacterStore {
     version: string;
     avatarUrl: string;
     personalityTags: string[];
-    downloadCount: number;
+    chatCount: number;
   }>;
   isLoading: boolean;
   error: string | null;
   fetchAvailableCharacters: () => Promise<void>;
-  downloadCharacter: (characterId: string) => Promise<void>;
-  removeCharacter: (characterId: string) => Promise<void>;
+  startChat: (characterId: string) => Promise<void>;
   getCharacter: (characterId: string) => Character | null;
 }
 
@@ -63,27 +64,30 @@ const useCharacterStore = create<CharacterStore>()(
         }
       },
 
-      downloadCharacter: async (characterId: string) => {
-        const state = get();
-        const character = state.availableCharacters.find(c => c.id === characterId);
-        if (!character) {
-          throw new Error('Character not found in available characters');
+      startChat: async (characterId: string) => {
+        try {
+          // Notify the API that a chat session has started
+          const response = await fetch(`${API_BASE_URL}/characters?id=${characterId}&action=startChat`);
+          if (!response.ok) throw new Error('Failed to start chat session');
+          
+          const character = await response.json();
+          
+          // Update the character in the store with the new chat count
+          set(state => ({
+            downloadedCharacters: {
+              ...state.downloadedCharacters,
+              [characterId]: character
+            },
+            availableCharacters: state.availableCharacters.map(c => 
+              c.id === characterId 
+                ? { ...c, chatCount: (c.chatCount || 0) + 1 }
+                : c
+            )
+          }));
+        } catch (error) {
+          console.error('Failed to start chat:', error);
+          Alert.alert('Error', 'Failed to start chat session. Please try again.');
         }
-        
-        set(state => ({
-          downloadedCharacters: {
-            ...state.downloadedCharacters,
-            [characterId]: character
-          }
-        }));
-      },
-
-      removeCharacter: async (characterId: string) => {
-        set(state => {
-          const newCharacters = { ...state.downloadedCharacters };
-          delete newCharacters[characterId];
-          return { downloadedCharacters: newCharacters };
-        });
       },
 
       getCharacter: (characterId: string) => {
@@ -95,14 +99,28 @@ const useCharacterStore = create<CharacterStore>()(
       name: 'character-store',
       storage: {
         getItem: async (name) => {
-          const value = await AsyncStorage.getItem(name);
-          return value ?? null;
+          try {
+            const value = await AsyncStorage.getItem(name);
+            if (!value) return null;
+            return JSON.parse(value);
+          } catch (error) {
+            console.error('Storage getItem error:', error);
+            return null;
+          }
         },
         setItem: async (name, value) => {
-          await AsyncStorage.setItem(name, value);
+          try {
+            await AsyncStorage.setItem(name, JSON.stringify(value));
+          } catch (error) {
+            console.error('Storage setItem error:', error);
+          }
         },
         removeItem: async (name) => {
-          await AsyncStorage.removeItem(name);
+          try {
+            await AsyncStorage.removeItem(name);
+          } catch (error) {
+            console.error('Storage removeItem error:', error);
+          }
         },
       },
     }

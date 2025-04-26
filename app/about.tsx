@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Image, Alert, Platform, ImageBackground, NativeModules, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Image, Alert, Platform, ImageBackground, NativeModules, ActivityIndicator, Modal, TextInput } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -44,6 +44,88 @@ interface UpdateInfo {
   showUpdate: boolean;
   aboutUpdate?: string;
   currentAppVersion?: string;
+}
+
+interface FeedbackModalProps {
+  visible: boolean;
+  onClose: () => void;
+  onSubmit: (feedback: { type: string; message: string; }) => void;
+}
+
+function FeedbackModal({ visible, onClose, onSubmit }: FeedbackModalProps) {
+  const [feedbackType, setFeedbackType] = useState('general');
+  const [message, setMessage] = useState('');
+
+  const handleSubmit = () => {
+    if (!message.trim()) {
+      Alert.alert('Error', 'Please enter your feedback message');
+      return;
+    }
+    onSubmit({ type: feedbackType, message });
+    setMessage('');
+    setFeedbackType('general');
+    onClose();
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <Text style={styles.modalTitle}>Send Feedback</Text>
+          
+          <View style={styles.feedbackTypeContainer}>
+            <TouchableOpacity 
+              style={[styles.typeButton, feedbackType === 'general' && styles.selectedType]}
+              onPress={() => setFeedbackType('general')}
+            >
+              <Text style={[styles.typeText, feedbackType === 'general' && styles.selectedTypeText]}>General</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.typeButton, feedbackType === 'bug' && styles.selectedType]}
+              onPress={() => setFeedbackType('bug')}
+            >
+              <Text style={[styles.typeText, feedbackType === 'bug' && styles.selectedTypeText]}>Bug Report</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.typeButton, feedbackType === 'feature' && styles.selectedType]}
+              onPress={() => setFeedbackType('feature')}
+            >
+              <Text style={[styles.typeText, feedbackType === 'feature' && styles.selectedTypeText]}>Feature Request</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TextInput
+            style={styles.feedbackInput}
+            placeholder="Enter your feedback here..."
+            placeholderTextColor="#666"
+            multiline
+            numberOfLines={5}
+            value={message}
+            onChangeText={setMessage}
+          />
+
+          <View style={styles.modalButtons}>
+            <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
+              <Text style={styles.buttonText}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
+              <Text style={styles.buttonText}>Submit</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+interface DeviceInfo {
+  deviceArchitecture: string;
+  detectedUrlKey: string;
 }
 
 export default function AboutScreen() {
@@ -130,8 +212,8 @@ export default function AboutScreen() {
     return `${scheme}://about/${section}`;
   };
 
-  // Move the getArchitectureInfo function outside the useEffect
-  const getArchitectureInfo = async () => {
+  // Update the getArchitectureInfo function to return the info instead of setting state
+  const getArchitectureInfo = async (): Promise<DeviceInfo> => {
     try {
       // Get device architecture
       const deviceArch = Device.supportedCpuArchitectures;
@@ -158,22 +240,27 @@ export default function AboutScreen() {
         }
       };
       
-      setDeviceInfo({
+      return {
         deviceArchitecture: formatArchitecture(primaryArch),
         detectedUrlKey: urlKey
-      });
+      };
     } catch (error) {
       console.error('Error getting architecture info:', error);
-      setDeviceInfo({
+      return {
         deviceArchitecture: 'unknown',
         detectedUrlKey: 'universal'
-      });
+      };
     }
   };
 
-  // Update the useEffect to call the function
+  // Update the useEffect to properly set the device info
   useEffect(() => {
-    getArchitectureInfo();
+    const updateDeviceInfo = async () => {
+      const info = await getArchitectureInfo();
+      setDeviceInfo(info);
+    };
+    
+    updateDeviceInfo();
   }, [simulatedArchitecture]);
 
   // Preload the background image
@@ -227,16 +314,28 @@ export default function AboutScreen() {
     }
   };
 
+  const [isFeedbackModalVisible, setIsFeedbackModalVisible] = useState(false);
+
   const sendFeedback = () => {
-    const subject = encodeURIComponent(`${APP_CONFIG.APP_NAME} Feedback - v${appVersion}`);
-    const body = encodeURIComponent(
-      `\n\n\n` +
-      `------------------\n` +
-      `App Version: ${appVersion}\n` +
-      `Device: ${Platform.OS} ${Platform.Version}\n` +
-      `------------------`
-    );
-    openLink(`mailto:${APP_CONFIG.SUPPORT_EMAIL}?subject=${subject}&body=${body}`);
+    setIsFeedbackModalVisible(true);
+  };
+
+  const handleFeedbackSubmit = async (feedback: { type: string; message: string; }) => {
+    try {
+      const deviceInfo = await getArchitectureInfo();
+      const emailBody = `
+Type: ${feedback.type}
+Message: ${feedback.message}
+
+App Version: ${APP_CONFIG.VERSION}
+Device: ${Device.modelName || 'Unknown'}
+Architecture: ${deviceInfo.deviceArchitecture}
+      `.trim();
+
+      await Linking.openURL(`mailto:${APP_CONFIG.SUPPORT_EMAIL}?subject=${encodeURIComponent(`${APP_CONFIG.APP_NAME} Feedback - ${feedback.type}`)}&body=${encodeURIComponent(emailBody)}`);
+    } catch (error) {
+      Alert.alert('Error', 'Could not open email client. Please try again later.');
+    }
   };
 
   /**
@@ -738,6 +837,30 @@ export default function AboutScreen() {
           </View>
         </View>
 
+        {/* Support & Feedback Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Support & Feedback</Text>
+          <View style={styles.infoCard}>
+            <TouchableOpacity 
+              style={styles.supportButton}
+              onPress={() => router.push('/chat')}
+            >
+              <MaterialIcons name="chat" size={24} color="#fff" style={styles.buttonIcon} />
+              <Text style={styles.supportButtonText}>Chat with AI Assistant</Text>
+            </TouchableOpacity>
+            
+            <SectionDivider />
+            
+            <TouchableOpacity 
+              style={styles.supportButton}
+              onPress={() => setIsFeedbackModalVisible(true)}
+            >
+              <MaterialIcons name="feedback" size={24} color="#fff" style={styles.buttonIcon} />
+              <Text style={styles.supportButtonText}>Send Feedback</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Stats Section */}
         <View ref={statsSectionRef} style={styles.section}>
           <Text style={styles.sectionTitle}>Your Statistics</Text>
@@ -919,7 +1042,8 @@ export default function AboutScreen() {
             <DebugSection 
               updateInfo={updateInfo} 
               simulatedArch={simulatedArchitecture}
-              onSimulate={simulateArchitecture} 
+              onSimulate={simulateArchitecture}
+              deviceInfo={deviceInfo}
             />
           </>
         )}
@@ -928,6 +1052,11 @@ export default function AboutScreen() {
           <Text style={styles.footerText}>Made with ❤️ for anime fans</Text>
         </View>
       </ScrollView>
+      <FeedbackModal
+        visible={isFeedbackModalVisible}
+        onClose={() => setIsFeedbackModalVisible(false)}
+        onSubmit={handleFeedbackSubmit}
+      />
     </>
   );
 }
@@ -955,104 +1084,22 @@ function SectionDivider() {
   return <View style={styles.sectionDivider} />;
 }
 
-// Add this new component after the InfoRow component
+// Update the DebugSection component to use the parent's deviceInfo
 const DebugSection = ({ 
   updateInfo, 
   simulatedArch, 
-  onSimulate 
+  onSimulate,
+  deviceInfo 
 }: { 
   updateInfo: UpdateInfo | null, 
   simulatedArch: string | null,
-  onSimulate: (arch: string | null) => Promise<void> 
+  onSimulate: (arch: string | null) => Promise<void>,
+  deviceInfo: DeviceInfo
 }) => {
-  // Get access to the deviceInfo from the parent component
-  const [deviceInfo, setDeviceInfo] = useState({
-    deviceArchitecture: '',
-    detectedUrlKey: ''
-  });
-
   // Get raw architecture information
   const rawArchitectures = Device.supportedCpuArchitectures || [];
   const primaryRawArch = rawArchitectures.length > 0 ? rawArchitectures[0] : 'unknown';
 
-  // Function to refresh architecture info
-  const refreshArchitectureInfo = async () => {
-    try {
-      // Get device architecture
-      const deviceArch = Device.supportedCpuArchitectures;
-      const primaryArch = deviceArch && deviceArch.length > 0 ? deviceArch[0] : 'unknown';
-      
-      // Get the URL key that would be used for downloads
-      const urlKey = getDeviceArchitectureUrlKey(simulatedArch);
-      
-      // Format architecture for display
-      const formatArchitecture = (arch: string) => {
-        switch(arch.toLowerCase()) {
-          case 'arm64':
-            return 'ARM64 (64-bit)';
-          case 'arm64-v8a':
-            return 'ARM64-v8a (64-bit)';
-          case 'arm':
-            return 'ARM (32-bit)';
-          case 'x86_64':
-            return 'x86_64 (64-bit Intel/AMD)';
-          case 'x86':
-            return 'x86 (32-bit Intel/AMD)';
-          default:
-            return arch;
-        }
-      };
-      
-      setDeviceInfo({
-        deviceArchitecture: formatArchitecture(primaryArch),
-        detectedUrlKey: urlKey
-      });
-      
-      Alert.alert('Refreshed', 'Architecture information has been refreshed.');
-    } catch (error) {
-      console.error('Error refreshing architecture info:', error);
-      Alert.alert('Error', 'Failed to refresh architecture information.');
-    }
-  };
-
-  // Function to test architecture-specific download URL
-  const testArchitectureSpecificDownloadUrl = async () => {
-    if (!updateInfo) {
-      Alert.alert('No Update Info', 'Please check for updates first to load update information.');
-      return;
-    }
-    
-    try {
-      const downloadUrl = getArchitectureSpecificDownloadUrl(
-        updateInfo.downloadUrls,
-        simulatedArch
-      );
-      
-      Alert.alert(
-        'Download URL',
-        `The selected download URL is:\n\n${downloadUrl}\n\nWould you like to open it?`,
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel'
-          },
-          {
-            text: 'Open URL',
-            onPress: () => Linking.openURL(downloadUrl)
-          }
-        ]
-      );
-    } catch (error) {
-      console.error('Error getting download URL:', error);
-      Alert.alert('Error', 'Failed to get download URL.');
-    }
-  };
-  
-  // Update deviceInfo when component mounts or simulatedArch changes
-  useEffect(() => {
-    refreshArchitectureInfo();
-  }, [simulatedArch]);
-  
   if (!updateInfo) return null;
   
   return (
@@ -1072,6 +1119,10 @@ const DebugSection = ({
       <View style={styles.debugRow}>
         <Text style={styles.debugLabel}>All Values:</Text>
         <Text style={styles.debugValue}>{rawArchitectures.join(', ')}</Text>
+      </View>
+      <View style={styles.debugRow}>
+        <Text style={styles.debugLabel}>Formatted:</Text>
+        <Text style={styles.debugValue}>{deviceInfo.deviceArchitecture}</Text>
       </View>
       <View style={styles.debugRow}>
         <Text style={styles.debugLabel}>Mapped Key:</Text>
@@ -1576,5 +1627,101 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 15,
+    padding: 20,
+    width: '90%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  feedbackTypeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  typeButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: '#333',
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  selectedType: {
+    backgroundColor: '#f4511e',
+  },
+  typeText: {
+    color: '#fff',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  selectedTypeText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  feedbackInput: {
+    backgroundColor: '#333',
+    borderRadius: 10,
+    padding: 15,
+    color: '#fff',
+    height: 120,
+    textAlignVertical: 'top',
+    marginBottom: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  cancelButton: {
+    backgroundColor: '#333',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 25,
+    flex: 1,
+    marginRight: 10,
+  },
+  submitButton: {
+    backgroundColor: '#f4511e',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 25,
+    flex: 1,
+    marginLeft: 10,
+  },
+  buttonText: {
+    color: '#fff',
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  supportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    padding: 15,
+    borderRadius: 8,
+    marginVertical: 5,
+  },
+  buttonIcon: {
+    marginRight: 12,
+  },
+  supportButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
   },
 }); 

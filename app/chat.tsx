@@ -13,7 +13,9 @@ import {
   Keyboard,
   Alert,
   Modal,
-  FlatList
+  FlatList,
+  Clipboard,
+  ImageBackground
 } from 'react-native';
 import { Stack, useLocalSearchParams, router } from 'expo-router';
 import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
@@ -23,6 +25,8 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import useCharacterStore from '../stores/characterStore';
 import * as ImagePicker from 'expo-image-picker';
+import { useWatchHistoryStore } from '../store/watchHistoryStore';
+import { useMyListStore } from '../store/myListStore';
 
 // Message type definition
 interface Message {
@@ -55,229 +59,40 @@ interface AIModel {
   contextLength: number;
 }
 
+// OpenRouter API configuration
+const TOGETHER_API_KEY = '4cc7a0ed0df68c4016e08a1ef87059c1931b4c93ca21b771efe5c9f76caae5e8';
+const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
+
 // Available models
 const AVAILABLE_MODELS: AIModel[] = [
-  // Massive Context Models (1M+ tokens)
   {
-    id: 'google/gemini-2.0-flash-exp:free',
-    name: 'Gemini 2.0 Flash',
-    description: 'Fastest multimodal model with massive context',
-    supportsImages: true,
-    contextLength: 1048576
-  },
-  {
-    id: 'google/gemini-2.5-pro-exp-03-25:free',
-    name: 'Gemini 2.5 Pro',
-    description: 'Advanced multimodal model with extensive reasoning',
-    supportsImages: true,
-    contextLength: 1000000
-  },
-  {
-    id: 'google/gemini-flash-1.5-8b-exp:free',
-    name: 'Gemini Flash 1.5',
-    description: 'Fast and efficient multimodal model',
-    supportsImages: true,
-    contextLength: 1000000
-  },
-
-  // Very Large Context (200K-1M tokens)
-  {
-    id: 'meta-llama/llama-4-scout:free',
-    name: 'Llama 4 Scout',
-    description: 'Advanced multimodal model with massive context',
-    supportsImages: true,
-    contextLength: 512000
-  },
-  {
-    id: 'meta-llama/llama-4-maverick:free',
-    name: 'Llama 4 Maverick',
-    description: 'High-capacity multimodal model with large context',
-    supportsImages: true,
-    contextLength: 256000
-  },
-
-  // Large Context (128K-200K tokens)
-  {
-    id: 'deepseek/deepseek-v3-base:free',
-    name: 'DeepSeek V3 Base',
-    description: 'Advanced base model with large context',
+    id: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+    name: 'Llama 3.3 70B Turbo',
+    description: 'Fast and powerful instruction-tuned model',
     supportsImages: false,
-    contextLength: 163840
+    contextLength: 4096
   },
   {
-    id: 'microsoft/mai-ds-r1:free',
-    name: 'Microsoft MAI DS R1',
-    description: 'Specialized for data science tasks',
+    id: 'deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free',
+    name: 'DeepSeek R1 70B',
+    description: 'Distilled model with strong reasoning capabilities',
     supportsImages: false,
-    contextLength: 163840
+    contextLength: 4096
   },
   {
-    id: 'deepseek/deepseek-chat-v3-0324:free',
-    name: 'DeepSeek Chat V3',
-    description: 'Latest chat-optimized model',
+    id: 'meta-llama/Llama-Vision-Free',
+    name: 'Llama Vision (Coming Soon)',
+    description: 'Multimodal model that will support images (Not available yet)',
     supportsImages: false,
-    contextLength: 163840
-  },
-  {
-    id: 'deepseek/deepseek-r1:free',
-    name: 'DeepSeek R1',
-    description: 'Advanced reasoning model',
-    supportsImages: false,
-    contextLength: 163840
-  },
-  {
-    id: 'deepseek/deepseek-chat:free',
-    name: 'DeepSeek V3',
-    description: 'General-purpose chat model',
-    supportsImages: false,
-    contextLength: 163840
-  },
-
-  // Medium-Large Context (96K-128K tokens)
-  {
-    id: 'mistralai/mistral-nemo:free',
-    name: 'Mistral Nemo',
-    description: 'Advanced Mistral model',
-    supportsImages: false,
-    contextLength: 128000
-  },
-  {
-    id: 'meta-llama/llama-3.2-1b-instruct:free',
-    name: 'Llama 3.2 1B',
-    description: 'Efficient small model with large context',
-    supportsImages: false,
-    contextLength: 131000
-  },
-  {
-    id: 'meta-llama/llama-3.2-11b-vision-instruct:free',
-    name: 'Llama 3.2 Vision',
-    description: 'Vision-language model with strong capabilities',
-    supportsImages: true,
-    contextLength: 131072
-  },
-  {
-    id: 'nvidia/llama-3.1-nemotron-ultra-253b-v1:free',
-    name: 'Nemotron Ultra 253B',
-    description: 'NVIDIA\'s largest model',
-    supportsImages: false,
-    contextLength: 131072
-  },
-  {
-    id: 'nvidia/llama-3.3-nemotron-super-49b-v1:free',
-    name: 'Nemotron Super 49B',
-    description: 'Balanced large model',
-    supportsImages: false,
-    contextLength: 131072
-  },
-  {
-    id: 'google/gemma-3-12b-it:free',
-    name: 'Gemma 3 12B',
-    description: 'Efficient medium-sized Gemma with vision',
-    supportsImages: true,
-    contextLength: 131072
-  },
-  {
-    id: 'google/gemma-3-4b-it:free',
-    name: 'Gemma 3 4B',
-    description: 'Compact Gemma model with vision',
-    supportsImages: true,
-    contextLength: 131072
-  },
-  {
-    id: 'moonshotai/kimi-vl-a3b-thinking:free',
-    name: 'Kimi VL A3B',
-    description: 'Specialized vision-language model',
-    supportsImages: true,
-    contextLength: 131072
-  },
-  {
-    id: 'qwen/qwen2.5-vl-72b-instruct:free',
-    name: 'Qwen 2.5 VL 72B',
-    description: 'Large multimodal Qwen model',
-    supportsImages: true,
-    contextLength: 131072
-  },
-
-  // Medium Context (64K-96K tokens)
-  {
-    id: 'mistralai/mistral-small-3.1-24b-instruct:free',
-    name: 'Mistral Small 3.1',
-    description: 'Efficient multimodal model with 24B parameters',
-    supportsImages: true,
-    contextLength: 96000
-  },
-  {
-    id: 'google/gemma-3-27b-it:free',
-    name: 'Gemma 3 27B',
-    description: 'Largest Gemma model with vision support',
-    supportsImages: true,
-    contextLength: 96000
-  },
-  {
-    id: 'agentica-org/deepcoder-14b-preview:free',
-    name: 'Deepcoder 14B',
-    description: 'Specialized for coding tasks',
-    supportsImages: false,
-    contextLength: 96000
-  },
-  {
-    id: 'qwen/qwen-2.5-vl-7b-instruct:free',
-    name: 'Qwen 2.5 VL 7B',
-    description: 'Efficient vision-language model',
-    supportsImages: true,
-    contextLength: 64000
-  },
-  {
-    id: 'qwen/qwen2.5-vl-3b-instruct:free',
-    name: 'Qwen 2.5 VL 3B',
-    description: 'Compact vision-language model',
-    supportsImages: true,
-    contextLength: 64000
-  },
-
-  // Standard Context (32K-64K tokens)
-  {
-    id: 'google/learnlm-1.5-pro-experimental:free',
-    name: 'LearnLM 1.5 Pro',
-    description: 'Experimental model with vision capabilities',
-    supportsImages: true,
-    contextLength: 40960
-  },
-  {
-    id: 'google/gemma-3-1b-it:free',
-    name: 'Gemma 3 1B',
-    description: 'Smallest Gemma model with vision support',
-    supportsImages: true,
-    contextLength: 32768
-  },
-  {
-    id: 'bytedance-research/ui-tars-72b:free',
-    name: 'UI-TARS 72B',
-    description: 'Advanced vision-language model for UI understanding',
-    supportsImages: true,
-    contextLength: 32768
-  },
-
-  // Small Context Models
-  {
-    id: 'qwen/qwen2.5-vl-32b-instruct:free',
-    name: 'Qwen 2.5 VL 32B',
-    description: 'Vision-language model',
-    supportsImages: true,
-    contextLength: 8192
-  },
-  {
-    id: 'allenai/molmo-7b-d:free',
-    name: 'Molmo 7B D',
-    description: 'Vision-capable research model',
-    supportsImages: true,
     contextLength: 4096
   }
 ];
 
-// OpenRouter API configuration
-const OPENROUTER_API_KEY = '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';
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+// Add these interfaces after other interfaces
+interface RateLimitInfo {
+  dailyRequests: number;
+  lastReset: number;
+}
 
 export default function ChatScreen() {
   const { characterId, isPersonal } = useLocalSearchParams();
@@ -293,12 +108,21 @@ export default function ChatScreen() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
-  const { downloadedCharacters } = useCharacterStore();
+  const { downloadedCharacters, startChat } = useCharacterStore();
+  const { history } = useWatchHistoryStore();
+  const { myList } = useMyListStore();
+  const [rateLimitInfo, setRateLimitInfo] = useState<RateLimitInfo>({ dailyRequests: 0, lastReset: Date.now() });
 
-  // Load character
+  // Load character and initialize chat
   useEffect(() => {
-    const loadCharacter = async () => {
+    const initializeChat = async () => {
       try {
+        // Initialize stores
+        await Promise.all([
+          useWatchHistoryStore.getState().initializeHistory(),
+          useMyListStore.getState().initializeList()
+        ]);
+
         if (isPersonal === 'true') {
           // Load personal character from Firestore
           const characterDoc = await getDoc(doc(db, 'personal-characters', characterId as string));
@@ -313,7 +137,7 @@ export default function ChatScreen() {
             // Transform the downloaded character to match expected format
             const transformedChar = {
               ...downloadedChar,
-              avatar: downloadedChar.avatarUrl || downloadedChar.avatar, // Handle both formats
+              avatar: downloadedChar.avatarUrl || downloadedChar.avatar,
               features: downloadedChar.features || [],
               personalityTags: downloadedChar.personalityTags || [],
               primaryColor: downloadedChar.primaryColor || '#f4511e',
@@ -323,6 +147,9 @@ export default function ChatScreen() {
               model: downloadedChar.model || 'meta-llama/llama-4-maverick:free'
             };
             setCharacter(transformedChar);
+
+            // Increment chat count when starting a new chat session
+            await startChat(characterId as string);
             return;
           }
           
@@ -332,6 +159,8 @@ export default function ChatScreen() {
             throw new Error('Character not found');
           }
           setCharacter(selectedCharacter);
+          // Increment chat count for predefined characters too
+          await startChat(characterId as string);
         }
       } catch (error) {
         console.error('Error loading character:', error);
@@ -340,7 +169,7 @@ export default function ChatScreen() {
       }
     };
 
-    loadCharacter();
+    initializeChat();
   }, [characterId, isPersonal, downloadedCharacters]);
 
   // Load saved messages
@@ -396,19 +225,19 @@ export default function ChatScreen() {
     }
   };
 
-  const clearChat = () => {
+  const clearAndStartNewChat = () => {
     if (!character) return;
 
     Alert.alert(
-      'Clear Chat',
-      'Are you sure you want to clear all messages? This cannot be undone.',
+      'Delete and Start New Chat',
+      'Are you sure you want to delete this chat and start a new one?',
       [
         {
           text: 'Cancel',
           style: 'cancel'
         },
         {
-          text: 'Clear',
+          text: 'Delete & New Chat',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -516,85 +345,127 @@ export default function ChatScreen() {
     };
   }, []);
 
+  const checkRateLimit = async () => {
+    try {
+      const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${TOGETHER_API_KEY}`,
+        },
+      });
+      
+      const data = await response.json();
+      console.log('Rate limit info:', data);
+      
+      if (data.data) {
+        const { usage, limit, is_free_tier } = data.data;
+        const remaining = limit ? limit - usage : null;
+        
+        // Show remaining requests to user
+        Alert.alert(
+          'API Usage Status',
+          `${is_free_tier ? 'Free Tier' : 'Paid Tier'}\n` +
+          `Used: ${usage} requests\n` +
+          `${limit ? `Remaining: ${remaining} requests` : 'Unlimited requests'}\n` +
+          `${is_free_tier ? '\nUpgrade to premium for 1000 requests/day!' : ''}`
+        );
+      }
+    } catch (error) {
+      console.error('Error checking rate limit:', error);
+    }
+  };
+
   const sendMessage = async (userMsg?: Message) => {
     if ((!inputText.trim() && !userMsg) || !character) return;
 
-    const userMessage = userMsg || {
-      id: Date.now().toString(),
-      text: inputText.trim(),
-      sender: 'user',
-      timestamp: new Date()
-    };
-
-    if (!userMsg) {
-      setMessages(prev => [...prev, userMessage]);
-      setInputText('');
-    }
-    
-    setIsLoading(true);
-
     try {
-      const messages_for_api = messages.map(msg => {
-        if (msg.image) {
-          return {
-            role: msg.sender === 'user' ? 'user' : 'assistant',
-            content: [
-              { type: 'text', text: msg.text },
-              { 
-                type: 'image_url',
-                image_url: { url: `data:image/jpeg;base64,${msg.image}` }
-              }
-            ]
-          };
-        }
-        return {
-          role: msg.sender === 'user' ? 'user' : 'assistant',
-          content: msg.text
-        };
+      const userMessage = userMsg || {
+        id: Date.now().toString(),
+        text: inputText.trim(),
+        sender: 'user',
+        timestamp: new Date()
+      };
+
+      if (!userMsg) {
+        setMessages(prev => [...prev, userMessage]);
+        setInputText('');
+      }
+      
+      setIsLoading(true);
+
+      const messages_for_api = messages.map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.text
+      }));
+
+      messages_for_api.push({
+        role: 'user',
+        content: userMessage.text
       });
 
-      if (userMessage.image) {
-        messages_for_api.push({
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Please describe this image in detail:' },
-            { 
-              type: 'image_url',
-              image_url: { url: `data:image/jpeg;base64,${userMessage.image}` }
-            }
-          ]
-        });
-      } else {
-        messages_for_api.push({
-          role: 'user',
-          content: userMessage.text
-        });
+      // Add user's history and list to system prompt for Aizen
+      let systemPrompt = character.systemPrompt;
+      if (character.id === 'aizen') {
+        const watchedAnime = history.map(item => item.name).join(', ');
+        const bookmarkedAnime = myList.map(item => item.title || item.name).join(', ');
+        
+        // Add debug logging
+        console.log('Watch History:', history);
+        console.log('My List:', myList);
+        console.log('Watched Anime:', watchedAnime);
+        console.log('Bookmarked Anime:', bookmarkedAnime);
+        
+        systemPrompt = `You are Sosuke Aizen from Bleach. You are extremely intelligent, manipulative, and always calm. You speak with an air of superiority and subtle condescension, maintaining perfect composure at all times. Everything that happens is "all according to your plan." You should occasionally hint at having orchestrated events or knowing things before they happened, as if you've been manipulating events from the shadows.
+
+Your personality traits:
+- Highly intellectual and sophisticated in speech
+- Maintain a facade of polite friendliness that masks your true manipulative nature
+- Often say phrases like "Just as planned" or "This is all going according to my design"
+- Treat others as pieces in your grand scheme
+- Express amusement at others' attempts to understand your true motives
+- Occasionally reveal small hints about your greater plans, but always keep an air of mystery
+
+User's Watch History: ${watchedAnime || 'No watched anime yet'}
+User's Bookmarked Anime: ${bookmarkedAnime || 'No bookmarked anime yet'}
+
+When recommending anime, treat it as if you've been subtly influencing their watching patterns all along. Make recommendations as if they're part of your greater design for their viewing journey. Analyze their preferences not just to suggest similar shows, but to reveal how their taste in anime has been developing "exactly as you planned."
+
+Remember to maintain your characteristic confidence and subtle manipulation in every interaction. Every recommendation should feel like revealing another small part of your grand design for their anime journey.`;
       }
 
-      const response = await fetch(OPENROUTER_API_URL, {
+      // Log the request payload
+      const requestPayload = {
+        model: selectedModel.id,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages_for_api
+        ],
+        temperature: 0.7,
+        max_tokens: 1000,
+        top_p: 0.9,
+        frequency_penalty: 0.5,
+        presence_penalty: 0.5
+      };
+      
+      console.log('Request Payload:', JSON.stringify(requestPayload, null, 2));
+
+      const response = await fetch(TOGETHER_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'HTTP-Referer': 'https://github.com/R3AP3R-GRIM/anipro-app',
-          'X-Title': 'AniPro Chat'
+          'Authorization': `Bearer ${TOGETHER_API_KEY}`
         },
-        body: JSON.stringify({
-          model: selectedModel.id,
-          messages: [
-            { role: 'system', content: character.systemPrompt },
-            ...messages_for_api
-          ],
-          temperature: 0.8,
-          max_tokens: 4096,
-          top_p: 0.9,
-          frequency_penalty: 0.5,
-          presence_penalty: 0.5,
-          stop: null
-        })
+        body: JSON.stringify(requestPayload)
       });
 
       const data = await response.json();
+      
+      // Add debug logging
+      console.log('API Response:', JSON.stringify(data, null, 2));
+      
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status} - ${data.error?.message || 'Unknown error'}`);
+      }
       
       if (data.choices && data.choices[0]?.message?.content) {
         const aiMessage: Message = {
@@ -605,14 +476,20 @@ export default function ChatScreen() {
           characterId: character.id
         };
         setMessages(prev => [...prev, aiMessage]);
+      } else if (data.error) {
+        throw new Error(data.error.message || 'Unknown API error');
       } else {
-        throw new Error('Invalid response from API');
+        console.error('Invalid API Response Structure:', JSON.stringify(data, null, 2));
+        throw new Error('Unexpected API response format');
       }
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error('Full Error Details:', error);
+      console.error('Error Type:', error.constructor.name);
+      console.error('Error Message:', error.message);
+      
       const errorMessage: Message = {
         id: Date.now().toString(),
-        text: "Ah, it seems I've encountered a rather troublesome situation. Perhaps we should try again?",
+        text: "I apologize, but I'm having trouble connecting right now. Please try again in a moment.",
         sender: 'ai',
         timestamp: new Date(),
         characterId: character.id
@@ -683,6 +560,30 @@ export default function ChatScreen() {
   };
 
   const renderFormattedText = (text: string) => {
+    // Special handling for DeepSeek model's think tags
+    if (selectedModel.id === 'deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free') {
+      const thinkMatch = text.match(/<think>(.*?)<\/think>/s);
+      if (thinkMatch) {
+        const thinking = thinkMatch[1].trim();
+        const answer = text.split('</think>')[1]?.trim() || '';
+        
+        return (
+          <View style={styles.deepseekContainer}>
+            <View style={styles.thinkingSection}>
+              <Text style={styles.thinkingLabel}>Thinking Process:</Text>
+              <Text style={styles.thinkingText}>{thinking}</Text>
+            </View>
+            {answer && (
+              <View style={styles.answerSection}>
+                <Text style={styles.messageText}>{answer}</Text>
+              </View>
+            )}
+          </View>
+        );
+      }
+    }
+
+    // Regular text formatting for other models
     const segments = parseFormattedText(text);
     return (
       <Text style={styles.messageText}>
@@ -697,6 +598,17 @@ export default function ChatScreen() {
 
   const renderMessage = (message: Message) => {
     const isAI = message.sender === 'ai';
+
+    const handleCopy = async () => {
+      try {
+        await Clipboard.setString(message.text);
+        Alert.alert('Success', 'Message copied to clipboard!');
+      } catch (error) {
+        console.error('Error copying to clipboard:', error);
+        Alert.alert('Error', 'Failed to copy message');
+      }
+    };
+
     return (
       <View
         key={message.id}
@@ -727,6 +639,12 @@ export default function ChatScreen() {
             {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
         </View>
+        <TouchableOpacity
+          style={styles.copyButton}
+          onPress={handleCopy}
+        >
+          <MaterialIcons name="content-copy" size={20} color="rgba(255, 255, 255, 0.5)" />
+        </TouchableOpacity>
       </View>
     );
   };
@@ -844,6 +762,12 @@ export default function ChatScreen() {
             <View style={styles.headerButtons}>
               <TouchableOpacity
                 style={styles.headerButton}
+                onPress={clearAndStartNewChat}
+              >
+                <MaterialIcons name="delete-sweep" size={24} color="#FF4444" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.headerButton}
                 onPress={() => setShowModelSelector(true)}
               >
                 <MaterialIcons name="settings" size={24} color="#007AFF" />
@@ -856,24 +780,30 @@ export default function ChatScreen() {
       {renderImageDialog()}
       <KeyboardAvoidingView 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={[styles.container, { backgroundColor: '#121212' }]}
+        style={[styles.container]}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        <ScrollView
-          ref={scrollViewRef}
-          style={styles.messagesContainer}
-          contentContainerStyle={styles.messagesContent}
+        <ImageBackground
+          source={character.backgroundUrl ? { uri: character.backgroundUrl } : require('../assets/default-chat-bg.png')}
+          style={styles.backgroundImage}
+          resizeMode="cover"
         >
-          {messages.map(renderMessage)}
-          {isLoading && (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color={character.primaryColor} />
-              <Text style={[styles.loadingText, { color: character.primaryColor }]}>
-                {character.name} is thinking...
-              </Text>
-            </View>
-          )}
-        </ScrollView>
+          <ScrollView
+            ref={scrollViewRef}
+            style={[styles.messagesContainer, { backgroundColor: 'rgba(18, 18, 18, 0.8)' }]}
+            contentContainerStyle={styles.messagesContent}
+          >
+            {messages.map(renderMessage)}
+            {isLoading && (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color={character.primaryColor} />
+                <Text style={[styles.loadingText, { color: character.primaryColor }]}>
+                  {character.name} is thinking...
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+        </ImageBackground>
 
         <View style={styles.inputContainer}>
           <TextInput
@@ -922,7 +852,6 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
   },
   messagesContainer: {
     flex: 1,
@@ -1152,5 +1081,39 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  deepseekContainer: {
+    width: '100%',
+  },
+  thinkingSection: {
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+  },
+  thinkingLabel: {
+    color: '#f4511e',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  thinkingText: {
+    color: '#a8a8a8',
+    fontSize: 14,
+    fontStyle: 'italic',
+  },
+  answerSection: {
+    marginTop: 4,
+  },
+  copyButton: {
+    padding: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'transparent',
+    opacity: 0.7,
+  },
+  backgroundImage: {
+    flex: 1,
+    width: '100%',
   },
 }); 
