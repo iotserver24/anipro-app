@@ -29,6 +29,10 @@ import GifPicker from './GifPicker';
 import { API_BASE, ENDPOINTS } from '../constants/api';
 import { useRouter } from 'expo-router';
 
+// Together AI API Configuration
+const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
+const TOGETHER_API_KEY = '4cc7a0ed0df68c4016e08a1ef87059c1931b4c93ca21b771efe5c9f76caae5e8';
+
 interface ChatMessage {
   id: string;
   userId: string;
@@ -99,21 +103,22 @@ const Avatar = memo(({ userAvatar }: { userAvatar: string }) => {
   );
 });
 
-// Helper function to render message content with mentions
+// Helper function to render message content with mentions and formatting
 const renderMessageContent = (
   content: string, 
   mentions?: string[], 
   onMentionPress?: (username: string) => void
 ) => {
-  if (!mentions || mentions.length === 0) {
-    return <Text style={styles.messageText}>{content}</Text>;
-  }
+  if (!content) return null;
 
+  // First split by mentions to preserve them
   const parts = content.split(/(@\w+)/g);
+  
   return (
     <Text style={styles.messageText}>
       {parts.map((part, index) => {
         if (part.startsWith('@')) {
+          // Handle mentions
           return (
             <TouchableOpacity 
               key={index} 
@@ -123,7 +128,29 @@ const renderMessageContent = (
             </TouchableOpacity>
           );
         }
-        return <Text key={index}>{part}</Text>;
+
+        // Handle formatting for non-mention parts
+        const formattedParts = part.split(/(\*\*.*?\*\*|\*.*?\*)/g).map((text, i) => {
+          if (text.startsWith('**') && text.endsWith('**')) {
+            // Bold text
+            return (
+              <Text key={`${index}-${i}`} style={styles.boldText}>
+                {text.slice(2, -2)}
+              </Text>
+            );
+          } else if (text.startsWith('*') && text.endsWith('*')) {
+            // Italic text
+            return (
+              <Text key={`${index}-${i}`} style={styles.italicText}>
+                {text.slice(1, -1)}
+              </Text>
+            );
+          }
+          // Regular text
+          return <Text key={`${index}-${i}`}>{text}</Text>;
+        });
+
+        return <Text key={index}>{formattedParts}</Text>;
       })}
     </Text>
   );
@@ -229,8 +256,19 @@ const MessageItem = memo(({
 });
 
 const COMMANDS = [
-  { key: '/anime', label: 'Recommend an anime' }
+  { key: '/anime', label: 'Recommend an anime' },
+  { key: '/aizen', label: 'Ask Aizen a question' }
 ];
+
+// Update Aizen's configuration with the correct avatar URL
+const AIZEN_CONFIG = {
+  name: '@aizen-ai',
+  avatar: 'https://i.pinimg.com/originals/05/f0/d6/05f0d68408fc8cc72feef791fa2a24a2.gif',
+  systemPrompt: `You are Sōsuke Aizen from Bleach. Respond to questions with elegance, sophistication, and a hint of condescension. 
+    You see yourself as intellectually superior and always maintain composure. Your responses should reflect your calculating nature 
+    and your belief that everything proceeds according to your plan. Occasionally adjust your glasses and use phrases that demonstrate 
+    your foresight and manipulation. Keep responses concise but impactful.`
+};
 
 const PublicChat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -256,6 +294,7 @@ const PublicChat = () => {
   const router = useRouter();
   const [showCommandHints, setShowCommandHints] = useState(false);
   const [showAnimeSearchModal, setShowAnimeSearchModal] = useState(false);
+  const [isAizenTyping, setIsAizenTyping] = useState(false);
 
   // Initialize Firebase Realtime Database
   const database = getDatabase();
@@ -281,14 +320,8 @@ const PublicChat = () => {
           id,
           ...msg,
         }));
-        setMessages(messageList.sort((a, b) => a.timestamp - b.timestamp));
-        // Only scroll to bottom on first load
-        if (isFirstLoad) {
-          setTimeout(() => {
-            flatListRef.current?.scrollToEnd({ animated: false });
-            setIsFirstLoad(false);
-          }, 100);
-        }
+        const sortedMessages = messageList.sort((a, b) => a.timestamp - b.timestamp);
+        setMessages(sortedMessages);
       }
       setLoading(false);
     });
@@ -297,7 +330,7 @@ const PublicChat = () => {
       // Cleanup subscription
       off(messagesRef);
     };
-  }, [isFirstLoad]);
+  }, []);
 
   // Add handling for shared anime from route params
   useEffect(() => {
@@ -498,7 +531,86 @@ const PublicChat = () => {
     setMessageText('');
   };
 
-  // Modified message sending to handle notifications
+  // Modify handleAizenResponse for better error handling and response formatting
+  const handleAizenResponse = async (question: string) => {
+    try {
+      setIsAizenTyping(true);
+      
+      // Create Aizen's initial message
+      const initialMessageData = {
+        userId: 'aizen-ai',
+        userName: AIZEN_CONFIG.name,
+        userAvatar: AIZEN_CONFIG.avatar,
+        content: '*adjusts glasses* I shall address your inquiry...',
+        timestamp: serverTimestamp(),
+      };
+
+      // Send initial response
+      await push(messagesRef, initialMessageData);
+
+      // Prepare and get Aizen's response
+      const response = await fetch(TOGETHER_API_URL, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${TOGETHER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+          messages: [
+            {
+              role: 'system',
+              content: AIZEN_CONFIG.systemPrompt
+            },
+            {
+              role: 'user',
+              content: question
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: 200,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('API response was not ok');
+      }
+
+      const data = await response.json();
+      const aizenResponse = data.choices[0].message.content;
+
+      // Send Aizen's actual response
+      const finalMessageData = {
+        userId: 'aizen-ai',
+        userName: AIZEN_CONFIG.name,
+        userAvatar: AIZEN_CONFIG.avatar,
+        content: aizenResponse,
+        timestamp: serverTimestamp(),
+      };
+
+      await push(messagesRef, finalMessageData);
+
+    } catch (error) {
+      console.error('Error in Aizen response:', error);
+      // Send a more sophisticated fallback response
+      try {
+        const fallbackMessageData = {
+          userId: 'aizen-ai',
+          userName: AIZEN_CONFIG.name,
+          userAvatar: AIZEN_CONFIG.avatar,
+          content: "How amusing... Even this momentary disruption was part of my grand design. *adjusts glasses* We shall continue this conversation another time.",
+          timestamp: serverTimestamp(),
+        };
+        await push(messagesRef, fallbackMessageData);
+      } catch (fallbackError) {
+        console.error('Error sending fallback message:', fallbackError);
+      }
+    } finally {
+      setIsAizenTyping(false);
+    }
+  };
+
+  // Update handleSendMessage to use /aizen command
   const handleSendMessage = async () => {
     if (!isAuthenticated()) {
       setShowAuthModal(true);
@@ -509,6 +621,69 @@ const PublicChat = () => {
     }
 
     try {
+      // Check if this is an /aizen command
+      if (messageText.startsWith('/aizen ')) {
+        const question = messageText.slice(7).trim();
+        if (!question) {
+          // Add a message to guide the user
+          const systemMessageData = {
+            userId: 'system',
+            userName: 'System',
+            userAvatar: '',
+            content: 'Please provide a question after the /aizen command.',
+            timestamp: serverTimestamp(),
+          };
+          await push(messagesRef, systemMessageData);
+          setMessageText('');
+          return;
+        }
+
+        // Send user's message first
+        const currentUser = getCurrentUser();
+        if (!currentUser) {
+          throw new Error('User not authenticated');
+        }
+
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (!userDoc.exists()) {
+          throw new Error('User data not found');
+        }
+        const userData = userDoc.data();
+
+        let userAvatarUrl = '';
+        if (userData.avatarId) {
+          try {
+            userAvatarUrl = await getAvatarById(userData.avatarId);
+          } catch (error) {
+            console.warn('Error getting avatar by ID:', error);
+          }
+        }
+
+        if (!userAvatarUrl) {
+          if (userData.customAvatar) {
+            userAvatarUrl = userData.customAvatar;
+          } else if (userData.avatarUrl) {
+            userAvatarUrl = userData.avatarUrl;
+          } else if (AVATARS.length > 0) {
+            userAvatarUrl = AVATARS[0].url;
+          }
+        }
+
+        // Send user's message
+        await push(messagesRef, {
+          userId: currentUser.uid,
+          userName: '@' + (userData.username || 'user'),
+          userAvatar: userAvatarUrl,
+          content: messageText.trim(),
+          timestamp: serverTimestamp(),
+        });
+
+        // Trigger Aizen's response
+        handleAizenResponse(question);
+        setMessageText('');
+        return;
+      }
+
       const currentUser = getCurrentUser();
       if (!currentUser) {
         throw new Error('User not authenticated');
@@ -700,7 +875,9 @@ const PublicChat = () => {
   };
 
   const scrollToBottom = () => {
-    flatListRef.current?.scrollToEnd({ animated: true });
+    if (flatListRef.current) {
+      flatListRef.current.scrollToEnd({ animated: false });
+    }
   };
 
   // Render mention suggestions
@@ -757,6 +934,16 @@ const PublicChat = () => {
             contentContainerStyle={styles.messagesList}
             onScroll={handleScroll}
             scrollEventThrottle={16}
+            onContentSizeChange={() => {
+              if (isFirstLoad) {
+                scrollToBottom();
+                setIsFirstLoad(false);
+              }
+            }}
+            maintainVisibleContentPosition={{
+              minIndexForVisible: 0,
+              autoscrollToTopThreshold: 10
+            }}
           />
         )}
 
@@ -1319,6 +1506,12 @@ const styles = StyleSheet.create({
   },
   fullscreenAnimeResultsList: {
     flex: 1,
+  },
+  boldText: {
+    fontWeight: 'bold',
+  },
+  italicText: {
+    fontStyle: 'italic',
   },
 });
 
