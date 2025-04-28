@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, FlatList, Alert, TextInput, ActivityIndicator, Platform, Animated, SectionList, Share, Dimensions, ToastAndroid, Linking, Easing } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as FileSystem from 'expo-file-system';
@@ -189,6 +189,8 @@ export default function AnimeDetails() {
   
   // Add new state for skeleton loading
   const [isPageLoaded, setIsPageLoaded] = useState(false);
+
+  const router = useRouter();
 
   // Define all useCallback hooks at the top to maintain consistent hook order
   
@@ -1083,7 +1085,6 @@ export default function AnimeDetails() {
               <TouchableOpacity 
                 style={styles.actionButton}
                 onPress={() => {
-                  // Use immediate feedback and move to background thread
                   if (Platform.OS === 'android') {
                     ToastAndroid.show('Opening comments...', ToastAndroid.SHORT);
                   }
@@ -1101,7 +1102,6 @@ export default function AnimeDetails() {
               <TouchableOpacity 
                 style={[styles.actionButton, styles.shareButton]}
                 onPress={() => {
-                  // Use immediate feedback
                   if (Platform.OS === 'android') {
                     ToastAndroid.show('Opening share options...', ToastAndroid.SHORT);
                   }
@@ -1114,6 +1114,33 @@ export default function AnimeDetails() {
                 <MaterialIcons name="share" size={20} color="#f4511e" />
                 <Text style={styles.actionText}>Share</Text>
               </TouchableOpacity>
+
+              {/* Share to Chat Button (full width, under the above row) */}
+              {/* <TouchableOpacity
+                style={[styles.actionButton, { marginTop: 8, width: '100%', alignSelf: 'center' }]}
+                onPress={() => {
+                  if (!animeData) return;
+                  
+                  router.push({
+                    pathname: '/chat',
+                    params: {
+                      shareAnime: JSON.stringify({
+                        id: id as string,
+                        title: animeData.info.name,
+                        image: animeData.info.img,
+                        type: animeData.moreInfo.Type || 'Unknown',
+                        episodes: animeData.info.episodes.total || 0
+                      })
+                    }
+                  });
+                }}
+                activeOpacity={0.7}
+                delayPressIn={0}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <MaterialIcons name="send" size={20} color="#f4511e" />
+                <Text style={styles.actionText}>Share to Chat</Text>
+              </TouchableOpacity> */}
             </View>
           </View>
         )

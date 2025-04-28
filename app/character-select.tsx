@@ -214,7 +214,7 @@ export default function CharacterSelectScreen() {
           setSelectedCharacter(character);
           setTimeout(() => {
             router.push({
-              pathname: '/chat',
+              pathname: '/aichat',
               params: { characterId: character.id }
             });
           }, 200);
@@ -261,7 +261,7 @@ export default function CharacterSelectScreen() {
           setSelectedCharacter(character);
           setTimeout(() => {
             router.push({
-              pathname: '/chat',
+              pathname: '/aichat',
               params: { characterId: character.id }
             });
           }, 200);
@@ -333,7 +333,7 @@ export default function CharacterSelectScreen() {
     setSelectedCharacter(character);
     setTimeout(() => {
       router.push({
-        pathname: '/chat',
+        pathname: '/aichat',
         params: { 
           characterId: character.id,
           isPersonal: 'isPersonal' in character ? 'true' : 'false'

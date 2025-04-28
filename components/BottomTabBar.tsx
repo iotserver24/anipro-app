@@ -84,12 +84,12 @@ function BottomTabBar() {
       icon: 'chat',
       IconComponent: MaterialIcons
     },
-    {
-      name: 'Gallery',
-      path: '/gallery',
-      icon: 'photo-library',
-      IconComponent: MaterialIcons
-    },
+    // {
+    //   name: 'Gallery',
+    //   path: '/gallery',
+    //   icon: 'photo-library',
+    //   IconComponent: MaterialIcons
+    // },
     {
       name: 'About',
       path: '/about',

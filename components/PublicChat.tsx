@@ -12,18 +12,22 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  Pressable,
+  Modal,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Video, ResizeMode } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
-import { getDatabase, ref, push, onValue, off, query, limitToLast, serverTimestamp, remove } from 'firebase/database';
+import { getDatabase, ref, push, onValue, off, query as dbQuery, limitToLast, serverTimestamp, remove, get } from 'firebase/database';
 import { isAuthenticated, getCurrentUser } from '../services/userService';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, limit, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import AuthModal from './AuthModal';
 import { AVATARS, getAvatarById } from '../constants/avatars';
 import UserProfileModal from './UserProfileModal';
 import GifPicker from './GifPicker';
+import { API_BASE, ENDPOINTS } from '../constants/api';
+import { useRouter } from 'expo-router';
 
 interface ChatMessage {
   id: string;
@@ -33,6 +37,28 @@ interface ChatMessage {
   content: string;
   gifUrl?: string;
   timestamp: number;
+  mentions?: string[]; // Array of mentioned user IDs
+  animeCard?: {
+    id: string;
+    title: string;
+    image: string;
+  };
+}
+
+interface UserSuggestion {
+  userId: string;
+  username: string;
+  avatarUrl: string;
+}
+
+interface Notification {
+  type: 'mention';
+  messageId: string;
+  fromUserId: string;
+  fromUsername: string;
+  content: string;
+  timestamp: any;
+  read: boolean;
 }
 
 const USERNAME_COLORS = [
@@ -73,6 +99,36 @@ const Avatar = memo(({ userAvatar }: { userAvatar: string }) => {
   );
 });
 
+// Helper function to render message content with mentions
+const renderMessageContent = (
+  content: string, 
+  mentions?: string[], 
+  onMentionPress?: (username: string) => void
+) => {
+  if (!mentions || mentions.length === 0) {
+    return <Text style={styles.messageText}>{content}</Text>;
+  }
+
+  const parts = content.split(/(@\w+)/g);
+  return (
+    <Text style={styles.messageText}>
+      {parts.map((part, index) => {
+        if (part.startsWith('@')) {
+          return (
+            <TouchableOpacity 
+              key={index} 
+              onPress={() => onMentionPress?.(part)}
+            >
+              <Text style={styles.mentionText}>{part}</Text>
+            </TouchableOpacity>
+          );
+        }
+        return <Text key={index}>{part}</Text>;
+      })}
+    </Text>
+  );
+};
+
 // Memoized Message component
 const MessageItem = memo(({ 
   item, 
@@ -80,7 +136,10 @@ const MessageItem = memo(({
   isOwnMessage,
   showAvatar,
   isLastInSequence,
-  isFirstInSequence
+  isFirstInSequence,
+  onMentionPress,
+  animeCard,
+  onOpenAnime
 }: { 
   item: ChatMessage; 
   onUserPress: (userId: string) => void;
@@ -88,6 +147,13 @@ const MessageItem = memo(({
   showAvatar: boolean;
   isLastInSequence: boolean;
   isFirstInSequence: boolean;
+  onMentionPress: (username: string) => void;
+  animeCard?: {
+    id: string;
+    title: string;
+    image: string;
+  };
+  onOpenAnime: (animeId: string) => void;
 }) => {
   const usernameColor = getUsernameColor(item.userId);
 
@@ -118,9 +184,7 @@ const MessageItem = memo(({
             <Text style={[styles.userName, { color: usernameColor }]}>{item.userName}</Text>
           </TouchableOpacity>
         )}
-        {item.content.trim() !== '' && (
-          <Text style={styles.messageText}>{item.content}</Text>
-        )}
+        {item.content.trim() !== '' && renderMessageContent(item.content, item.mentions, onMentionPress)}
         {item.gifUrl && (
           <View style={styles.gifContainer}>
             {item.gifUrl.endsWith('.mp4') ? (
@@ -143,6 +207,15 @@ const MessageItem = memo(({
             )}
           </View>
         )}
+        {animeCard && (
+          <View style={styles.animeCardInMessage}>
+            <Image source={{ uri: animeCard.image }} style={styles.animeCardImage} />
+            <Text style={styles.animeCardTitle}>{animeCard.title}</Text>
+            <TouchableOpacity style={styles.animeCardButton} onPress={() => onOpenAnime(animeCard.id)}>
+              <Text style={styles.animeCardButtonText}>Open</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         <Text style={styles.messageTime}>
           {new Date(item.timestamp).toLocaleTimeString([], { 
             hour: '2-digit', 
@@ -155,6 +228,10 @@ const MessageItem = memo(({
   );
 });
 
+const COMMANDS = [
+  { key: '/anime', label: 'Recommend an anime' }
+];
+
 const PublicChat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState('');
@@ -166,6 +243,19 @@ const PublicChat = () => {
   const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [isFirstLoad, setIsFirstLoad] = useState(true);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [showMentions, setShowMentions] = useState(false);
+  const [userSuggestions, setUserSuggestions] = useState<UserSuggestion[]>([]);
+  const [mentionedUsers, setMentionedUsers] = useState<string[]>([]);
+  const inputRef = useRef<TextInput>(null);
+  const [isAnimeSearchMode, setIsAnimeSearchMode] = useState(false);
+  const [animeSearchText, setAnimeSearchText] = useState('');
+  const [animeResults, setAnimeResults] = useState<any[]>([]);
+  const [selectedAnime, setSelectedAnime] = useState<any | null>(null);
+  const animeSearchTimeout = useRef<NodeJS.Timeout | null>(null);
+  const router = useRouter();
+  const [showCommandHints, setShowCommandHints] = useState(false);
+  const [showAnimeSearchModal, setShowAnimeSearchModal] = useState(false);
 
   // Initialize Firebase Realtime Database
   const database = getDatabase();
@@ -182,7 +272,7 @@ const PublicChat = () => {
 
   useEffect(() => {
     // Subscribe to last 50 messages
-    const messagesQuery = query(messagesRef, limitToLast(50));
+    const messagesQuery = dbQuery(messagesRef, limitToLast(50));
     
     onValue(messagesQuery, (snapshot) => {
       const data = snapshot.val();
@@ -209,13 +299,212 @@ const PublicChat = () => {
     };
   }, [isFirstLoad]);
 
+  // Add handling for shared anime from route params
+  useEffect(() => {
+    const params = router.params;
+    if (params?.shareAnime) {
+      try {
+        const sharedAnime = JSON.parse(params.shareAnime as string);
+        setSelectedAnime(sharedAnime);
+        // Clear the param to prevent resharing on chat refresh
+        router.setParams({ shareAnime: undefined });
+      } catch (error) {
+        console.error('Error parsing shared anime data:', error);
+      }
+    }
+  }, [router.params]);
+
+  // Function to fetch user suggestions
+  const fetchUserSuggestions = useCallback(async (searchText: string) => {
+    try {
+      const usersRef = collection(db, 'users');
+      const userQuery = query(
+        usersRef,
+        limit(50) // Increased limit to show more users
+      );
+
+      const querySnapshot = await getDocs(userQuery);
+      const suggestions: UserSuggestion[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        const userData = doc.data();
+        if (userData.username) {
+          suggestions.push({
+            userId: doc.id,
+            username: userData.username,
+            avatarUrl: userData.avatarUrl || AVATARS[0].url
+          });
+        }
+      });
+      
+      // Sort alphabetically by username
+      suggestions.sort((a, b) => a.username.localeCompare(b.username));
+      setUserSuggestions(suggestions);
+    } catch (error) {
+      console.error('Error fetching user suggestions:', error);
+    }
+  }, []);
+
+  // Handle input changes and detect @ mentions
+  const handleInputChange = (text: string) => {
+    setMessageText(text);
+    
+    if (text.endsWith('@')) {
+      setShowMentions(true);
+      fetchUserSuggestions('');
+      return;
+    }
+    
+    if (text === '/') {
+      setShowCommandHints(true);
+      setIsAnimeSearchMode(false);
+      setAnimeSearchText('');
+      setAnimeResults([]);
+      setSelectedAnime(null);
+      return;
+    } else {
+      setShowCommandHints(false);
+    }
+    if (text.startsWith('/anime')) {
+      setShowAnimeSearchModal(true);
+      setIsAnimeSearchMode(true);
+      setShowCommandHints(false);
+      setAnimeSearchText(text.replace('/anime', '').trim());
+      setAnimeResults([]);
+      setSelectedAnime(null);
+      return;
+    } else {
+      setIsAnimeSearchMode(false);
+      setAnimeSearchText('');
+      setAnimeResults([]);
+      setSelectedAnime(null);
+      setShowAnimeSearchModal(false);
+    }
+    
+    const lastAtIndex = text.lastIndexOf('@');
+    if (lastAtIndex !== -1) {
+      const query = text.slice(lastAtIndex + 1);
+      const hasSpaceAfterAt = query.includes(' ');
+      
+      if (!hasSpaceAfterAt) {
+        setMentionQuery(query);
+        setShowMentions(true);
+        fetchUserSuggestions(query);
+      } else {
+        setShowMentions(false);
+      }
+    } else {
+      setShowMentions(false);
+    }
+  };
+
+  // Handle selecting a user mention
+  const handleSelectMention = (user: UserSuggestion) => {
+    const lastAtIndex = messageText.lastIndexOf('@');
+    const newText = messageText.slice(0, lastAtIndex) + `@${user.username} `;
+    setMessageText(newText);
+    setShowMentions(false);
+    setMentionedUsers([...mentionedUsers, user.userId]);
+    inputRef.current?.focus();
+  };
+
+  // Function to fetch user by username
+  const fetchUserByUsername = async (username: string) => {
+    try {
+      const usersRef = collection(db, 'users');
+      const userQuery = query(
+        usersRef,
+        where('username', '==', username.toLowerCase()),
+        limit(1)
+      );
+      
+      const querySnapshot = await getDocs(userQuery);
+      if (!querySnapshot.empty) {
+        const doc = querySnapshot.docs[0];
+        return {
+          userId: doc.id,
+          ...doc.data()
+        };
+      }
+      return null;
+    } catch (error) {
+      console.error('Error fetching user by username:', error);
+      return null;
+    }
+  };
+
+  // Function to send notification for mention
+  const sendMentionNotification = async (messageId: string, mentionedUserId: string) => {
+    try {
+      const currentUser = getCurrentUser();
+      if (!currentUser) return;
+
+      const notificationsRef = collection(db, 'notifications');
+      const notification: Notification = {
+        type: 'mention',
+        messageId,
+        fromUserId: currentUser.uid,
+        fromUsername: currentUser.displayName || 'user',
+        content: messageText,
+        timestamp: serverTimestamp(),
+        read: false
+      };
+
+      await addDoc(notificationsRef, {
+        userId: mentionedUserId,
+        ...notification
+      });
+
+    } catch (error) {
+      console.error('Error sending mention notification:', error);
+    }
+  };
+
+  // Anime search logic (debounced)
+  useEffect(() => {
+    if (showAnimeSearchModal && animeSearchText.length > 1) {
+      (async () => {
+        try {
+          const apiQuery = animeSearchText.toLowerCase().trim().replace(/\s+/g, '-');
+          const url = `${API_BASE}${ENDPOINTS.SEARCH.replace(':query', apiQuery)}?page=1`;
+          const response = await fetch(url);
+          const data = await response.json();
+          setAnimeResults(data?.results || []);
+        } catch (e) {
+          setAnimeResults([]);
+        }
+      })();
+    } else {
+      setAnimeResults([]);
+    }
+  }, [animeSearchText, showAnimeSearchModal]);
+
+  // When user selects an anime, close modal and insert card
+  const handleSelectAnime = (anime: any) => {
+    setSelectedAnime(anime);
+    setAnimeSearchText('');
+    setAnimeResults([]);
+    setShowAnimeSearchModal(false);
+    setIsAnimeSearchMode(false);
+    setMessageText('');
+  };
+
+  // When user cancels modal
+  const handleCancelAnimeSearch = () => {
+    setShowAnimeSearchModal(false);
+    setIsAnimeSearchMode(false);
+    setAnimeSearchText('');
+    setAnimeResults([]);
+    setMessageText('');
+  };
+
+  // Modified message sending to handle notifications
   const handleSendMessage = async () => {
     if (!isAuthenticated()) {
       setShowAuthModal(true);
       return;
     }
-
-    if (!messageText.trim() && !selectedGifUrl) {
+    if (!messageText.trim() && !selectedGifUrl && !selectedAnime) {
       return;
     }
 
@@ -263,24 +552,54 @@ const PublicChat = () => {
 
       console.log('Final avatar URL:', userAvatarUrl);
 
-      // Create message object with GIF support
-      const message = {
+      // Create message object without undefined values
+      const messageData = {
         userId: currentUser.uid,
         userName: '@' + (userData.username || 'user'),
         userAvatar: userAvatarUrl,
         content: messageText.trim(),
-        gifUrl: selectedGifUrl,
         timestamp: serverTimestamp(),
       };
 
-      console.log('Sending message with avatar:', message.userAvatar);
+      // Only add gifUrl if it exists
+      if (selectedGifUrl) {
+        messageData.gifUrl = selectedGifUrl;
+      }
+
+      // Only add mentions if there are any
+      if (mentionedUsers && mentionedUsers.length > 0) {
+        messageData.mentions = mentionedUsers;
+      }
+
+      // Only add anime card if selected
+      if (selectedAnime) {
+        messageData.animeCard = {
+          id: selectedAnime.id,
+          title: selectedAnime.title,
+          image: selectedAnime.image,
+        };
+      }
 
       // Send to Firebase Realtime Database
-      await push(messagesRef, message);
+      const messageRef = await push(messagesRef, messageData);
 
-      // Clear input and selected GIF
+      // Send notifications to mentioned users if there are any
+      if (mentionedUsers && mentionedUsers.length > 0) {
+        mentionedUsers.forEach(userId => {
+          if (userId) { // Only send notification if userId exists
+            sendMentionNotification(messageRef.key!, userId);
+          }
+        });
+      }
+
+      // Clear input and states
       setMessageText('');
       setSelectedGifUrl(null);
+      setMentionedUsers([]);
+      setSelectedAnime(null);
+      setIsAnimeSearchMode(false);
+      setAnimeSearchText('');
+      setAnimeResults([]);
     } catch (error) {
       console.error('Error sending message:', error);
       Alert.alert('Error', 'Failed to send message. Please try again.');
@@ -322,6 +641,19 @@ const PublicChat = () => {
     setSelectedUserId(userId);
   }, []);
 
+  const handleMentionPress = useCallback(async (username: string) => {
+    // Remove @ symbol and find user
+    const plainUsername = username.substring(1);
+    const user = await fetchUserByUsername(plainUsername);
+    if (user) {
+      setSelectedUserId(user.userId);
+    }
+  }, []);
+
+  const handleOpenAnime = useCallback((animeId) => {
+    router.push({ pathname: '/anime/[id]', params: { id: animeId } });
+  }, [router]);
+
   const renderMessage = useCallback(({ item, index }: { item: ChatMessage; index: number }) => {
     const currentUser = getCurrentUser();
     const isOwnMessage = currentUser && currentUser.uid === item.userId;
@@ -344,9 +676,12 @@ const PublicChat = () => {
         showAvatar={showAvatar}
         isLastInSequence={isLastInSequence}
         isFirstInSequence={isFirstInSequence}
+        onMentionPress={handleMentionPress}
+        animeCard={item.animeCard}
+        onOpenAnime={handleOpenAnime}
       />
     );
-  }, [messages, handleUserPress]);
+  }, [messages, handleUserPress, handleMentionPress, handleOpenAnime]);
 
   const keyExtractor = useCallback((item: ChatMessage) => 
     item.id || Math.random().toString()
@@ -366,6 +701,30 @@ const PublicChat = () => {
 
   const scrollToBottom = () => {
     flatListRef.current?.scrollToEnd({ animated: true });
+  };
+
+  // Render mention suggestions
+  const renderMentionSuggestion = ({ item }: { item: UserSuggestion }) => (
+    <Pressable 
+      style={styles.mentionItem} 
+      onPress={() => handleSelectMention(item)}
+    >
+      <Image 
+        source={{ uri: item.avatarUrl }} 
+        style={styles.mentionAvatar}
+      />
+      <Text style={styles.mentionUsername}>@{item.username}</Text>
+    </Pressable>
+  );
+
+  // When user selects a command
+  const handleCommandSelect = (cmd: string) => {
+    setMessageText(cmd + ' ');
+    setShowCommandHints(false);
+    if (cmd === '/anime') {
+      setIsAnimeSearchMode(true);
+      setShowAnimeSearchModal(true);
+    }
   };
 
   return (
@@ -412,67 +771,89 @@ const PublicChat = () => {
       </View>
 
       <View style={styles.inputContainer}>
-        {!isAuthenticated() ? (
-          <TouchableOpacity 
-            style={styles.loginToChat}
-            onPress={() => setShowAuthModal(true)}
-          >
-            <MaterialIcons name="login" size={20} color="#fff" />
-            <Text style={styles.loginText}>Login to chat</Text>
-          </TouchableOpacity>
-        ) : (
-          <>
-            <View style={styles.inputRow}>
-              <TextInput
-                style={[styles.input, selectedGifUrl && styles.inputWithGif]}
-                placeholder="Type a message..."
-                placeholderTextColor="#999"
-                value={messageText}
-                onChangeText={setMessageText}
-                multiline
-                maxLength={500}
+        {selectedAnime && (
+          <View style={styles.animeCardPreview}>
+            <Image source={{ uri: selectedAnime.image }} style={styles.animeCardImage} />
+            <Text style={styles.animeCardTitle}>{selectedAnime.title}</Text>
+            <TouchableOpacity style={styles.animeCardButton} onPress={() => router.push({ pathname: '/anime/[id]', params: { id: selectedAnime.id } })}>
+              <Text style={styles.animeCardButtonText}>Open</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.animeCardRemove} onPress={() => setSelectedAnime(null)}>
+              <MaterialIcons name="close" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        )}
+        {selectedGifUrl && (
+          <View style={styles.selectedGifContainer}>
+            {selectedGifUrl.endsWith('.mp4') ? (
+              <Video
+                source={{ uri: selectedGifUrl }}
+                style={styles.selectedGifPreview}
+                resizeMode={ResizeMode.CONTAIN}
+                isLooping
+                shouldPlay
+                isMuted={true}
+                useNativeControls={false}
               />
-              <TouchableOpacity 
-                style={styles.gifButton}
-                onPress={() => setShowGifPicker(true)}
-              >
-                <Text style={styles.gifButtonText}>GIF</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.sendButton}
-                onPress={handleSendMessage}
-              >
-                <MaterialIcons name="send" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
-            {selectedGifUrl && (
-              <View style={styles.selectedGifContainer}>
-                {selectedGifUrl.endsWith('.mp4') ? (
-                  <Video
-                    source={{ uri: selectedGifUrl }}
-                    style={styles.selectedGifPreview}
-                    resizeMode={ResizeMode.CONTAIN}
-                    isLooping
-                    shouldPlay
-                    isMuted={true}
-                    useNativeControls={false}
-                  />
-                ) : (
-                  <Image 
-                    source={{ uri: selectedGifUrl }} 
-                    style={styles.selectedGifPreview} 
-                    resizeMode={ResizeMode.CONTAIN}
-                  />
-                )}
-                <TouchableOpacity 
-                  style={styles.removeGifButton}
-                  onPress={() => setSelectedGifUrl(null)}
-                >
-                  <MaterialIcons name="close" size={16} color="#fff" />
-                </TouchableOpacity>
-              </View>
+            ) : (
+              <Image 
+                source={{ uri: selectedGifUrl }} 
+                style={styles.selectedGifPreview} 
+                resizeMode={ResizeMode.CONTAIN}
+              />
             )}
-          </>
+            <TouchableOpacity 
+              style={styles.removeGifButton}
+              onPress={() => setSelectedGifUrl(null)}
+            >
+              <MaterialIcons name="close" size={16} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        )}
+        <View style={styles.inputRow}>
+          <TextInput
+            ref={inputRef}
+            style={[styles.input, selectedGifUrl && styles.inputWithGif]}
+            placeholder="Type a message..."
+            placeholderTextColor="#999"
+            value={messageText}
+            onChangeText={handleInputChange}
+            multiline
+            maxLength={500}
+          />
+          <TouchableOpacity 
+            style={styles.gifButton}
+            onPress={() => setShowGifPicker(true)}
+          >
+            <Text style={styles.gifButtonText}>GIF</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.sendButton}
+            onPress={handleSendMessage}
+          >
+            <MaterialIcons name="send" size={24} color="#fff" />
+          </TouchableOpacity>
+        </View>
+        {showMentions && userSuggestions.length > 0 && (
+          <View style={styles.mentionsContainer}>
+            <FlatList
+              data={userSuggestions}
+              renderItem={renderMentionSuggestion}
+              keyExtractor={(item) => item.userId}
+              horizontal={false}
+              style={styles.mentionsList}
+            />
+          </View>
+        )}
+        {showCommandHints && (
+          <View style={styles.commandHintsContainer}>
+            {COMMANDS.map(cmd => (
+              <TouchableOpacity key={cmd.key} style={styles.commandHintItem} onPress={() => handleCommandSelect(cmd.key)}>
+                <Text style={styles.commandHintText}>{cmd.key}</Text>
+                <Text style={styles.commandHintLabel}>{cmd.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         )}
       </View>
 
@@ -498,6 +879,40 @@ const PublicChat = () => {
           userId={selectedUserId}
         />
       )}
+
+      <Modal
+        visible={showAnimeSearchModal}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={handleCancelAnimeSearch}
+      >
+        <View style={styles.fullscreenModalContainer}>
+          <View style={styles.fullscreenInputBar}>
+            <TextInput
+              style={styles.fullscreenAnimeSearchInput}
+              placeholder="Type to search anime..."
+              placeholderTextColor="#999"
+              value={animeSearchText}
+              onChangeText={setAnimeSearchText}
+              autoFocus
+            />
+            <TouchableOpacity onPress={handleCancelAnimeSearch} style={styles.fullscreenModalClose}>
+              <MaterialIcons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={animeResults}
+            keyExtractor={item => item.id}
+            renderItem={({ item }) => (
+              <TouchableOpacity style={styles.animeResultItem} onPress={() => handleSelectAnime(item)}>
+                <Image source={{ uri: item.image }} style={styles.animeResultImage} />
+                <Text style={styles.animeResultTitle}>{item.title}</Text>
+              </TouchableOpacity>
+            )}
+            style={styles.fullscreenAnimeResultsList}
+          />
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -676,7 +1091,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   messageGif: {
-    width: '100%',
+    width: 250,
     height: 160,
     borderRadius: 8,
   },
@@ -713,6 +1128,197 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
     zIndex: 2,
+  },
+  mentionsContainer: {
+    position: 'absolute',
+    bottom: '100%',
+    left: 0,
+    right: 0,
+    maxHeight: 200,
+    backgroundColor: 'rgba(26, 26, 26, 0.95)',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    zIndex: 3,
+  },
+  mentionsList: {
+    padding: 8,
+    maxHeight: 200,
+  },
+  mentionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  mentionAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 12,
+  },
+  mentionUsername: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  mentionText: {
+    color: '#f4511e',
+    fontWeight: 'bold',
+  },
+  animeSearchPanel: {
+    position: 'absolute',
+    bottom: '100%',
+    left: 0,
+    right: 0,
+    maxHeight: 200,
+    backgroundColor: 'rgba(26, 26, 26, 0.95)',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    zIndex: 3,
+  },
+  animeSearchInput: {
+    padding: 8,
+    color: '#fff',
+    fontSize: 14,
+    backgroundColor: 'rgba(35, 35, 35, 0.9)',
+    borderRadius: 24,
+    maxHeight: 40,
+  },
+  animeResultItem: {
+    padding: 8,
+    borderRadius: 8,
+  },
+  animeResultImage: {
+    width: '100%',
+    height: 160,
+    borderRadius: 8,
+  },
+  animeResultTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginTop: 4,
+  },
+  animeResultsList: {
+    padding: 8,
+  },
+  animeCardPreview: {
+    position: 'relative',
+    height: 100,
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 8,
+  },
+  animeCardImage: {
+    width: 70,
+    height: 100,
+    borderRadius: 8,
+    marginBottom: 0,
+    backgroundColor: '#222',
+  },
+  animeCardTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 'bold',
+    marginBottom: 4,
+    textAlign: 'left',
+    flexShrink: 1,
+  },
+  animeCardButton: {
+    backgroundColor: '#f4511e',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginTop: 4,
+    alignSelf: 'flex-start',
+  },
+  animeCardButtonText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  animeCardRemove: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 12,
+    padding: 4,
+  },
+  animeCardInMessage: {
+    marginTop: 8,
+    marginBottom: 8,
+    alignItems: 'center',
+    backgroundColor: 'rgba(30, 30, 30, 0.97)',
+    borderRadius: 14,
+    padding: 10,
+    flexDirection: 'row',
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  commandHintsContainer: {
+    position: 'absolute',
+    bottom: '100%',
+    left: 0,
+    right: 0,
+    maxHeight: 200,
+    backgroundColor: 'rgba(26, 26, 26, 0.95)',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    zIndex: 3,
+  },
+  commandHintItem: {
+    padding: 8,
+    borderRadius: 8,
+  },
+  commandHintText: {
+    color: '#fff',
+    fontSize: 14,
+  },
+  commandHintLabel: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+  },
+  animeResultsPanel: {
+    flex: 1,
+  },
+  fullscreenModalContainer: {
+    flex: 1,
+    backgroundColor: '#1a1a1a',
+    padding: 16,
+  },
+  fullscreenInputBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  fullscreenAnimeSearchInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 16,
+    backgroundColor: 'rgba(35, 35, 35, 0.9)',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    maxHeight: 40,
+  },
+  fullscreenModalClose: {
+    marginLeft: 16,
+  },
+  fullscreenAnimeResultsList: {
+    flex: 1,
   },
 });
 

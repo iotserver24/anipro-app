@@ -1,51 +1,41 @@
 {
-  "rules": {
-    "public_chat": {
-      // Only authenticated users can read and write
-      ".read": "auth != null",
-      ".write": "auth != null",
-      
-      // Index messages by timestamp for better querying
-      ".indexOn": ["timestamp"],
-      
-      "$message_id": {
-        // Validate message structure
-        ".validate": "newData.hasChildren(['userId', 'userName', 'content', 'timestamp'])",
-        
-        "userId": {
-          // Must match the authenticated user's ID
-          ".validate": "newData.val() === auth.uid"
-        },
-        
-        "userName": {
-          // Username must be a string and not empty
-          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 50"
-        },
-        
-        "content": {
-          // Message content must be a string and have reasonable length
-          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 500"
-        },
-        
-        "timestamp": {
-          // Must be a valid server timestamp
-          ".validate": "newData.isNumber() || newData.val() === now"
-        },
-        
-        "userAvatar": {
-          // Avatar URL is optional but must be a string if present
-          ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 500)"
-        },
-        
-        // Users can only delete their own messages
-        ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid)"
+    "rules": {
+      "public_chat": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        ".indexOn": ["timestamp"],
+        "$message_id": {
+          ".validate": "newData.hasChildren(['userId', 'userName', 'content', 'timestamp'])",
+          "userId": {
+            ".validate": "newData.val() === auth.uid"
+          },
+          "userName": {
+            ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 50"
+          },
+          "content": {
+            ".validate": "newData.isString() && newData.val().length <= 500"
+          },
+          "timestamp": {
+            ".validate": "newData.isNumber() || newData.val() === now"
+          },
+          "userAvatar": {
+            ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 500)"
+          },
+          "mentions": {
+            ".validate": "true"
+          },
+          "gifUrl": {
+            ".validate": "!newData.exists() || newData.isString()"
+          },
+          "animeCard": {
+            ".validate": "!newData.exists() || (newData.hasChildren(['id', 'title', 'image']) && newData.child('id').isString() && newData.child('title').isString() && newData.child('image').isString())"
+          },
+          ".write": "auth != null && (!data.exists() || data.child('userId').val() === auth.uid)"
+        }
+      },
+      "$other": {
+        ".read": false,
+        ".write": false
       }
-    },
-    
-    // Deny access to any other paths
-    "$other": {
-      ".read": false,
-      ".write": false
     }
   }
-} 

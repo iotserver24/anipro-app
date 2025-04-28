@@ -19,6 +19,8 @@ import { logger } from '../utils/logger';
 import { auth, db } from '../services/firebase';
 import { getCurrentUser } from '../services/userService';
 import { getDoc, doc } from 'firebase/firestore';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 
 interface ChangelogItem {
   type: 'text' | 'image' | 'video' | 'url';
@@ -55,16 +57,161 @@ interface FeedbackModalProps {
 function FeedbackModal({ visible, onClose, onSubmit }: FeedbackModalProps) {
   const [feedbackType, setFeedbackType] = useState('general');
   const [message, setMessage] = useState('');
+  const [email, setEmail] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [attachments, setAttachments] = useState<Array<{ url: string, type: string, name: string }>>([]);
 
-  const handleSubmit = () => {
+  const uploadFile = async (fileUri: string, fileType: string, fileName: string): Promise<string> => {
+    try {
+      const formData = new FormData();
+      formData.append('reqtype', 'fileupload');
+      formData.append('fileToUpload', {
+        uri: fileUri,
+        name: fileName,
+        type: fileType
+      } as any);
+
+      const response = await fetch('https://catbox.moe/user/api.php', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const url = await response.text();
+      if (url.startsWith('http')) {
+        return url;
+      }
+      throw new Error('Invalid response from Catbox');
+    } catch (error) {
+      console.error('Error uploading to Catbox:', error);
+      throw error;
+    }
+  };
+
+  const pickAndUploadFile = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+        multiple: true
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        setUploadingFile(true);
+
+        for (const asset of result.assets) {
+          // Check file size (300MB limit)
+          const maxSize = 300 * 1024 * 1024; // 300MB in bytes
+          const fileSize = asset.size || 0;
+
+          if (fileSize > maxSize) {
+            Alert.alert('File Too Large', `${asset.name} exceeds the 300MB limit`);
+            continue;
+          }
+
+          try {
+            const url = await uploadFile(asset.uri, asset.mimeType || 'application/octet-stream', asset.name);
+            setAttachments(prev => [...prev, {
+              url,
+              type: asset.mimeType || 'application/octet-stream',
+              name: asset.name
+            }]);
+          } catch (error) {
+            Alert.alert('Upload Failed', `Failed to upload ${asset.name}`);
+          }
+        }
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to upload file. Please try again.');
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  const removeAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async () => {
     if (!message.trim()) {
       Alert.alert('Error', 'Please enter your feedback message');
       return;
     }
-    onSubmit({ type: feedbackType, message });
-    setMessage('');
-    setFeedbackType('general');
-    onClose();
+
+    try {
+      setIsSubmitting(true);
+
+      const deviceInfo = {
+        model: Device.modelName || 'Unknown',
+        architecture: Device.supportedCpuArchitectures?.[0] || 'unknown',
+        appVersion: APP_CONFIG.VERSION
+      };
+
+      const feedbackData = {
+        type: feedbackType,
+        message: message.trim(),
+        email: email.trim() || undefined,
+        deviceInfo,
+        attachments: attachments.length > 0 ? attachments : undefined
+      };
+
+      const response = await fetch(`${APP_CONFIG.API_BASE_URL}/feedback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(feedbackData)
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to submit feedback');
+      }
+
+      Alert.alert(
+        'Success',
+        'Thank you for your feedback! We will review it shortly.',
+        [{ text: 'OK', onPress: () => {
+          setMessage('');
+          setEmail('');
+          setFeedbackType('general');
+          setAttachments([]);
+          onClose();
+        }}]
+      );
+
+    } catch (error) {
+      console.error('Error submitting feedback:', error);
+      Alert.alert('Error', 'Failed to submit feedback. Please try again later.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const renderAttachment = (attachment: { url: string, type: string, name: string }, index: number) => {
+    const isImage = attachment.type.startsWith('image/');
+
+    return (
+      <View key={index} style={styles.attachmentContainer}>
+        {isImage ? (
+          <Image 
+            source={{ uri: attachment.url }} 
+            style={styles.attachmentPreview} 
+            resizeMode="contain"
+          />
+        ) : (
+          <View style={styles.filePreview}>
+            <MaterialIcons name="insert-drive-file" size={24} color="#fff" />
+            <Text style={styles.fileName} numberOfLines={1}>{attachment.name}</Text>
+          </View>
+        )}
+        <TouchableOpacity 
+          style={styles.removeButton}
+          onPress={() => removeAttachment(index)}
+        >
+          <MaterialIcons name="close" size={20} color="#fff" />
+        </TouchableOpacity>
+      </View>
+    );
   };
 
   return (
@@ -76,45 +223,150 @@ function FeedbackModal({ visible, onClose, onSubmit }: FeedbackModalProps) {
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>Send Feedback</Text>
-          
-          <View style={styles.feedbackTypeContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Send Feedback</Text>
             <TouchableOpacity 
-              style={[styles.typeButton, feedbackType === 'general' && styles.selectedType]}
-              onPress={() => setFeedbackType('general')}
+              style={styles.closeButton} 
+              onPress={onClose}
+              disabled={isSubmitting}
             >
-              <Text style={[styles.typeText, feedbackType === 'general' && styles.selectedTypeText]}>General</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.typeButton, feedbackType === 'bug' && styles.selectedType]}
-              onPress={() => setFeedbackType('bug')}
-            >
-              <Text style={[styles.typeText, feedbackType === 'bug' && styles.selectedTypeText]}>Bug Report</Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.typeButton, feedbackType === 'feature' && styles.selectedType]}
-              onPress={() => setFeedbackType('feature')}
-            >
-              <Text style={[styles.typeText, feedbackType === 'feature' && styles.selectedTypeText]}>Feature Request</Text>
+              <MaterialIcons name="close" size={24} color="#666" />
             </TouchableOpacity>
           </View>
 
-          <TextInput
-            style={styles.feedbackInput}
-            placeholder="Enter your feedback here..."
-            placeholderTextColor="#666"
-            multiline
-            numberOfLines={5}
-            value={message}
-            onChangeText={setMessage}
-          />
+          <View style={styles.feedbackTypeContainer}>
+            <TouchableOpacity 
+              style={[
+                styles.typeButton, 
+                feedbackType === 'general' && styles.selectedType,
+                styles.typeButtonGeneral
+              ]}
+              onPress={() => setFeedbackType('general')}
+            >
+              <MaterialIcons name="chat" size={20} color={feedbackType === 'general' ? '#fff' : '#666'} />
+              <Text style={[styles.typeText, feedbackType === 'general' && styles.selectedTypeText]}>
+                General
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[
+                styles.typeButton, 
+                feedbackType === 'bug' && styles.selectedType,
+                styles.typeButtonBug
+              ]}
+              onPress={() => setFeedbackType('bug')}
+            >
+              <MaterialIcons name="bug-report" size={20} color={feedbackType === 'bug' ? '#fff' : '#666'} />
+              <Text style={[styles.typeText, feedbackType === 'bug' && styles.selectedTypeText]}>
+                Bug Report
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[
+                styles.typeButton, 
+                feedbackType === 'feature' && styles.selectedType,
+                styles.typeButtonFeature
+              ]}
+              onPress={() => setFeedbackType('feature')}
+            >
+              <MaterialIcons name="lightbulb" size={20} color={feedbackType === 'feature' ? '#fff' : '#666'} />
+              <Text style={[styles.typeText, feedbackType === 'feature' && styles.selectedTypeText]}>
+                Feature
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Your Message</Text>
+            <TextInput
+              style={[styles.feedbackInput, styles.messageInput]}
+              placeholder="What would you like to tell us?"
+              placeholderTextColor="#666"
+              multiline
+              numberOfLines={5}
+              value={message}
+              onChangeText={setMessage}
+            />
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Email (optional)</Text>
+            <View style={styles.emailInputContainer}>
+              <MaterialIcons name="email" size={20} color="#666" style={styles.inputIcon} />
+              <TextInput
+                style={styles.emailInput}
+                placeholder="We'll keep you updated"
+                placeholderTextColor="#666"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+          </View>
+
+          <View style={styles.attachmentSection}>
+            <TouchableOpacity
+              style={[
+                styles.attachButton,
+                attachments.length > 0 && styles.attachButtonActive,
+                uploadingFile && styles.attachButtonUploading
+              ]}
+              onPress={pickAndUploadFile}
+              disabled={uploadingFile || isSubmitting}
+            >
+              {uploadingFile ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <MaterialIcons 
+                    name="attach-file" 
+                    size={20} 
+                    color={attachments.length > 0 ? '#fff' : '#666'} 
+                  />
+                  <Text style={[
+                    styles.attachButtonText,
+                    attachments.length > 0 && styles.attachButtonTextActive
+                  ]}>
+                    {attachments.length > 0 
+                      ? `${attachments.length} File${attachments.length !== 1 ? 's' : ''} Attached` 
+                      : 'Attach Files'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+            {attachments.length > 0 && (
+              <Text style={styles.attachmentHint}>
+                Tap 'Attach Files' to add more
+              </Text>
+            )}
+          </View>
 
           <View style={styles.modalButtons}>
-            <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
-              <Text style={styles.buttonText}>Cancel</Text>
+            <TouchableOpacity 
+              style={[styles.cancelButton, isSubmitting && styles.buttonDisabled]} 
+              onPress={onClose}
+              disabled={isSubmitting}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-              <Text style={styles.buttonText}>Submit</Text>
+            <TouchableOpacity 
+              style={[
+                styles.submitButton, 
+                isSubmitting && styles.buttonDisabled,
+                !message.trim() && styles.buttonDisabled
+              ]} 
+              onPress={handleSubmit}
+              disabled={isSubmitting || !message.trim()}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <MaterialIcons name="send" size={20} color="#fff" style={styles.submitIcon} />
+                  <Text style={styles.submitButtonText}>Submit</Text>
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -492,42 +744,14 @@ Architecture: ${deviceInfo.deviceArchitecture}
     }
   };
 
-  const refreshArchitectureInfo = async () => {
-    // Force refresh device info
-    await getArchitectureInfo();
-    Alert.alert('Refreshed', 'Architecture information has been refreshed.');
+  const refreshArchitectureInfo = () => {
+    // Implementation not needed since this is debug-only
+    console.log('Debug: refreshArchitectureInfo called');
   };
 
-  const testArchitectureSpecificDownloadUrl = async () => {
-    if (!updateInfo) {
-      Alert.alert('No Update Info', 'Please check for updates first to load update information.');
-      return;
-    }
-    
-    try {
-      const downloadUrl = getArchitectureSpecificDownloadUrl(
-        updateInfo.downloadUrls,
-        simulatedArchitecture
-      );
-      
-      Alert.alert(
-        'Download URL',
-        `The selected download URL is:\n\n${downloadUrl}\n\nWould you like to open it?`,
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel'
-          },
-          {
-            text: 'Open URL',
-            onPress: () => Linking.openURL(downloadUrl)
-          }
-        ]
-      );
-    } catch (error) {
-      console.error('Error getting download URL:', error);
-      Alert.alert('Error', 'Failed to get download URL.');
-    }
+  const testArchitectureSpecificDownloadUrl = () => {
+    // Implementation not needed since this is debug-only
+    console.log('Debug: testArchitectureSpecificDownloadUrl called');
   };
 
   const showVersionDetails = () => {
@@ -843,10 +1067,10 @@ Architecture: ${deviceInfo.deviceArchitecture}
           <View style={styles.infoCard}>
             <TouchableOpacity 
               style={styles.supportButton}
-              onPress={() => router.push('/character-select')}
+              onPress={() => router.push('/gallery')}
             >
-              <MaterialIcons name="chat" size={24} color="#fff" style={styles.buttonIcon} />
-              <Text style={styles.supportButtonText}>Chat with Anime Characters</Text>
+              <MaterialIcons name="photo-library" size={24} color="#fff" style={styles.buttonIcon} />
+              <Text style={styles.supportButtonText}>Gallery</Text>
             </TouchableOpacity>
             
             <SectionDivider />
@@ -1012,10 +1236,6 @@ Architecture: ${deviceInfo.deviceArchitecture}
             <TouchableOpacity onPress={sendFeedback}>
               <InfoRow icon="feedback" label="Send Feedback" value="Send" isLink />
             </TouchableOpacity>
-            <SectionDivider />
-            <TouchableOpacity onPress={() => router.push('/character-select')}>
-              <InfoRow icon="chat" label="Chat with Anime Characters" value="Chat" isLink />
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -1034,19 +1254,6 @@ Architecture: ${deviceInfo.deviceArchitecture}
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* Debug Section */}
-        {__DEV__ && updateInfo && (
-          <>
-            <SectionDivider />
-            <DebugSection 
-              updateInfo={updateInfo} 
-              simulatedArch={simulatedArchitecture}
-              onSimulate={simulateArchitecture}
-              deviceInfo={deviceInfo}
-            />
-          </>
-        )}
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>Made with ❤️ for anime fans</Text>
@@ -1083,180 +1290,6 @@ function InfoRow({ icon, label, value, isLink = false }: InfoRowProps) {
 function SectionDivider() {
   return <View style={styles.sectionDivider} />;
 }
-
-// Update the DebugSection component to use the parent's deviceInfo
-const DebugSection = ({ 
-  updateInfo, 
-  simulatedArch, 
-  onSimulate,
-  deviceInfo 
-}: { 
-  updateInfo: UpdateInfo | null, 
-  simulatedArch: string | null, 
-  onSimulate: (arch: string | null) => Promise<void>,
-  deviceInfo: DeviceInfo
-}) => {
-  // Get raw architecture information
-  const rawArchitectures = Device.supportedCpuArchitectures || [];
-  const primaryRawArch = rawArchitectures.length > 0 ? rawArchitectures[0] : 'unknown';
-
-  if (!updateInfo) return null;
-  
-  return (
-    <View style={styles.debugSection}>
-      <Text style={styles.debugTitle}>Debug Information</Text>
-      
-      <ArchitectureSimulator 
-        currentSimulation={simulatedArch} 
-        onSimulate={onSimulate} 
-      />
-      
-      <Text style={styles.debugSubtitle}>Device Architecture:</Text>
-      <View style={styles.debugRow}>
-        <Text style={styles.debugLabel}>Raw Value:</Text>
-        <Text style={styles.debugValue}>{primaryRawArch}</Text>
-      </View>
-      <View style={styles.debugRow}>
-        <Text style={styles.debugLabel}>All Values:</Text>
-        <Text style={styles.debugValue}>{rawArchitectures.join(', ')}</Text>
-      </View>
-      <View style={styles.debugRow}>
-        <Text style={styles.debugLabel}>Formatted:</Text>
-        <Text style={styles.debugValue}>{deviceInfo.deviceArchitecture}</Text>
-      </View>
-      <View style={styles.debugRow}>
-        <Text style={styles.debugLabel}>Mapped Key:</Text>
-        <Text style={styles.debugValue}>{deviceInfo.detectedUrlKey}</Text>
-      </View>
-      
-      <Text style={styles.debugSubtitle}>Available Download URLs:</Text>
-      {Object.entries(updateInfo.downloadUrls).map(([key, url]) => (
-        <View key={key} style={styles.debugRow}>
-          <Text style={[
-            styles.debugLabel, 
-            key === deviceInfo.detectedUrlKey && styles.highlightedText
-          ]}>
-            {key}:
-          </Text>
-          <Text style={[
-            styles.debugValue, 
-            key === deviceInfo.detectedUrlKey && styles.highlightedText
-          ]} numberOfLines={1} ellipsizeMode="middle">
-            {url}
-          </Text>
-        </View>
-      ))}
-      
-      <Text style={styles.debugSubtitle}>Selected URL:</Text>
-      <Text style={styles.debugValue}>
-        {getArchitectureSpecificDownloadUrl(updateInfo.downloadUrls, simulatedArch)}
-      </Text>
-
-      <View style={styles.debugButtonRow}>
-        <TouchableOpacity 
-          style={styles.smallDebugButton}
-          onPress={() => refreshArchitectureInfo()}
-        >
-          <Text style={styles.smallDebugButtonText}>Refresh Architecture Info</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.smallDebugButton, { marginLeft: 10, backgroundColor: '#f4511e' }]}
-          onPress={() => testArchitectureSpecificDownloadUrl()}
-        >
-          <Text style={styles.smallDebugButtonText}>Test Download URL</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-};
-
-const ArchitectureSimulator = ({ 
-  currentSimulation, 
-  onSimulate 
-}: { 
-  currentSimulation: string | null, 
-  onSimulate: (arch: string | null) => Promise<void> 
-}) => {
-  const [isSimulating, setIsSimulating] = useState(false);
-
-  const handleSimulate = async (arch: string | null) => {
-    setIsSimulating(true);
-    try {
-      await onSimulate(arch);
-    } finally {
-      setIsSimulating(false);
-    }
-  };
-
-  return (
-    <View style={styles.simulatorContainer}>
-      <Text style={styles.debugSubtitle}>Simulate Architecture:</Text>
-      <View style={styles.simulatorButtons}>
-        <TouchableOpacity 
-          style={[
-            styles.simulatorButton, 
-            currentSimulation === null && styles.simulatorButtonActive
-          ]}
-          onPress={() => handleSimulate(null)}
-          disabled={isSimulating}
-        >
-          <Text style={styles.simulatorButtonText}>Default</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[
-            styles.simulatorButton, 
-            currentSimulation === 'arm64' && styles.simulatorButtonActive
-          ]}
-          onPress={() => handleSimulate('arm64')}
-          disabled={isSimulating}
-        >
-          <Text style={styles.simulatorButtonText}>ARM64</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[
-            styles.simulatorButton, 
-            currentSimulation === 'x86_64' && styles.simulatorButtonActive
-          ]}
-          onPress={() => handleSimulate('x86_64')}
-          disabled={isSimulating}
-        >
-          <Text style={styles.simulatorButtonText}>x86_64</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[
-            styles.simulatorButton, 
-            currentSimulation === 'x86' && styles.simulatorButtonActive
-          ]}
-          onPress={() => handleSimulate('x86')}
-          disabled={isSimulating}
-        >
-          <Text style={styles.simulatorButtonText}>x86</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[
-            styles.simulatorButton, 
-            currentSimulation === 'arm64-v8a' && styles.simulatorButtonActive
-          ]}
-          onPress={() => handleSimulate('arm64-v8a')}
-          disabled={isSimulating}
-        >
-          <Text style={styles.simulatorButtonText}>ARM64-v8a</Text>
-        </TouchableOpacity>
-      </View>
-      {currentSimulation && (
-        <Text style={styles.simulationActive}>
-          Simulating: {currentSimulation}
-        </Text>
-      )}
-      {isSimulating && (
-        <Text style={styles.simulationActive}>
-          Updating...
-        </Text>
-      )}
-    </View>
-  );
-};
 
 const styles = StyleSheet.create({
   container: {
@@ -1633,80 +1666,188 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   modalContent: {
     backgroundColor: '#1a1a1a',
-    borderRadius: 15,
+    borderRadius: 16,
     padding: 20,
-    width: '90%',
+    width: '100%',
     maxWidth: 400,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
-    marginBottom: 20,
-    textAlign: 'center',
+  },
+  closeButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
   },
   feedbackTypeContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 20,
+    gap: 8,
   },
   typeButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    backgroundColor: '#333',
     flex: 1,
-    marginHorizontal: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: '#2C2C2C',
+  },
+  typeButtonGeneral: {
+    borderColor: '#2196F3',
+    borderWidth: 1,
+  },
+  typeButtonBug: {
+    borderColor: '#f44336',
+    borderWidth: 1,
+  },
+  typeButtonFeature: {
+    borderColor: '#4CAF50',
+    borderWidth: 1,
   },
   selectedType: {
     backgroundColor: '#f4511e',
+    borderColor: '#f4511e',
   },
   typeText: {
-    color: '#fff',
-    fontSize: 12,
-    textAlign: 'center',
+    color: '#666',
+    fontSize: 14,
+    fontWeight: '600',
   },
   selectedTypeText: {
     color: '#fff',
-    fontWeight: 'bold',
+  },
+  inputGroup: {
+    marginBottom: 16,
+  },
+  inputLabel: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
   },
   feedbackInput: {
-    backgroundColor: '#333',
-    borderRadius: 10,
-    padding: 15,
+    backgroundColor: '#2C2C2C',
+    borderRadius: 12,
+    padding: 12,
     color: '#fff',
-    height: 120,
+    fontSize: 16,
+  },
+  messageInput: {
+    minHeight: 120,
     textAlignVertical: 'top',
+  },
+  emailInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2C2C2C',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+  },
+  inputIcon: {
+    marginRight: 8,
+  },
+  emailInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 16,
+    paddingVertical: 12,
+  },
+  attachmentSection: {
     marginBottom: 20,
+  },
+  attachButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#2C2C2C',
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#666',
+    borderStyle: 'dashed',
+  },
+  attachButtonActive: {
+    backgroundColor: '#2C2C2C',
+    borderColor: '#f4511e',
+    borderStyle: 'solid',
+  },
+  attachButtonUploading: {
+    backgroundColor: '#2C2C2C',
+    borderColor: '#f4511e',
+    opacity: 0.7,
+  },
+  attachButtonText: {
+    color: '#666',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  attachButtonTextActive: {
+    color: '#fff',
+  },
+  attachmentHint: {
+    color: '#666',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
   },
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 12,
   },
   cancelButton: {
-    backgroundColor: '#333',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 25,
     flex: 1,
-    marginRight: 10,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#2C2C2C',
+    alignItems: 'center',
   },
   submitButton: {
-    backgroundColor: '#f4511e',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 25,
     flex: 1,
-    marginLeft: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#f4511e',
   },
-  buttonText: {
+  buttonDisabled: {
+    opacity: 0.5,
+  },
+  cancelButtonText: {
     color: '#fff',
-    textAlign: 'center',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  submitIcon: {
+    marginRight: 8,
   },
   supportButton: {
     flexDirection: 'row',
@@ -1715,13 +1856,44 @@ const styles = StyleSheet.create({
     padding: 15,
     borderRadius: 8,
     marginVertical: 5,
+    gap: 12,
   },
   buttonIcon: {
-    marginRight: 12,
+    marginRight: 0,
   },
   supportButtonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '500',
   },
-}); 
+  attachmentContainer: {
+    position: 'relative',
+    marginVertical: 5,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#2C2C2C',
+  },
+  attachmentPreview: {
+    width: '100%',
+    height: 150,
+  },
+  filePreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    gap: 8,
+  },
+  fileName: {
+    color: '#fff',
+    flex: 1,
+    fontSize: 14,
+  },
+  removeButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    borderRadius: 12,
+    padding: 4,
+  },
+} as const); 
