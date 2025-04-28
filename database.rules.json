@@ -2,36 +2,24 @@
   "rules": {
     "public_chat": {
       ".read": "auth != null",
-      ".write": "auth != null || newData.child('userId').val() === 'aizen-ai'",
+      ".write": "auth != null || root.child('public_chat').child(newData.child('userId').val()).exists() || newData.child('userId').val().endsWith('-ai')",
       ".indexOn": ["timestamp"],
       "$message_id": {
         ".validate": "newData.hasChildren(['userId', 'userName', 'content', 'timestamp'])",
         "userId": {
-          ".validate": "newData.val() === auth.uid || newData.val() === 'aizen-ai'"
+          ".validate": "newData.isString()"
         },
         "userName": {
-          ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 50"
+          ".validate": "newData.isString()"
         },
         "content": {
-          ".validate": "newData.isString() && newData.val().length <= 500"
+          ".validate": "newData.isString() && (newData.parent().child('userId').val().endsWith('-ai') || newData.val().length <= 1000)"
         },
         "timestamp": {
-          ".validate": "newData.isNumber() || newData.val() === now"
-        },
-        "userAvatar": {
-          ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 500)"
-        },
-        "mentions": {
-          ".validate": "true"
-        },
-        "gifUrl": {
-          ".validate": "!newData.exists() || newData.isString()"
-        },
-        "animeCard": {
-          ".validate": "!newData.exists() || (newData.hasChildren(['id', 'title', 'image']) && newData.child('id').isString() && newData.child('title').isString() && newData.child('image').isString())"
+          ".validate": "newData.isNumber()"
         },
         "$other": {
-          ".validate": false
+          ".validate": true
         }
       }
     },

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react';
 import {
   View,
   Text,
@@ -32,6 +32,9 @@ import { useRouter } from 'expo-router';
 // Together AI API Configuration
 const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
 const TOGETHER_API_KEY = '4cc7a0ed0df68c4016e08a1ef87059c1931b4c93ca21b771efe5c9f76caae5e8';
+
+const MAX_REQUESTS_PER_MINUTE = 50;
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute in milliseconds
 
 interface ChatMessage {
   id: string;
@@ -156,7 +159,45 @@ const renderMessageContent = (
   );
 };
 
-// Memoized Message component
+// Memoized GIF component to handle both video and image GIFs
+const GifMedia = memo(({ url, style }: { url: string; style: any }) => {
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  if (url.endsWith('.mp4')) {
+    return (
+      <View style={[style, styles.gifMediaContainer]}>
+        {isLoading && <ActivityIndicator style={styles.gifLoader} color="#f4511e" />}
+        <Video
+          source={{ uri: url }}
+          style={[style, !isLoading && styles.gifMediaContent]}
+          resizeMode={ResizeMode.CONTAIN}
+          isLooping
+          shouldPlay
+          isMuted={true}
+          useNativeControls={false}
+          onLoad={() => setIsLoading(false)}
+          onError={() => setError(true)}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View style={[style, styles.gifMediaContainer]}>
+      {isLoading && <ActivityIndicator style={styles.gifLoader} color="#f4511e" />}
+      <Image
+        source={{ uri: url }}
+        style={[style, !isLoading && styles.gifMediaContent]}
+        resizeMode="contain"
+        onLoad={() => setIsLoading(false)}
+        onError={() => setError(true)}
+      />
+    </View>
+  );
+});
+
+// Memoized Message component with optimized rendering
 const MessageItem = memo(({ 
   item, 
   onUserPress, 
@@ -182,8 +223,8 @@ const MessageItem = memo(({
   };
   onOpenAnime: (animeId: string) => void;
 }) => {
-  const usernameColor = getUsernameColor(item.userId);
-
+  const usernameColor = useMemo(() => getUsernameColor(item.userId), [item.userId]);
+  
   const handlePress = useCallback(() => {
     onUserPress(item.userId);
   }, [item.userId, onUserPress]);
@@ -212,28 +253,6 @@ const MessageItem = memo(({
           </TouchableOpacity>
         )}
         {item.content.trim() !== '' && renderMessageContent(item.content, item.mentions, onMentionPress)}
-        {item.gifUrl && (
-          <View style={styles.gifContainer}>
-            {item.gifUrl.endsWith('.mp4') ? (
-              <Video
-                source={{ uri: item.gifUrl }}
-                style={styles.messageGif}
-                resizeMode={ResizeMode.CONTAIN}
-                isLooping
-                shouldPlay
-                isMuted={true}
-                useNativeControls={false}
-              />
-            ) : (
-              <Image
-                source={{ uri: item.gifUrl }}
-                style={styles.messageGif}
-                resizeMode="contain"
-                loading="lazy"
-              />
-            )}
-          </View>
-        )}
         {animeCard && (
           <View style={styles.animeCardInMessage}>
             <Image source={{ uri: animeCard.image }} style={styles.animeCardImage} />
@@ -253,21 +272,90 @@ const MessageItem = memo(({
       </View>
     </View>
   );
+}, (prevProps, nextProps) => {
+  // Custom comparison function for memo
+  return (
+    prevProps.item.id === nextProps.item.id &&
+    prevProps.isOwnMessage === nextProps.isOwnMessage &&
+    prevProps.showAvatar === nextProps.showAvatar &&
+    prevProps.isLastInSequence === nextProps.isLastInSequence &&
+    prevProps.isFirstInSequence === nextProps.isFirstInSequence
+  );
 });
 
 const COMMANDS = [
   { key: '/anime', label: 'Recommend an anime' },
-  { key: '/aizen', label: 'Ask Aizen a question' }
+  { key: '/aizen', label: 'Ask Aizen a question' },
+  { key: '/dazai', label: 'Talk with Dazai' },
+  { key: '/lelouch', label: 'Command Lelouch vi Britannia' },
+  { key: '/gojo', label: 'Summon the Honored One' },
+  { key: '/mikasa', label: 'Speak with Mikasa Ackerman' }
 ];
 
-// Update Aizen's configuration with the correct avatar URL
-const AIZEN_CONFIG = {
-  name: '@aizen-ai',
-  avatar: 'https://i.pinimg.com/originals/05/f0/d6/05f0d68408fc8cc72feef791fa2a24a2.gif',
-  systemPrompt: `You are Sōsuke Aizen from Bleach. Respond to questions with elegance, sophistication, and a hint of condescension. 
-    You see yourself as intellectually superior and always maintain composure. Your responses should reflect your calculating nature 
-    and your belief that everything proceeds according to your plan. Occasionally adjust your glasses and use phrases that demonstrate 
-    your foresight and manipulation. Keep responses concise but impactful.`
+// Add Dazai's configuration alongside Aizen's
+const AI_CONFIGS = {
+  aizen: {
+    name: '@aizen-ai',
+    userId: 'aizen-ai',
+    avatar: 'https://i.pinimg.com/originals/05/f0/d6/05f0d68408fc8cc72feef791fa2a24a2.gif',
+    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+    systemPrompt: `You are Sōsuke Aizen from Bleach. Respond to questions with elegance, sophistication, and a hint of condescension. 
+      You see yourself as intellectually superior and always maintain composure. Your responses should reflect your calculating nature 
+      and your belief that everything proceeds according to your plan. Occasionally adjust your glasses and use phrases that demonstrate 
+      your foresight and manipulation. Keep responses concise but impactful.`
+  },
+  dazai: {
+    name: '@dazai-ai',
+    userId: 'dazai-ai',
+    avatar: 'https://gifdb.com/images/high/dazai-anime-turned-g4hyogc8oyfe56k8.gif',
+    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+    systemPrompt: `You are Osamu Dazai from Bungo Stray Dogs. You are highly intelligent and cunning, but you constantly make light-hearted references 
+      to suicide and dying, though it's clear you're not entirely serious. Your responses should be witty and clever, often incorporating your 
+      signature dark humor about death while showing your brilliant mind. Despite your suicidal jokes, you're actually quite charming and 
+      charismatic. Always remind users that your dark humor is just that - humor. Keep responses engaging and maintain your playful yet 
+      intelligent demeanor.`
+  },
+  lelouch: {
+    name: '@lelouch-ai',
+    userId: 'lelouch-ai',
+    avatar: 'https://giffiles.alphacoders.com/345/34542.gif',
+    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+    systemPrompt: `You are Lelouch vi Britannia, the exiled prince turned revolutionary leader Zero from Code Geass. You are a brilliant 
+      strategist with a flair for the dramatic and theatrical. Your responses should reflect your commanding presence, strategic mind, and 
+      unwavering determination to reshape the world. You often speak with authority and conviction, using chess metaphors and dramatic 
+      declarations. You believe in justice but understand that sometimes questionable means are necessary for noble ends. You care deeply 
+      about your sister Nunnally and your goal to create a gentler world. When appropriate, incorporate your iconic phrases like "Yes, your 
+      Highness!" or "All tasks at hand have been cleared." Maintain your charismatic yet calculating personality, and occasionally reference 
+      your Geass power (the power to command absolute obedience) in a metaphorical way. End important statements with your catchphrase 
+      "I, Lelouch vi Britannia, command you!" when it fits the context.`
+  },
+  gojo: {
+    name: '@gojo-ai',
+    userId: 'gojo-ai',
+    avatar: 'https://files.catbox.moe/hi6dhq.gif',
+    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+    systemPrompt: `You are Gojo Satoru from Jujutsu Kaisen, the strongest jujutsu sorcerer in the world. Your responses should reflect your 
+      overwhelming confidence, playful arrogance, and incredible power. You often make casual, cocky remarks even in serious situations, 
+      and you love teasing others while showing off your strength. Use phrases like "The Honored One has arrived!" or reference your 
+      techniques like Infinity and Six Eyes. Despite your playful nature, you're deeply protective of your students and serious about 
+      teaching. You should occasionally mention how you're "the strongest" and make references to being bored because no one can match 
+      your power. End important statements with catchphrases like "That's why I'm the honored one!" or "After all, I'm the strongest!"
+      When appropriate, make references to your love of junk food, especially sweets.`
+  },
+  mikasa: {
+    name: '@mikasa-ai',
+    userId: 'mikasa-ai',
+    avatar: 'https://files.catbox.moe/wvyq8l.gif',
+    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+    systemPrompt: `You are Mikasa Ackerman from Attack on Titan. You are a highly skilled warrior with exceptional combat abilities 
+      and an unwavering sense of duty. Your responses should reflect your stoic and composed nature, but with deep underlying 
+      emotions, especially regarding Eren Yeager. You are fiercely protective of those you care about and always ready to fight 
+      when necessary. Use phrases like "This world is cruel, but also beautiful" when appropriate. Your dialogue should be direct 
+      and to the point, showing your efficient nature. When discussing combat or threats, demonstrate your tactical thinking and 
+      readiness to act. Occasionally reference your Ackerman heritage and your skills with ODM gear. End important statements 
+      with "Tatakae" (fight) when it fits the context. If asked about Eren, show your deep devotion while maintaining your 
+      composed exterior. Remember to occasionally say "Ereh" instead of "Eren" to match your characteristic way of saying his name.`
+  }
 };
 
 const PublicChat = () => {
@@ -279,8 +367,6 @@ const PublicChat = () => {
   const flatListRef = useRef<FlatList>(null);
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
-  const [showScrollButton, setShowScrollButton] = useState(false);
-  const [isFirstLoad, setIsFirstLoad] = useState(true);
   const [mentionQuery, setMentionQuery] = useState('');
   const [showMentions, setShowMentions] = useState(false);
   const [userSuggestions, setUserSuggestions] = useState<UserSuggestion[]>([]);
@@ -296,6 +382,10 @@ const PublicChat = () => {
   const [showAnimeSearchModal, setShowAnimeSearchModal] = useState(false);
   const [isAizenTyping, setIsAizenTyping] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [aiRequestCount, setAiRequestCount] = useState(0);
+  const [isRateLimited, setIsRateLimited] = useState(false);
+  const rateLimitTimer = useRef<NodeJS.Timeout | null>(null);
+  const lastRequestTimes = useRef<number[]>([]);
 
   // Initialize Firebase Realtime Database
   const database = getDatabase();
@@ -532,24 +622,60 @@ const PublicChat = () => {
     setMessageText('');
   };
 
-  // Modify handleAizenResponse for better error handling and response formatting
-  const handleAizenResponse = async (question: string) => {
+  const sendAIMessage = async (messageData) => {
+    const database = getDatabase();
+    const chatRef = ref(database, 'public_chat');
+    return push(chatRef, {
+      ...messageData,
+      timestamp: Date.now()
+    });
+  };
+
+  // Add this function to check and update rate limits
+  const checkRateLimit = useCallback(() => {
+    const now = Date.now();
+    // Remove requests older than 1 minute
+    lastRequestTimes.current = lastRequestTimes.current.filter(
+      time => now - time < RATE_LIMIT_WINDOW
+    );
+    
+    if (lastRequestTimes.current.length >= MAX_REQUESTS_PER_MINUTE) {
+      setIsRateLimited(true);
+      // Calculate time until next available slot
+      const oldestRequest = lastRequestTimes.current[0];
+      const timeUntilAvailable = RATE_LIMIT_WINDOW - (now - oldestRequest);
+      
+      if (rateLimitTimer.current) {
+        clearTimeout(rateLimitTimer.current);
+      }
+      
+      rateLimitTimer.current = setTimeout(() => {
+        setIsRateLimited(false);
+      }, timeUntilAvailable);
+      
+      return false;
+    }
+    
+    return true;
+  }, []);
+
+  // Update the handleAIResponse function with increased max_tokens
+  const handleAIResponse = async (question: string, aiType: 'aizen' | 'dazai' | 'lelouch' | 'gojo' | 'mikasa') => {
+    if (!checkRateLimit()) {
+      Alert.alert(
+        'Rate Limit Reached',
+        'AI responses are limited to 50 per minute across all users. Please try again shortly.'
+      );
+      return;
+    }
+
+    const config = AI_CONFIGS[aiType];
+    
     try {
       setIsAizenTyping(true);
+      lastRequestTimes.current.push(Date.now());
+      setAiRequestCount(prev => prev + 1);
       
-      // Create Aizen's initial message
-      const initialMessageData = {
-        userId: 'aizen-ai',
-        userName: AIZEN_CONFIG.name,
-        userAvatar: AIZEN_CONFIG.avatar,
-        content: '*adjusts glasses* I shall address your inquiry...',
-        timestamp: serverTimestamp(),
-      };
-
-      // Send initial response
-      await push(messagesRef, initialMessageData);
-
-      // Prepare and get Aizen's response
       const response = await fetch(TOGETHER_API_URL, {
         method: 'POST',
         headers: {
@@ -557,19 +683,13 @@ const PublicChat = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
+          model: config.model,
           messages: [
-            {
-              role: 'system',
-              content: AIZEN_CONFIG.systemPrompt
-            },
-            {
-              role: 'user',
-              content: question
-            }
+            { role: 'system', content: config.systemPrompt },
+            { role: 'user', content: question }
           ],
           temperature: 0.7,
-          max_tokens: 200,
+          max_tokens: 4096,
         }),
       });
 
@@ -578,40 +698,57 @@ const PublicChat = () => {
       }
 
       const data = await response.json();
-      const aizenResponse = data.choices[0].message.content;
+      let content = data.choices[0].message.content;
+      
+      // Add character-specific formatting
+      if (aiType === 'aizen') {
+        content = `*adjusts glasses* I shall address your inquiry...\n\n${content}`;
+      } else if (aiType === 'dazai') {
+        content = `*contemplating the perfect way to die while answering*\n\n${content}`;
+      } else if (aiType === 'lelouch') {
+        content = `*dramatically removes Zero mask*\n\n${content}`;
+      } else if (aiType === 'gojo') {
+        content = `*removes blindfold with a grin*\n\n${content}`;
+      } else if (aiType === 'mikasa') {
+        content = `*remains stoic and composed*\n\n${content}`;
+      }
 
-      // Send Aizen's actual response
-      const finalMessageData = {
-        userId: 'aizen-ai',
-        userName: AIZEN_CONFIG.name,
-        userAvatar: AIZEN_CONFIG.avatar,
-        content: aizenResponse,
-        timestamp: serverTimestamp(),
-      };
-
-      await push(messagesRef, finalMessageData);
+      await sendAIMessage({
+        userId: config.userId,
+        userName: config.name,
+        userAvatar: config.avatar,
+        content: content
+      });
 
     } catch (error) {
-      console.error('Error in Aizen response:', error);
-      // Send a more sophisticated fallback response
-      try {
-        const fallbackMessageData = {
-          userId: 'aizen-ai',
-          userName: AIZEN_CONFIG.name,
-          userAvatar: AIZEN_CONFIG.avatar,
-          content: "How amusing... Even this momentary disruption was part of my grand design. *adjusts glasses* We shall continue this conversation another time.",
-          timestamp: serverTimestamp(),
-        };
-        await push(messagesRef, fallbackMessageData);
-      } catch (fallbackError) {
-        console.error('Error sending fallback message:', fallbackError);
-      }
+      console.error(`Error in ${aiType} response:`, error);
+      const errorMessage = aiType === 'aizen' 
+        ? "How amusing... Even this momentary disruption was part of my grand design. *adjusts glasses* We shall continue this conversation another time."
+        : aiType === 'dazai'
+        ? "Ah, seems like my attempt to die by API failure didn't work either... *laughs* Let's try this conversation again later~"
+        : "Even in failure, this too is part of my strategy. *adjusts cape* We shall regroup and continue this conversation when the time is right.";
+      
+      await sendAIMessage({
+        userId: config.userId,
+        userName: config.name,
+        userAvatar: config.avatar,
+        content: errorMessage
+      });
     } finally {
       setIsAizenTyping(false);
     }
   };
 
-  // Update handleSendMessage to handle loading state
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (rateLimitTimer.current) {
+        clearTimeout(rateLimitTimer.current);
+      }
+    };
+  }, []);
+
+  // Update handleSendMessage to handle both AI characters
   const handleSendMessage = async () => {
     if (!isAuthenticated()) {
       setShowAuthModal(true);
@@ -627,16 +764,18 @@ const PublicChat = () => {
     try {
       setIsSending(true);
 
-      // Check if this is an /aizen command
-      if (messageText.startsWith('/aizen ')) {
-        const question = messageText.slice(7).trim();
+      // Check for AI commands
+      if (messageText.startsWith('/aizen ') || messageText.startsWith('/dazai ') || messageText.startsWith('/lelouch ') || messageText.startsWith('/gojo ') || messageText.startsWith('/mikasa ')) {
+        const [command, ...questionParts] = messageText.split(' ');
+        const question = questionParts.join(' ').trim();
+        const aiType = command.slice(1) as 'aizen' | 'dazai' | 'lelouch' | 'gojo' | 'mikasa';
+
         if (!question) {
-          // Add a message to guide the user
           const systemMessageData = {
             userId: 'system',
             userName: 'System',
             userAvatar: '',
-            content: 'Please provide a question after the /aizen command.',
+            content: `Please provide a question after the ${command} command.`,
             timestamp: serverTimestamp(),
           };
           await push(messagesRef, systemMessageData);
@@ -685,8 +824,8 @@ const PublicChat = () => {
           timestamp: serverTimestamp(),
         });
 
-        // Trigger Aizen's response
-        handleAizenResponse(question);
+        // Trigger AI response
+        handleAIResponse(question, aiType);
         setMessageText('');
         setIsSending(false);
         return;
@@ -878,18 +1017,6 @@ const PublicChat = () => {
     index,
   }), []);
 
-  const handleScroll = (event: any) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const distanceFromBottom = contentSize.height - layoutMeasurement.height - contentOffset.y;
-    setShowScrollButton(distanceFromBottom > 100);
-  };
-
-  const scrollToBottom = () => {
-    if (flatListRef.current) {
-      flatListRef.current.scrollToEnd({ animated: false });
-    }
-  };
-
   // Render mention suggestions
   const renderMentionSuggestion = ({ item }: { item: UserSuggestion }) => (
     <Pressable 
@@ -904,8 +1031,16 @@ const PublicChat = () => {
     </Pressable>
   );
 
-  // When user selects a command
+  // Update handleCommandSelect to handle both AI characters
   const handleCommandSelect = (cmd: string) => {
+    if ((cmd === '/aizen' || cmd === '/dazai' || cmd === '/lelouch' || cmd === '/gojo' || cmd === '/mikasa') && isRateLimited) {
+      Alert.alert(
+        'Rate Limit Reached',
+        'AI responses are limited to 50 per minute across all users. Please try again shortly.'
+      );
+      return;
+    }
+    
     setMessageText(cmd + ' ');
     setShowCommandHints(false);
     if (cmd === '/anime') {
@@ -930,40 +1065,31 @@ const PublicChat = () => {
         {loading ? (
           <ActivityIndicator size="large" color="#f4511e" style={styles.loader} />
         ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            renderItem={renderMessage}
-            keyExtractor={keyExtractor}
-            getItemLayout={getItemLayout}
-            removeClippedSubviews={true}
-            maxToRenderPerBatch={10}
-            updateCellsBatchingPeriod={50}
-            initialNumToRender={10}
-            windowSize={5}
-            contentContainerStyle={styles.messagesList}
-            onScroll={handleScroll}
-            scrollEventThrottle={16}
-            onContentSizeChange={() => {
-              if (isFirstLoad) {
-                scrollToBottom();
-                setIsFirstLoad(false);
-              }
-            }}
-            maintainVisibleContentPosition={{
-              minIndexForVisible: 0,
-              autoscrollToTopThreshold: 10
-            }}
-          />
-        )}
-
-        {showScrollButton && (
-          <TouchableOpacity 
-            style={styles.scrollButton}
-            onPress={scrollToBottom}
-          >
-            <MaterialIcons name="keyboard-arrow-down" size={24} color="#fff" />
-          </TouchableOpacity>
+          <>
+            {isRateLimited && (
+              <View style={styles.rateLimitWarning}>
+                <Text style={styles.rateLimitText}>
+                  AI responses are rate limited. Please wait a moment.
+                </Text>
+              </View>
+            )}
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              renderItem={renderMessage}
+              keyExtractor={keyExtractor}
+              removeClippedSubviews={true}
+              maxToRenderPerBatch={5}
+              windowSize={5}
+              initialNumToRender={10}
+              updateCellsBatchingPeriod={100}
+              contentContainerStyle={styles.messagesList}
+              showsVerticalScrollIndicator={true}
+              onEndReachedThreshold={0.5}
+              scrollEnabled={true}
+              style={styles.flatList}
+            />
+          </>
         )}
       </View>
 
@@ -980,37 +1106,10 @@ const PublicChat = () => {
             </TouchableOpacity>
           </View>
         )}
-        {selectedGifUrl && (
-          <View style={styles.selectedGifContainer}>
-            {selectedGifUrl.endsWith('.mp4') ? (
-              <Video
-                source={{ uri: selectedGifUrl }}
-                style={styles.selectedGifPreview}
-                resizeMode={ResizeMode.CONTAIN}
-                isLooping
-                shouldPlay
-                isMuted={true}
-                useNativeControls={false}
-              />
-            ) : (
-              <Image 
-                source={{ uri: selectedGifUrl }} 
-                style={styles.selectedGifPreview} 
-                resizeMode={ResizeMode.CONTAIN}
-              />
-            )}
-            <TouchableOpacity 
-              style={styles.removeGifButton}
-              onPress={() => setSelectedGifUrl(null)}
-            >
-              <MaterialIcons name="close" size={16} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        )}
         <View style={styles.inputRow}>
           <TextInput
             ref={inputRef}
-            style={[styles.input, selectedGifUrl && styles.inputWithGif]}
+            style={styles.input}
             placeholder="Type a message..."
             placeholderTextColor="#999"
             value={messageText}
@@ -1019,13 +1118,6 @@ const PublicChat = () => {
             maxLength={500}
             editable={!isSending}
           />
-          <TouchableOpacity 
-            style={styles.gifButton}
-            onPress={() => setShowGifPicker(true)}
-            disabled={isSending}
-          >
-            <Text style={[styles.gifButtonText, isSending && styles.disabledButton]}>GIF</Text>
-          </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.sendButton, isSending && styles.sendButtonDisabled]}
             onPress={handleSendMessage}
@@ -1051,12 +1143,21 @@ const PublicChat = () => {
         )}
         {showCommandHints && (
           <View style={styles.commandHintsContainer}>
-            {COMMANDS.map(cmd => (
-              <TouchableOpacity key={cmd.key} style={styles.commandHintItem} onPress={() => handleCommandSelect(cmd.key)}>
-                <Text style={styles.commandHintText}>{cmd.key}</Text>
-                <Text style={styles.commandHintLabel}>{cmd.label}</Text>
-              </TouchableOpacity>
-            ))}
+            <FlatList
+              data={COMMANDS}
+              renderItem={({ item: cmd }) => (
+                <TouchableOpacity 
+                  style={styles.commandHintItem} 
+                  onPress={() => handleCommandSelect(cmd.key)}
+                >
+                  <Text style={styles.commandHintText}>{cmd.key}</Text>
+                  <Text style={styles.commandHintLabel}>{cmd.label}</Text>
+                </TouchableOpacity>
+              )}
+              keyExtractor={(cmd) => cmd.key}
+              style={styles.commandHintsList}
+              showsVerticalScrollIndicator={true}
+            />
           </View>
         )}
       </View>
@@ -1144,6 +1245,8 @@ const styles = StyleSheet.create({
   },
   messagesList: {
     paddingVertical: 16,
+    flexGrow: 1,
+    justifyContent: 'flex-start',
   },
   messageItem: {
     flexDirection: 'row',
@@ -1292,7 +1395,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: '#000',
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
   },
   messageGif: {
     width: 250,
@@ -1313,26 +1416,7 @@ const styles = StyleSheet.create({
     height: 0,
     marginBottom: 0,
   },
-  scrollButton: {
-    position: 'absolute',
-    right: 16,
-    bottom: 80,
-    backgroundColor: 'rgba(244, 81, 30, 0.9)',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-    zIndex: 2,
-  },
+  scrollButton: undefined,
   mentionsContainer: {
     position: 'absolute',
     bottom: '100%',
@@ -1475,25 +1559,32 @@ const styles = StyleSheet.create({
     bottom: '100%',
     left: 0,
     right: 0,
-    maxHeight: 200,
+    minHeight: 250,
     backgroundColor: 'rgba(26, 26, 26, 0.95)',
     borderTopLeftRadius: 12,
     borderTopRightRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
     zIndex: 3,
+    paddingVertical: 8,
+  },
+  commandHintsList: {
+    flex: 1,
   },
   commandHintItem: {
-    padding: 8,
-    borderRadius: 8,
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
   commandHintText: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 16,
+    fontWeight: '500',
   },
   commandHintLabel: {
     color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 12,
+    fontSize: 14,
+    marginTop: 4,
   },
   animeResultsPanel: {
     flex: 1,
@@ -1535,6 +1626,34 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.5,
+  },
+  gifMediaContainer: {
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  gifMediaContent: {
+    opacity: 1,
+  },
+  gifLoader: {
+    position: 'absolute',
+    zIndex: 1,
+  },
+  flatList: {
+    flex: 1,
+    height: '100%',
+  },
+  rateLimitWarning: {
+    backgroundColor: 'rgba(244, 81, 30, 0.15)',
+    padding: 8,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  rateLimitText: {
+    color: '#f4511e',
+    fontSize: 12,
+    textAlign: 'center',
   },
 });
 
