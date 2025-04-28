@@ -79,6 +79,12 @@ function BottomTabBar() {
   // Navigation tabs for the right side
   const rightTabs = [
     {
+      name: 'Chat',
+      path: '/chat',
+      icon: 'chat',
+      IconComponent: MaterialIcons
+    },
+    {
       name: 'Gallery',
       path: '/gallery',
       icon: 'photo-library',
