@@ -295,6 +295,7 @@ const PublicChat = () => {
   const [showCommandHints, setShowCommandHints] = useState(false);
   const [showAnimeSearchModal, setShowAnimeSearchModal] = useState(false);
   const [isAizenTyping, setIsAizenTyping] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   // Initialize Firebase Realtime Database
   const database = getDatabase();
@@ -610,7 +611,7 @@ const PublicChat = () => {
     }
   };
 
-  // Update handleSendMessage to use /aizen command
+  // Update handleSendMessage to handle loading state
   const handleSendMessage = async () => {
     if (!isAuthenticated()) {
       setShowAuthModal(true);
@@ -619,8 +620,13 @@ const PublicChat = () => {
     if (!messageText.trim() && !selectedGifUrl && !selectedAnime) {
       return;
     }
+    if (isSending) {
+      return; // Prevent multiple sends
+    }
 
     try {
+      setIsSending(true);
+
       // Check if this is an /aizen command
       if (messageText.startsWith('/aizen ')) {
         const question = messageText.slice(7).trim();
@@ -635,6 +641,7 @@ const PublicChat = () => {
           };
           await push(messagesRef, systemMessageData);
           setMessageText('');
+          setIsSending(false);
           return;
         }
 
@@ -681,6 +688,7 @@ const PublicChat = () => {
         // Trigger Aizen's response
         handleAizenResponse(question);
         setMessageText('');
+        setIsSending(false);
         return;
       }
 
@@ -760,11 +768,11 @@ const PublicChat = () => {
 
       // Send notifications to mentioned users if there are any
       if (mentionedUsers && mentionedUsers.length > 0) {
-        mentionedUsers.forEach(userId => {
-          if (userId) { // Only send notification if userId exists
-            sendMentionNotification(messageRef.key!, userId);
+        await Promise.all(mentionedUsers.map(userId => {
+          if (userId) {
+            return sendMentionNotification(messageRef.key!, userId);
           }
-        });
+        }));
       }
 
       // Clear input and states
@@ -778,6 +786,8 @@ const PublicChat = () => {
     } catch (error) {
       console.error('Error sending message:', error);
       Alert.alert('Error', 'Failed to send message. Please try again.');
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -1007,18 +1017,25 @@ const PublicChat = () => {
             onChangeText={handleInputChange}
             multiline
             maxLength={500}
+            editable={!isSending}
           />
           <TouchableOpacity 
             style={styles.gifButton}
             onPress={() => setShowGifPicker(true)}
+            disabled={isSending}
           >
-            <Text style={styles.gifButtonText}>GIF</Text>
+            <Text style={[styles.gifButtonText, isSending && styles.disabledButton]}>GIF</Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={styles.sendButton}
+            style={[styles.sendButton, isSending && styles.sendButtonDisabled]}
             onPress={handleSendMessage}
+            disabled={isSending}
           >
-            <MaterialIcons name="send" size={24} color="#fff" />
+            {isSending ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <MaterialIcons name="send" size={24} color="#fff" />
+            )}
           </TouchableOpacity>
         </View>
         {showMentions && userSuggestions.length > 0 && (
@@ -1512,6 +1529,12 @@ const styles = StyleSheet.create({
   },
   italicText: {
     fontStyle: 'italic',
+  },
+  sendButtonDisabled: {
+    backgroundColor: 'rgba(244, 81, 30, 0.5)',
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
 });
 
