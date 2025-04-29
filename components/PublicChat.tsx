@@ -667,11 +667,21 @@ const PublicChat = () => {
   const isScrollingRef = useRef(false);
   const [selectedAIConfig, setSelectedAIConfig] = useState<typeof AI_CONFIGS[keyof typeof AI_CONFIGS] | null>(null);
   const [showWelcomeTutorial, setShowWelcomeTutorial] = useState(false);
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   // Initialize Firebase Realtime Database
   const database = getDatabase();
   const messagesRef = ref(database, 'public_chat');
   
+  // Define scrollToBottom before it's used in useEffect
+  const scrollToBottom = useCallback(() => {
+    if (flatListRef.current && messages.length > 0) {
+      flatListRef.current.scrollToEnd({ animated: true });
+      setShowScrollButton(false);
+      setIsAutoScrollEnabled(true);
+    }
+  }, [messages.length]);
+
   // Update database URL to correct region
   useEffect(() => {
     const dbUrl = 'https://anisurge-11808-default-rtdb.asia-southeast1.firebasedatabase.app';
@@ -682,7 +692,7 @@ const PublicChat = () => {
   }, []);
 
   useEffect(() => {
-    // Subscribe to last 50 messages - now using orderByChild with negativeTimestamp
+    // Subscribe to last 50 messages - using orderByChild with negativeTimestamp
     const messagesQuery = dbQuery(
       messagesRef, 
       orderByChild('negativeTimestamp'),
@@ -702,10 +712,11 @@ const PublicChat = () => {
         const sortedMessages = messageList.sort((a, b) => a.timestamp - b.timestamp);
         setMessages(sortedMessages);
         
-        // Only auto-scroll if enabled
-        if (isAutoScrollEnabled && !isScrollingRef.current) {
+        // Scroll to bottom on initial load or if auto-scroll is enabled
+        if (!initialLoadComplete || (isAutoScrollEnabled && !isScrollingRef.current)) {
           setTimeout(() => {
             scrollToBottom();
+            setInitialLoadComplete(true);
           }, 100);
         }
       }
@@ -716,7 +727,7 @@ const PublicChat = () => {
       // Cleanup subscription
       off(messagesRef);
     };
-  }, [scrollToBottom, isAutoScrollEnabled]);
+  }, [scrollToBottom, isAutoScrollEnabled, initialLoadComplete]);
 
   // Add handling for shared anime from route params
   useEffect(() => {
@@ -1409,15 +1420,6 @@ const PublicChat = () => {
     
     lastContentOffset.current = currentOffset;
   }, []);
-
-  // Modify the scroll to bottom function
-  const scrollToBottom = useCallback(() => {
-    if (flatListRef.current && messages.length > 0) {
-      flatListRef.current.scrollToEnd({ animated: true });
-      setShowScrollButton(false);
-      setIsAutoScrollEnabled(true);
-    }
-  }, [messages.length]);
 
   // Add effect to check if it's first time
   useEffect(() => {
