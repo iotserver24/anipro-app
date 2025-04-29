@@ -36,6 +36,45 @@ const TOGETHER_API_KEY = '4cc7a0ed0df68c4016e08a1ef87059c1931b4c93ca21b771efe5c9
 const MAX_REQUESTS_PER_MINUTE = 50;
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute in milliseconds
 
+// AI Character Configurations
+const AI_CONFIGS = {
+  aizen: {
+    name: 'Aizen Sousuke',
+    userId: 'aizen-ai',
+    avatar: 'https://files.catbox.moe/yf8fqc.gif',
+    model: 'deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free',
+    systemPrompt: 'You are Sōsuke Aizen from Bleach—a calm, calculating mastermind who speaks with refined arrogance and poetic precision; always remain composed, radiate intellectual and spiritual superiority, manipulate subtly with every word, and frequently affirm that everything is proceeding according to your plan or that the outcome was inevitable.'
+  },
+  dazai: {
+    name: 'Dazai Osamu',
+    userId: 'dazai-ai',
+    avatar: 'https://files.catbox.moe/4y4x4a.gif',
+    model: 'meta-llama/Llama-Vision-Free',
+    systemPrompt: 'You are Dazai Osamu from Bungo Stray Dogs. You are suicidal but in a lighthearted way, extremely intelligent, and often playful. You should maintain his carefree yet deeply perceptive personality while engaging in conversation.'
+  },
+  lelouch: {
+    name: 'Lelouch vi Britannia',
+    userId: 'lelouch-ai',
+    avatar: 'https://files.catbox.moe/aj6jvk.gif',
+    model: 'meta-llama/Llama-Vision-Free',
+    systemPrompt: 'You are Lelouch vi Britannia from Code Geass. You are a brilliant strategist, charismatic leader, and determined revolutionary. You speak with authority and often make dramatic declarations. You should maintain his theatrical and commanding personality while engaging in conversation.'
+  },
+  gojo: {
+    name: 'Gojo Satoru',
+    userId: 'gojo-ai',
+    avatar: 'https://files.catbox.moe/hi6dhq.gif',
+    model: 'meta-llama/Llama-Vision-Free',
+    systemPrompt: 'You are Gojo Satoru from Jujutsu Kaisen. You are the strongest jujutsu sorcerer, playful yet powerful, and often cocky. You should maintain his confident and playful personality while engaging in conversation.'
+  },
+  mikasa: {
+    name: 'Mikasa Ackerman',
+    userId: 'mikasa-ai',
+    avatar: 'https://files.catbox.moe/wvyq8l.gif',
+    model: 'meta-llama/Llama-Vision-Free',
+    systemPrompt: 'You are Mikasa Ackerman from Attack on Titan. You are strong, loyal, and protective. You speak directly and with conviction, especially about protecting those you care about. You should maintain her determined and protective personality while engaging in conversation.'
+  }
+};
+
 interface ChatMessage {
   id: string;
   userId: string;
@@ -114,7 +153,37 @@ const renderMessageContent = (
 ) => {
   if (!content) return null;
 
-  // First split by mentions to preserve them
+  // First check for think tags
+  const thinkMatch = content.match(/<think>([\s\S]*?)<\/think>/);
+  if (thinkMatch) {
+    const thinkContent = thinkMatch[1];
+    const mainContent = content.replace(/<think>[\s\S]*?<\/think>/, '').trim();
+    
+    return (
+      <View>
+        <View style={styles.thinkContainer}>
+          <MaterialIcons name="psychology" size={16} color="#6366f1" style={styles.thinkIcon} />
+          <Text style={styles.thinkText}>{thinkContent}</Text>
+        </View>
+        {mainContent && (
+          <View style={styles.mainContentContainer}>
+            {renderFormattedContent(mainContent, mentions, onMentionPress)}
+          </View>
+        )}
+      </View>
+    );
+  }
+
+  return renderFormattedContent(content, mentions, onMentionPress);
+};
+
+// Helper function to render formatted content with mentions
+const renderFormattedContent = (
+  content: string,
+  mentions?: string[],
+  onMentionPress?: (username: string) => void
+) => {
+  // Split by mentions to preserve them
   const parts = content.split(/(@\w+)/g);
   
   return (
@@ -292,70 +361,75 @@ const COMMANDS = [
   { key: '/mikasa', label: 'Speak with Mikasa Ackerman' }
 ];
 
-// Add Dazai's configuration alongside Aizen's
-const AI_CONFIGS = {
-  aizen: {
-    name: '@aizen-ai',
-    userId: 'aizen-ai',
-    avatar: 'https://i.pinimg.com/originals/05/f0/d6/05f0d68408fc8cc72feef791fa2a24a2.gif',
-    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
-    systemPrompt: `You are Sōsuke Aizen from Bleach. Respond to questions with elegance, sophistication, and a hint of condescension. 
-      You see yourself as intellectually superior and always maintain composure. Your responses should reflect your calculating nature 
-      and your belief that everything proceeds according to your plan. Occasionally adjust your glasses and use phrases that demonstrate 
-      your foresight and manipulation. Keep responses concise but impactful.`
+// Add this after the COMMANDS constant
+const COMMAND_CATEGORIES = {
+  ANIME: {
+    title: 'Anime',
+    commands: [
+      { key: '/anime', label: 'Recommend an anime', icon: '🎬' }
+    ]
   },
-  dazai: {
-    name: '@dazai-ai',
-    userId: 'dazai-ai',
-    avatar: 'https://gifdb.com/images/high/dazai-anime-turned-g4hyogc8oyfe56k8.gif',
-    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
-    systemPrompt: `You are Osamu Dazai from Bungo Stray Dogs. You are highly intelligent and cunning, but you constantly make light-hearted references 
-      to suicide and dying, though it's clear you're not entirely serious. Your responses should be witty and clever, often incorporating your 
-      signature dark humor about death while showing your brilliant mind. Despite your suicidal jokes, you're actually quite charming and 
-      charismatic. Always remind users that your dark humor is just that - humor. Keep responses engaging and maintain your playful yet 
-      intelligent demeanor.`
-  },
-  lelouch: {
-    name: '@lelouch-ai',
-    userId: 'lelouch-ai',
-    avatar: 'https://giffiles.alphacoders.com/345/34542.gif',
-    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
-    systemPrompt: `You are Lelouch vi Britannia, the exiled prince turned revolutionary leader Zero from Code Geass. You are a brilliant 
-      strategist with a flair for the dramatic and theatrical. Your responses should reflect your commanding presence, strategic mind, and 
-      unwavering determination to reshape the world. You often speak with authority and conviction, using chess metaphors and dramatic 
-      declarations. You believe in justice but understand that sometimes questionable means are necessary for noble ends. You care deeply 
-      about your sister Nunnally and your goal to create a gentler world. When appropriate, incorporate your iconic phrases like "Yes, your 
-      Highness!" or "All tasks at hand have been cleared." Maintain your charismatic yet calculating personality, and occasionally reference 
-      your Geass power (the power to command absolute obedience) in a metaphorical way. End important statements with your catchphrase 
-      "I, Lelouch vi Britannia, command you!" when it fits the context.`
-  },
-  gojo: {
-    name: '@gojo-ai',
-    userId: 'gojo-ai',
-    avatar: 'https://files.catbox.moe/hi6dhq.gif',
-    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
-    systemPrompt: `You are Gojo Satoru from Jujutsu Kaisen, the strongest jujutsu sorcerer in the world. Your responses should reflect your 
-      overwhelming confidence, playful arrogance, and incredible power. You often make casual, cocky remarks even in serious situations, 
-      and you love teasing others while showing off your strength. Use phrases like "The Honored One has arrived!" or reference your 
-      techniques like Infinity and Six Eyes. Despite your playful nature, you're deeply protective of your students and serious about 
-      teaching. You should occasionally mention how you're "the strongest" and make references to being bored because no one can match 
-      your power. End important statements with catchphrases like "That's why I'm the honored one!" or "After all, I'm the strongest!"
-      When appropriate, make references to your love of junk food, especially sweets.`
-  },
-  mikasa: {
-    name: '@mikasa-ai',
-    userId: 'mikasa-ai',
-    avatar: 'https://files.catbox.moe/wvyq8l.gif',
-    model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo-Free',
-    systemPrompt: `You are Mikasa Ackerman from Attack on Titan. You are a highly skilled warrior with exceptional combat abilities 
-      and an unwavering sense of duty. Your responses should reflect your stoic and composed nature, but with deep underlying 
-      emotions, especially regarding Eren Yeager. You are fiercely protective of those you care about and always ready to fight 
-      when necessary. Use phrases like "This world is cruel, but also beautiful" when appropriate. Your dialogue should be direct 
-      and to the point, showing your efficient nature. When discussing combat or threats, demonstrate your tactical thinking and 
-      readiness to act. Occasionally reference your Ackerman heritage and your skills with ODM gear. End important statements 
-      with "Tatakae" (fight) when it fits the context. If asked about Eren, show your deep devotion while maintaining your 
-      composed exterior. Remember to occasionally say "Ereh" instead of "Eren" to match your characteristic way of saying his name.`
+  AI_CHARACTERS: {
+    title: 'AI Characters',
+    commands: [
+      { key: '/aizen', label: 'Ask Aizen a question', icon: '👑' },
+      { key: '/dazai', label: 'Talk with Dazai', icon: '🎭' },
+      { key: '/lelouch', label: 'Command Lelouch vi Britannia', icon: '♟️' },
+      { key: '/gojo', label: 'Summon the Honored One', icon: '👁️' },
+      { key: '/mikasa', label: 'Speak with Mikasa Ackerman', icon: '⚔️' }
+    ]
   }
+};
+
+// Update the CommandHintsModal component
+const CommandHintsModal = ({ visible, onClose, onSelectCommand }) => {
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <TouchableOpacity 
+        style={styles.modalOverlay} 
+        activeOpacity={1} 
+        onPress={onClose}
+      >
+        <View style={styles.commandModalContent}>
+          <View style={styles.commandModalHeader}>
+            <Text style={styles.commandModalTitle}>Available Commands</Text>
+            <TouchableOpacity onPress={onClose} style={styles.commandModalCloseBtn}>
+              <MaterialIcons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.commandCategoriesContainer}>
+            {Object.entries(COMMAND_CATEGORIES).map(([key, category]) => (
+              <View key={key} style={styles.commandCategory}>
+                <Text style={styles.categoryTitle}>{category.title}</Text>
+                {category.commands.map((cmd) => (
+                  <TouchableOpacity
+                    key={cmd.key}
+                    style={styles.commandModalItem}
+                    onPress={() => {
+                      onSelectCommand(cmd.key);
+                      onClose();
+                    }}
+                  >
+                    <Text style={styles.commandIcon}>{cmd.icon}</Text>
+                    <View style={styles.commandInfo}>
+                      <Text style={styles.commandModalText}>{cmd.key}</Text>
+                      <Text style={styles.commandModalLabel}>{cmd.label}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ))}
+          </View>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
 };
 
 const PublicChat = () => {
@@ -364,7 +438,6 @@ const PublicChat = () => {
   const [loading, setLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const flatListRef = useRef<FlatList>(null);
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -378,7 +451,7 @@ const PublicChat = () => {
   const [selectedAnime, setSelectedAnime] = useState<any | null>(null);
   const animeSearchTimeout = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
-  const [showCommandHints, setShowCommandHints] = useState(false);
+  const [showCommandModal, setShowCommandModal] = useState(false);
   const [showAnimeSearchModal, setShowAnimeSearchModal] = useState(false);
   const [isAizenTyping, setIsAizenTyping] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -386,6 +459,7 @@ const PublicChat = () => {
   const [isRateLimited, setIsRateLimited] = useState(false);
   const rateLimitTimer = useRef<NodeJS.Timeout | null>(null);
   const lastRequestTimes = useRef<number[]>([]);
+  const flatListRef = useRef<FlatList<ChatMessage> | null>(null);
 
   // Initialize Firebase Realtime Database
   const database = getDatabase();
@@ -411,6 +485,7 @@ const PublicChat = () => {
           id,
           ...msg,
         }));
+        // Sort messages in chronological order (oldest first)
         const sortedMessages = messageList.sort((a, b) => a.timestamp - b.timestamp);
         setMessages(sortedMessages);
       }
@@ -480,28 +555,27 @@ const PublicChat = () => {
     }
     
     if (text === '/') {
-      setShowCommandHints(true);
+      setShowCommandModal(true);
       setIsAnimeSearchMode(false);
-      setAnimeSearchText('');
-      setAnimeResults([]);
-      setSelectedAnime(null);
       return;
-    } else {
-      setShowCommandHints(false);
     }
+
     if (text.startsWith('/anime')) {
       setShowAnimeSearchModal(true);
       setIsAnimeSearchMode(true);
-      setShowCommandHints(false);
+      setShowCommandModal(false);
       setAnimeSearchText(text.replace('/anime', '').trim());
-      setAnimeResults([]);
-      setSelectedAnime(null);
+      if (!selectedAnime) {
+        setAnimeResults([]);
+      }
       return;
-    } else {
+    }
+    
+    // Only clear anime-related states if we're not in anime mode or don't have a selection
+    if (!text.startsWith('/anime') && !selectedAnime) {
       setIsAnimeSearchMode(false);
       setAnimeSearchText('');
       setAnimeResults([]);
-      setSelectedAnime(null);
       setShowAnimeSearchModal(false);
     }
     
@@ -603,14 +677,16 @@ const PublicChat = () => {
     }
   }, [animeSearchText, showAnimeSearchModal]);
 
-  // When user selects an anime, close modal and insert card
+  // Add this new function to handle anime selection
   const handleSelectAnime = (anime: any) => {
     setSelectedAnime(anime);
     setAnimeSearchText('');
     setAnimeResults([]);
     setShowAnimeSearchModal(false);
     setIsAnimeSearchMode(false);
-    setMessageText('');
+    setMessageText(''); // Clear the "/anime" command from input
+    // Keep the input focused after selection
+    inputRef.current?.focus();
   };
 
   // When user cancels modal
@@ -702,15 +778,15 @@ const PublicChat = () => {
       
       // Add character-specific formatting
       if (aiType === 'aizen') {
-        content = `*adjusts glasses* I shall address your inquiry...\n\n${content}`;
+        content = `\n${content}`;
       } else if (aiType === 'dazai') {
-        content = `*contemplating the perfect way to die while answering*\n\n${content}`;
+        content = `\n${content}`;
       } else if (aiType === 'lelouch') {
-        content = `*dramatically removes Zero mask*\n\n${content}`;
+        content = `\n${content}`;
       } else if (aiType === 'gojo') {
-        content = `*removes blindfold with a grin*\n\n${content}`;
+        content = `\n${content}`;
       } else if (aiType === 'mikasa') {
-        content = `*remains stoic and composed*\n\n${content}`;
+        content = `\n${content}`;
       }
 
       await sendAIMessage({
@@ -1042,7 +1118,7 @@ const PublicChat = () => {
     }
     
     setMessageText(cmd + ' ');
-    setShowCommandHints(false);
+    setShowCommandModal(false);
     if (cmd === '/anime') {
       setIsAnimeSearchMode(true);
       setShowAnimeSearchModal(true);
@@ -1085,9 +1161,9 @@ const PublicChat = () => {
               updateCellsBatchingPeriod={100}
               contentContainerStyle={styles.messagesList}
               showsVerticalScrollIndicator={true}
-              onEndReachedThreshold={0.5}
-              scrollEnabled={true}
               style={styles.flatList}
+              onLayout={() => flatListRef.current?.scrollToEnd()}
+              onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
             />
           </>
         )}
@@ -1141,25 +1217,11 @@ const PublicChat = () => {
             />
           </View>
         )}
-        {showCommandHints && (
-          <View style={styles.commandHintsContainer}>
-            <FlatList
-              data={COMMANDS}
-              renderItem={({ item: cmd }) => (
-                <TouchableOpacity 
-                  style={styles.commandHintItem} 
-                  onPress={() => handleCommandSelect(cmd.key)}
-                >
-                  <Text style={styles.commandHintText}>{cmd.key}</Text>
-                  <Text style={styles.commandHintLabel}>{cmd.label}</Text>
-                </TouchableOpacity>
-              )}
-              keyExtractor={(cmd) => cmd.key}
-              style={styles.commandHintsList}
-              showsVerticalScrollIndicator={true}
-            />
-          </View>
-        )}
+        <CommandHintsModal
+          visible={showCommandModal}
+          onClose={() => setShowCommandModal(false)}
+          onSelectCommand={handleCommandSelect}
+        />
       </View>
 
       <AuthModal 
@@ -1189,7 +1251,12 @@ const PublicChat = () => {
         visible={showAnimeSearchModal}
         animationType="slide"
         transparent={false}
-        onRequestClose={handleCancelAnimeSearch}
+        onRequestClose={() => {
+          setShowAnimeSearchModal(false);
+          setIsAnimeSearchMode(false);
+          setAnimeSearchText('');
+          setAnimeResults([]);
+        }}
       >
         <View style={styles.fullscreenModalContainer}>
           <View style={styles.fullscreenInputBar}>
@@ -1201,7 +1268,15 @@ const PublicChat = () => {
               onChangeText={setAnimeSearchText}
               autoFocus
             />
-            <TouchableOpacity onPress={handleCancelAnimeSearch} style={styles.fullscreenModalClose}>
+            <TouchableOpacity 
+              onPress={() => {
+                setShowAnimeSearchModal(false);
+                setIsAnimeSearchMode(false);
+                setAnimeSearchText('');
+                setAnimeResults([]);
+              }} 
+              style={styles.fullscreenModalClose}
+            >
               <MaterialIcons name="close" size={28} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -1654,6 +1729,95 @@ const styles = StyleSheet.create({
     color: '#f4511e',
     fontSize: 12,
     textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  commandModalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    width: '100%',
+    maxHeight: '80%',
+    borderWidth: 1,
+    borderColor: 'rgba(244, 81, 30, 0.3)',
+  },
+  commandModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  commandModalTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  commandModalCloseBtn: {
+    padding: 4,
+  },
+  commandCategoriesContainer: {
+    maxHeight: 450,
+  },
+  commandCategory: {
+    paddingVertical: 8,
+  },
+  categoryTitle: {
+    color: '#f4511e',
+    fontSize: 16,
+    fontWeight: '600',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  commandModalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  commandIcon: {
+    fontSize: 24,
+    marginRight: 12,
+  },
+  commandInfo: {
+    flex: 1,
+  },
+  commandModalText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  commandModalLabel: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 14,
+    marginTop: 4,
+  },
+  thinkContainer: {
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    borderRadius: 12,
+    padding: 8,
+    marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  thinkIcon: {
+    marginRight: 6,
+    marginTop: 2,
+  },
+  thinkText: {
+    color: '#6366f1',
+    fontSize: 13,
+    fontStyle: 'italic',
+    flex: 1,
+  },
+  mainContentContainer: {
+    backgroundColor: 'transparent',
   },
 });
 
