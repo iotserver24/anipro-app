@@ -29,6 +29,7 @@ import UserProfileModal from './UserProfileModal';
 import GifPicker from './GifPicker';
 import { API_BASE, ENDPOINTS } from '../constants/api';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Together AI API Configuration
 const TOGETHER_API_URL = 'https://api.together.xyz/v1/chat/completions';
@@ -549,6 +550,89 @@ const AIProfileModal: React.FC<AIProfileModalProps> = ({ visible, onClose, aiCon
   );
 };
 
+// Add WelcomeTutorialModal component before PublicChat component
+const WelcomeTutorialModal = ({ visible, onClose }: { visible: boolean; onClose: () => void }) => {
+  const [currentStep, setCurrentStep] = useState(0);
+  
+  const tutorialSteps = [
+    {
+      title: "Welcome to Public Chat! 👋",
+      description: "Let's quickly show you how to use the chat features.",
+      icon: "chat"
+    },
+    {
+      title: "Mention Users with @",
+      description: "Type @ to mention and notify other users. They'll get a notification when you mention them!",
+      icon: "alternate-email"
+    },
+    {
+      title: "Special Commands with /",
+      description: "Type / to see available commands like /anime to share anime, or chat with AI characters like /aizen!",
+      icon: "code"
+    }
+    // {
+    //   title: "Share GIFs and More!(upcoming featuree)",
+    //   description: "Use commands to share GIFs, anime cards, and interact with our AI characters in unique ways.",
+    //   icon: "gif"
+    // }
+  ];
+
+  const handleNext = () => {
+    if (currentStep < tutorialSteps.length - 1) {
+      setCurrentStep(currentStep + 1);
+    } else {
+      onClose();
+    }
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <View style={styles.tutorialModalOverlay}>
+        <View style={styles.tutorialModalContent}>
+          <MaterialIcons 
+            name={tutorialSteps[currentStep].icon as any} 
+            size={48} 
+            color="#f4511e"
+            style={styles.tutorialIcon}
+          />
+          <Text style={styles.tutorialTitle}>
+            {tutorialSteps[currentStep].title}
+          </Text>
+          <Text style={styles.tutorialDescription}>
+            {tutorialSteps[currentStep].description}
+          </Text>
+          <View style={styles.tutorialFooter}>
+            <View style={styles.tutorialDots}>
+              {tutorialSteps.map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.tutorialDot,
+                    currentStep === index && styles.tutorialDotActive
+                  ]}
+                />
+              ))}
+            </View>
+            <TouchableOpacity
+              style={styles.tutorialButton}
+              onPress={handleNext}
+            >
+              <Text style={styles.tutorialButtonText}>
+                {currentStep === tutorialSteps.length - 1 ? "Get Started" : "Next"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 const PublicChat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState('');
@@ -582,6 +666,7 @@ const PublicChat = () => {
   const lastContentOffset = useRef(0);
   const isScrollingRef = useRef(false);
   const [selectedAIConfig, setSelectedAIConfig] = useState<typeof AI_CONFIGS[keyof typeof AI_CONFIGS] | null>(null);
+  const [showWelcomeTutorial, setShowWelcomeTutorial] = useState(false);
 
   // Initialize Firebase Realtime Database
   const database = getDatabase();
@@ -1334,12 +1419,44 @@ const PublicChat = () => {
     }
   }, [messages.length]);
 
+  // Add effect to check if it's first time
+  useEffect(() => {
+    const checkFirstTimeUser = async () => {
+      try {
+        const hasSeenTutorial = await AsyncStorage.getItem('has_seen_chat_tutorial');
+        if (!hasSeenTutorial) {
+          setShowWelcomeTutorial(true);
+        }
+      } catch (error) {
+        console.error('Error checking tutorial status:', error);
+      }
+    };
+    
+    checkFirstTimeUser();
+  }, []);
+
+  // Add function to handle tutorial completion
+  const handleTutorialComplete = async () => {
+    try {
+      await AsyncStorage.setItem('has_seen_chat_tutorial', 'true');
+      setShowWelcomeTutorial(false);
+    } catch (error) {
+      console.error('Error saving tutorial status:', error);
+    }
+  };
+
   return (
     <KeyboardAvoidingView 
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
+      {/* Add WelcomeTutorialModal */}
+      <WelcomeTutorialModal
+        visible={showWelcomeTutorial}
+        onClose={handleTutorialComplete}
+      />
+      
       <Image 
         source={require('../assets/public-chat-bg.jpg')}
         style={styles.backgroundGif}
@@ -2209,6 +2326,70 @@ const styles = StyleSheet.create({
   },
   fullscreenMentionsList: {
     flex: 1,
+  },
+  tutorialModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  tutorialModalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+  },
+  tutorialIcon: {
+    marginBottom: 20,
+  },
+  tutorialTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  tutorialDescription: {
+    fontSize: 16,
+    color: '#ccc',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  tutorialFooter: {
+    width: '100%',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 20,
+  },
+  tutorialDots: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  tutorialDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#333',
+  },
+  tutorialDotActive: {
+    backgroundColor: '#f4511e',
+  },
+  tutorialButton: {
+    backgroundColor: '#f4511e',
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 8,
+    width: '100%',
+  },
+  tutorialButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
 
