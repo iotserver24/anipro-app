@@ -16,6 +16,8 @@ import { useGlobalStore } from '../store/globalStore';
 import { MaterialIcons } from '@expo/vector-icons';
 import { getDoc, doc } from 'firebase/firestore';
 import { getAvatarById, DEFAULT_AVATARS } from '../constants/avatars';
+import { Tabs } from 'expo-router';
+import { NativeStackNavigationOptions } from '@react-navigation/native-stack';
 // These imports are commented out because we're removing the auth button from the header
 // import { useGlobalStore } from '../store/globalStore';
 // import AuthButton from '../components/AuthButton';
@@ -472,6 +474,14 @@ export default function RootLayout() {
               title: 'Profile',
               headerShown: true,
             }}
+          />
+          <Stack.Screen
+            name="mentions"
+            options={{
+              title: 'Mentions',
+              headerShown: true,
+              headerRight: () => <HeaderRight />,
+            } as NativeStackNavigationOptions}
           />
         </Stack>
         {/* Position the bottom tab bar with absolute positioning outside the Stack */}

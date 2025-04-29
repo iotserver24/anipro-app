@@ -773,20 +773,19 @@ const PublicChat = () => {
       if (!currentUser) return;
 
       const notificationsRef = collection(db, 'notifications');
-      const notification: Notification = {
+      const notification = {
         type: 'mention',
         messageId,
         fromUserId: currentUser.uid,
         fromUsername: currentUser.displayName || 'user',
+        userId: mentionedUserId,  // The user being mentioned
         content: messageText,
         timestamp: serverTimestamp(),
         read: false
       };
 
-      await addDoc(notificationsRef, {
-        userId: mentionedUserId,
-        ...notification
-      });
+      // Create a new document with auto-generated ID
+      await addDoc(notificationsRef, notification);
 
     } catch (error) {
       console.error('Error sending mention notification:', error);

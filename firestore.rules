@@ -43,6 +43,28 @@ service cloud.firestore {
       );
     }
 
+    // Notifications collection
+    match /notifications/{notificationId} {
+      // Allow reading notifications if:
+      // 1. User is authenticated
+      // 2. Notification is addressed to them (userId field matches)
+      allow read: if request.auth != null && 
+                   (resource.data.userId == request.auth.uid);
+      
+      // Allow creating notifications if:
+      // 1. User is authenticated and verified
+      // 2. They are the sender (fromUserId matches their uid)
+      // 3. Required fields are present
+      allow create: if request.auth != null && 
+                     request.resource.data.fromUserId == request.auth.uid &&
+                     request.resource.data.keys().hasAll(['type', 'fromUserId', 'fromUsername', 'userId', 'content', 'timestamp']);
+      
+      // Allow updating only the read status
+      allow update: if request.auth != null && 
+                     resource.data.userId == request.auth.uid &&
+                     request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+    }
+
     match /users/{userId} {
       // Allow reading all user documents for username checks
       allow read: if true;

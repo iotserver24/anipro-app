@@ -1077,6 +1077,16 @@ Architecture: ${deviceInfo.deviceArchitecture}
             
             <TouchableOpacity 
               style={styles.supportButton}
+              onPress={() => router.push('/mentions')}
+            >
+              <MaterialIcons name="alternate-email" size={24} color="#fff" style={styles.buttonIcon} />
+              <Text style={styles.supportButtonText}>Mentions</Text>
+            </TouchableOpacity>
+            
+            <SectionDivider />
+            
+            <TouchableOpacity 
+              style={styles.supportButton}
               onPress={() => setIsFeedbackModalVisible(true)}
             >
               <MaterialIcons name="feedback" size={24} color="#fff" style={styles.buttonIcon} />
