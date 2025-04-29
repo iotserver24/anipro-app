@@ -185,7 +185,6 @@ const renderMessageContent = (
     return (
       <View>
         <View style={styles.thinkContainer}>
-          <MaterialIcons name="psychology" size={16} color="#6366f1" style={styles.thinkIcon} />
           <Text style={styles.thinkText}>{thinkContent}</Text>
         </View>
         {mainContent && (
@@ -2380,6 +2379,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  thinkContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    borderRadius: 8,
+    padding: 8,
+    marginBottom: 8,
+  },
+  mainContentContainer: {
+    marginTop: 8,
+  },
+  thinkText: {
+    color: '#6b7280',
+    fontStyle: 'italic',
+    fontSize: 14,
   },
 });
 
