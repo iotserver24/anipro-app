@@ -662,12 +662,11 @@ const PublicChat = () => {
   const lastRequestTimes = useRef<number[]>([]);
   const flatListRef = useRef<FlatList<ChatMessage> | null>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
+  const [isFirstLoad, setIsFirstLoad] = useState(true);
   const lastContentOffset = useRef(0);
   const isScrollingRef = useRef(false);
   const [selectedAIConfig, setSelectedAIConfig] = useState<typeof AI_CONFIGS[keyof typeof AI_CONFIGS] | null>(null);
   const [showWelcomeTutorial, setShowWelcomeTutorial] = useState(false);
-  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   // Initialize Firebase Realtime Database
   const database = getDatabase();
@@ -678,18 +677,8 @@ const PublicChat = () => {
     if (flatListRef.current && messages.length > 0) {
       flatListRef.current.scrollToEnd({ animated: true });
       setShowScrollButton(false);
-      setIsAutoScrollEnabled(true);
     }
   }, [messages.length]);
-
-  // Update database URL to correct region
-  useEffect(() => {
-    const dbUrl = 'https://anisurge-11808-default-rtdb.asia-southeast1.firebasedatabase.app';
-    const app = database.app;
-    if (app.options.databaseURL !== dbUrl) {
-      app.options.databaseURL = dbUrl;
-    }
-  }, []);
 
   useEffect(() => {
     // Subscribe to last 50 messages - using orderByChild with negativeTimestamp
@@ -712,11 +701,11 @@ const PublicChat = () => {
         const sortedMessages = messageList.sort((a, b) => a.timestamp - b.timestamp);
         setMessages(sortedMessages);
         
-        // Scroll to bottom on initial load or if auto-scroll is enabled
-        if (!initialLoadComplete || (isAutoScrollEnabled && !isScrollingRef.current)) {
+        // Only scroll to bottom on first load
+        if (isFirstLoad) {
           setTimeout(() => {
             scrollToBottom();
-            setInitialLoadComplete(true);
+            setIsFirstLoad(false);
           }, 100);
         }
       }
@@ -727,7 +716,7 @@ const PublicChat = () => {
       // Cleanup subscription
       off(messagesRef);
     };
-  }, [scrollToBottom, isAutoScrollEnabled, initialLoadComplete]);
+  }, [scrollToBottom, isFirstLoad]);
 
   // Add handling for shared anime from route params
   useEffect(() => {
@@ -1414,8 +1403,7 @@ const PublicChat = () => {
     const scrollViewHeight = event.nativeEvent.layoutMeasurement.height;
     const isScrolledToBottom = contentHeight - currentOffset - scrollViewHeight < 20;
     
-    // Update auto-scroll state based on user's scroll position
-    setIsAutoScrollEnabled(isScrolledToBottom);
+    // Only show/hide scroll button based on position
     setShowScrollButton(!isScrolledToBottom);
     
     lastContentOffset.current = currentOffset;
