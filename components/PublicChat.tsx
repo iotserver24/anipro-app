@@ -490,6 +490,65 @@ const generateReverseOrderKey = () => {
   return reverseTimestamp.toString(36).padStart(10, '0');
 };
 
+// Update AIProfileModalProps interface
+interface AIProfileModalProps {
+  visible: boolean;
+  onClose: () => void;
+  aiConfig: {
+    name: string;
+    avatar: string;
+    systemPrompt: string;
+    userId: string;
+    model: string;
+  };
+}
+
+// Update AIProfileModal component
+const AIProfileModal: React.FC<AIProfileModalProps> = ({ visible, onClose, aiConfig }) => {
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => {}}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.aiModalContent}>
+          <View style={styles.aiModalHeader}>
+            <Text style={styles.aiModalTitle}>{aiConfig.name}</Text>
+            <TouchableOpacity onPress={onClose} style={styles.commandModalCloseBtn}>
+              <MaterialIcons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.aiModalBody}>
+            <View style={styles.aiAvatarContainer}>
+              <Image source={{ uri: aiConfig.avatar }} style={styles.aiModalAvatar} />
+              <View style={styles.aiModalBadge}>
+                <MaterialIcons name="smart-toy" size={16} color="#fff" />
+                <Text style={styles.aiModalBadgeText}>AI Character</Text>
+              </View>
+            </View>
+            <View style={styles.aiModalInfoSection}>
+              <Text style={styles.aiModalInfoTitle}>Character ID</Text>
+              <Text style={styles.aiModalInfoText}>{aiConfig.userId}</Text>
+            </View>
+            <View style={styles.aiModalInfoSection}>
+              <Text style={styles.aiModalInfoTitle}>Personality</Text>
+              <Text style={styles.aiModalDescription}>{aiConfig.systemPrompt}</Text>
+            </View>
+            <View style={styles.aiModalTip}>
+              <MaterialIcons name="info" size={20} color="#f4511e" />
+              <Text style={styles.aiModalTipText}>
+                Talk to this character using the command: {aiConfig.userId.replace('-ai', '')}
+              </Text>
+            </View>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 const PublicChat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState('');
@@ -522,6 +581,7 @@ const PublicChat = () => {
   const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
   const lastContentOffset = useRef(0);
   const isScrollingRef = useRef(false);
+  const [selectedAIConfig, setSelectedAIConfig] = useState<typeof AI_CONFIGS[keyof typeof AI_CONFIGS] | null>(null);
 
   // Initialize Firebase Realtime Database
   const database = getDatabase();
@@ -1131,8 +1191,18 @@ const PublicChat = () => {
     );
   };
 
+  // Update handleUserPress to handle AI profiles
   const handleUserPress = useCallback((userId: string) => {
-    setSelectedUserId(userId);
+    if (userId.endsWith('-ai')) {
+      // Get the AI type from userId (e.g., 'aizen-ai' -> 'aizen')
+      const aiType = userId.replace('-ai', '') as keyof typeof AI_CONFIGS;
+      const aiConfig = AI_CONFIGS[aiType];
+      if (aiConfig) {
+        setSelectedAIConfig(aiConfig);
+      }
+    } else {
+      setSelectedUserId(userId);
+    }
   }, []);
 
   const handleMentionPress = useCallback(async (username: string) => {
@@ -1373,6 +1443,14 @@ const PublicChat = () => {
           visible={Boolean(selectedUserId)}
           onClose={() => setSelectedUserId(null)}
           userId={selectedUserId}
+        />
+      )}
+
+      {selectedAIConfig && (
+        <AIProfileModal
+          visible={true}
+          onClose={() => setSelectedAIConfig(null)}
+          aiConfig={selectedAIConfig}
         />
       )}
 
@@ -1862,7 +1940,8 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
     padding: 16,
   },
   commandModalContent: {
@@ -1931,26 +2010,93 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 4,
   },
-  thinkContainer: {
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
-    borderRadius: 12,
-    padding: 8,
-    marginBottom: 8,
+  aiModalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '80%',
+    borderWidth: 1,
+    borderColor: 'rgba(244, 81, 30, 0.3)',
+    alignSelf: 'center',
+  },
+  aiModalHeader: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: 'rgba(244, 81, 30, 0.1)',
   },
-  thinkIcon: {
-    marginRight: 6,
-    marginTop: 2,
+  aiModalTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
-  thinkText: {
-    color: '#6366f1',
-    fontSize: 13,
-    fontStyle: 'italic',
+  aiModalBody: {
+    padding: 16,
+  },
+  aiAvatarContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+    position: 'relative',
+  },
+  aiModalAvatar: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    borderWidth: 3,
+    borderColor: '#f4511e',
+  },
+  aiModalBadge: {
+    position: 'absolute',
+    bottom: -10,
+    backgroundColor: '#f4511e',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  aiModalBadgeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  aiModalInfoSection: {
+    marginBottom: 20,
+  },
+  aiModalInfoTitle: {
+    color: '#f4511e',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  aiModalInfoText: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 14,
+  },
+  aiModalDescription: {
+    color: '#fff',
+    fontSize: 15,
+    lineHeight: 22,
+    textAlign: 'justify',
+  },
+  aiModalTip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(244, 81, 30, 0.1)',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 16,
+    gap: 8,
+  },
+  aiModalTipText: {
+    color: '#fff',
+    fontSize: 14,
     flex: 1,
-  },
-  mainContentContainer: {
-    backgroundColor: 'transparent',
   },
   scrollToBottomButton: {
     position: 'absolute',
