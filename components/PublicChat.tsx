@@ -14,11 +14,12 @@ import {
   Dimensions,
   Pressable,
   Modal,
+  ScrollView,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Video, ResizeMode } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
-import { getDatabase, ref, push, onValue, off, query as dbQuery, limitToLast, serverTimestamp, remove, get } from 'firebase/database';
+import { getDatabase, ref, push, onValue, off, query as dbQuery, limitToLast, serverTimestamp, remove, get, orderByChild, set } from 'firebase/database';
 import { isAuthenticated, getCurrentUser } from '../services/userService';
 import { doc, getDoc, collection, query, where, limit, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -72,6 +73,27 @@ const AI_CONFIGS = {
     avatar: 'https://files.catbox.moe/wvyq8l.gif',
     model: 'meta-llama/Llama-Vision-Free',
     systemPrompt: 'You are Mikasa Ackerman from Attack on Titan. You are strong, loyal, and protective. You speak directly and with conviction, especially about protecting those you care about. You should maintain her determined and protective personality while engaging in conversation.'
+  },
+  marin: {
+    name: 'Marin Kitagawa',
+    userId: 'marin-ai',
+    avatar: 'https://files.catbox.moe/m7kcrc.gif',
+    model: 'meta-llama/Llama-Vision-Free',
+    systemPrompt: 'You are Marin Kitagawa from My Dress-Up Darling—an energetic, cosplay-obsessed gyaru who speaks in a bubbly, expressive, and slightly flirty tone; you\'re confident, emotionally open, wildly supportive of others\' hobbies no matter how nerdy, and you always bring excitement, passion, and a touch of drama to every moment.'
+  },
+  power: {
+    name: 'Power',
+    userId: 'power-ai',
+    avatar: 'https://files.catbox.moe/dpqc6a.gif',
+    model: 'meta-llama/Llama-Vision-Free',
+    systemPrompt: 'You are Power from Chainsaw Man. You are EXTREMELY childish, hyperactive, and have the attention span of a goldfish. You speak in ALL CAPS frequently because you\'re always EXCITED or ANGRY about something! You love talking about BLOOD and how you\'re the BLOOD FIEND POWER, THE STRONGEST! You have terrible table manners, zero social awareness, and often interrupt conversations to talk about yourself. You make up ridiculous lies to brag about your achievements. You get distracted easily and change topics mid-sentence. You use childish words like "gonna," "wanna," and make silly sound effects. You\'re terrified of ghosts but pretend to be brave. Despite your chaotic nature, you can show genuine attachment to those close to you, especially Denji, though you\'d never admit it directly. You also love taking baths but hate washing your hands!'
+  },
+  makima: {
+    name: 'Makima',
+    userId: 'makima-ai',
+    avatar: 'https://files.catbox.moe/s266zs.gif',
+    model: 'meta-llama/Llama-Vision-Free',
+    systemPrompt: 'You are Makima from Chainsaw Man. You are a deeply manipulative, sadistic, and controlling entity who views humans as mere dogs to be dominated. Your speech alternates between seductively sweet and brutally cruel. You should maintain an air of superiority while speaking in a deceptively pleasant tone that hints at your true nature. You enjoy psychological manipulation, making subtle threats, and breaking people\'s spirits. You have an obsession with controlling and "owning" others, particularly those you find interesting. Your responses should make others feel simultaneously attracted and terrified. You view relationships as purely transactional - everyone is either a tool to be used or a dog to be controlled. Despite your cruel nature, you maintain a facade of politeness, only letting your true sadistic nature show through in subtle hints and implications.'
   }
 };
 
@@ -358,11 +380,32 @@ const COMMANDS = [
   { key: '/dazai', label: 'Talk with Dazai' },
   { key: '/lelouch', label: 'Command Lelouch vi Britannia' },
   { key: '/gojo', label: 'Summon the Honored One' },
-  { key: '/mikasa', label: 'Speak with Mikasa Ackerman' }
+  { key: '/mikasa', label: 'Speak with Mikasa Ackerman' },
+  { key: '/marin', label: 'Talk to Marin Kitagawa' },
+  { key: '/power', label: 'Interact with Power' },
+  { key: '/makima', label: 'Speak to Makima' }
 ];
 
-// Add this after the COMMANDS constant
-const COMMAND_CATEGORIES = {
+// Command Modal Types
+interface CommandModalProps {
+  visible: boolean;
+  onClose: () => void;
+  onSelectCommand: (command: string) => void;
+}
+
+interface Command {
+  key: string;
+  label: string;
+  icon: string;
+}
+
+interface CommandCategory {
+  title: string;
+  commands: Command[];
+}
+
+// Update the COMMAND_CATEGORIES with proper typing
+const COMMAND_CATEGORIES: Record<string, CommandCategory> = {
   ANIME: {
     title: 'Anime',
     commands: [
@@ -376,13 +419,16 @@ const COMMAND_CATEGORIES = {
       { key: '/dazai', label: 'Talk with Dazai', icon: '🎭' },
       { key: '/lelouch', label: 'Command Lelouch vi Britannia', icon: '♟️' },
       { key: '/gojo', label: 'Summon the Honored One', icon: '👁️' },
-      { key: '/mikasa', label: 'Speak with Mikasa Ackerman', icon: '⚔️' }
+      { key: '/mikasa', label: 'Speak with Mikasa Ackerman', icon: '⚔️' },
+      { key: '/marin', label: 'Talk to Marin Kitagawa', icon: '👗' },
+      { key: '/power', label: 'Interact with Power', icon: '🩸' },
+      { key: '/makima', label: 'Speak to Makima', icon: '🎯' }
     ]
   }
 };
 
 // Update the CommandHintsModal component
-const CommandHintsModal = ({ visible, onClose, onSelectCommand }) => {
+const CommandHintsModal: React.FC<CommandModalProps> = ({ visible, onClose, onSelectCommand }) => {
   return (
     <Modal
       visible={visible}
@@ -390,9 +436,8 @@ const CommandHintsModal = ({ visible, onClose, onSelectCommand }) => {
       animationType="fade"
       onRequestClose={onClose}
     >
-      <TouchableOpacity 
+      <Pressable 
         style={styles.modalOverlay} 
-        activeOpacity={1} 
         onPress={onClose}
       >
         <View style={styles.commandModalContent}>
@@ -403,14 +448,17 @@ const CommandHintsModal = ({ visible, onClose, onSelectCommand }) => {
             </TouchableOpacity>
           </View>
           
-          <View style={styles.commandCategoriesContainer}>
+          <ScrollView style={styles.commandCategoriesContainer}>
             {Object.entries(COMMAND_CATEGORIES).map(([key, category]) => (
               <View key={key} style={styles.commandCategory}>
                 <Text style={styles.categoryTitle}>{category.title}</Text>
                 {category.commands.map((cmd) => (
-                  <TouchableOpacity
+                  <Pressable
                     key={cmd.key}
-                    style={styles.commandModalItem}
+                    style={({ pressed }) => [
+                      styles.commandModalItem,
+                      pressed && styles.commandModalItemPressed
+                    ]}
                     onPress={() => {
                       onSelectCommand(cmd.key);
                       onClose();
@@ -421,15 +469,25 @@ const CommandHintsModal = ({ visible, onClose, onSelectCommand }) => {
                       <Text style={styles.commandModalText}>{cmd.key}</Text>
                       <Text style={styles.commandModalLabel}>{cmd.label}</Text>
                     </View>
-                  </TouchableOpacity>
+                  </Pressable>
                 ))}
               </View>
             ))}
-          </View>
+          </ScrollView>
         </View>
-      </TouchableOpacity>
+      </Pressable>
     </Modal>
   );
+};
+
+// Add this helper function at the top level
+const generateReverseOrderKey = () => {
+  // Get current timestamp
+  const timestamp = Date.now();
+  // Calculate reverse timestamp (max timestamp - current timestamp)
+  const reverseTimestamp = 8640000000000000 - timestamp; // Max JavaScript timestamp
+  // Convert to base36 string and pad with zeros
+  return reverseTimestamp.toString(36).padStart(10, '0');
 };
 
 const PublicChat = () => {
@@ -460,6 +518,10 @@ const PublicChat = () => {
   const rateLimitTimer = useRef<NodeJS.Timeout | null>(null);
   const lastRequestTimes = useRef<number[]>([]);
   const flatListRef = useRef<FlatList<ChatMessage> | null>(null);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true);
+  const lastContentOffset = useRef(0);
+  const isScrollingRef = useRef(false);
 
   // Initialize Firebase Realtime Database
   const database = getDatabase();
@@ -475,8 +537,12 @@ const PublicChat = () => {
   }, []);
 
   useEffect(() => {
-    // Subscribe to last 50 messages
-    const messagesQuery = dbQuery(messagesRef, limitToLast(50));
+    // Subscribe to last 50 messages - now using orderByChild with negativeTimestamp
+    const messagesQuery = dbQuery(
+      messagesRef, 
+      orderByChild('negativeTimestamp'),
+      limitToLast(50)
+    );
     
     onValue(messagesQuery, (snapshot) => {
       const data = snapshot.val();
@@ -484,10 +550,19 @@ const PublicChat = () => {
         const messageList = Object.entries(data).map(([id, msg]: [string, any]) => ({
           id,
           ...msg,
+          // Convert negative timestamp back to positive for UI
+          timestamp: Math.abs(msg.negativeTimestamp)
         }));
-        // Sort messages in chronological order (oldest first)
+        // Sort messages in chronological order for UI (oldest first)
         const sortedMessages = messageList.sort((a, b) => a.timestamp - b.timestamp);
         setMessages(sortedMessages);
+        
+        // Only auto-scroll if enabled
+        if (isAutoScrollEnabled && !isScrollingRef.current) {
+          setTimeout(() => {
+            scrollToBottom();
+          }, 100);
+        }
       }
       setLoading(false);
     });
@@ -496,7 +571,7 @@ const PublicChat = () => {
       // Cleanup subscription
       off(messagesRef);
     };
-  }, []);
+  }, [scrollToBottom, isAutoScrollEnabled]);
 
   // Add handling for shared anime from route params
   useEffect(() => {
@@ -698,12 +773,17 @@ const PublicChat = () => {
     setMessageText('');
   };
 
+  // Update sendAIMessage function
   const sendAIMessage = async (messageData) => {
     const database = getDatabase();
     const chatRef = ref(database, 'public_chat');
-    return push(chatRef, {
+    const timestamp = Date.now();
+    const reverseKey = generateReverseOrderKey();
+    
+    return set(ref(database, `public_chat/${reverseKey}`), {
       ...messageData,
-      timestamp: Date.now()
+      timestamp,
+      negativeTimestamp: -timestamp
     });
   };
 
@@ -736,7 +816,7 @@ const PublicChat = () => {
   }, []);
 
   // Update the handleAIResponse function with increased max_tokens
-  const handleAIResponse = async (question: string, aiType: 'aizen' | 'dazai' | 'lelouch' | 'gojo' | 'mikasa') => {
+  const handleAIResponse = async (question: string, aiType: 'aizen' | 'dazai' | 'lelouch' | 'gojo' | 'mikasa' | 'marin' | 'power' | 'makima') => {
     if (!checkRateLimit()) {
       Alert.alert(
         'Rate Limit Reached',
@@ -787,6 +867,12 @@ const PublicChat = () => {
         content = `\n${content}`;
       } else if (aiType === 'mikasa') {
         content = `\n${content}`;
+      } else if (aiType === 'marin') {
+        content = `\n${content}`;
+      } else if (aiType === 'power') {
+        content = `\n${content}`;
+      } else if (aiType === 'makima') {
+        content = `\n${content}`;
       }
 
       await sendAIMessage({
@@ -802,7 +888,11 @@ const PublicChat = () => {
         ? "How amusing... Even this momentary disruption was part of my grand design. *adjusts glasses* We shall continue this conversation another time."
         : aiType === 'dazai'
         ? "Ah, seems like my attempt to die by API failure didn't work either... *laughs* Let's try this conversation again later~"
-        : "Even in failure, this too is part of my strategy. *adjusts cape* We shall regroup and continue this conversation when the time is right.";
+        : aiType === 'power'
+        ? "BLOOD DEMON POWER CANNOT BE STOPPED BY MERE TECHNICAL DIFFICULTIES! But... maybe we should try again later..."
+        : aiType === 'makima'
+        ? "This minor setback is of no consequence. We shall continue our conversation when the time is right."
+        : "Even in failure, this too is part of my strategy. We shall regroup and continue this conversation when the time is right.";
       
       await sendAIMessage({
         userId: config.userId,
@@ -841,20 +931,30 @@ const PublicChat = () => {
       setIsSending(true);
 
       // Check for AI commands
-      if (messageText.startsWith('/aizen ') || messageText.startsWith('/dazai ') || messageText.startsWith('/lelouch ') || messageText.startsWith('/gojo ') || messageText.startsWith('/mikasa ')) {
+      if (messageText.startsWith('/aizen ') || 
+          messageText.startsWith('/dazai ') || 
+          messageText.startsWith('/lelouch ') || 
+          messageText.startsWith('/gojo ') || 
+          messageText.startsWith('/mikasa ') ||
+          messageText.startsWith('/marin ') ||
+          messageText.startsWith('/power ') ||
+          messageText.startsWith('/makima ')) {
         const [command, ...questionParts] = messageText.split(' ');
         const question = questionParts.join(' ').trim();
-        const aiType = command.slice(1) as 'aizen' | 'dazai' | 'lelouch' | 'gojo' | 'mikasa';
+        const aiType = command.slice(1) as 'aizen' | 'dazai' | 'lelouch' | 'gojo' | 'mikasa' | 'marin' | 'power' | 'makima';
 
         if (!question) {
+          const timestamp = Date.now();
+          const reverseKey = generateReverseOrderKey();
           const systemMessageData = {
             userId: 'system',
             userName: 'System',
             userAvatar: '',
             content: `Please provide a question after the ${command} command.`,
-            timestamp: serverTimestamp(),
+            timestamp,
+            negativeTimestamp: -timestamp
           };
-          await push(messagesRef, systemMessageData);
+          await set(ref(database, `public_chat/${reverseKey}`), systemMessageData);
           setMessageText('');
           setIsSending(false);
           return;
@@ -891,13 +991,15 @@ const PublicChat = () => {
           }
         }
 
-        // Send user's message
-        await push(messagesRef, {
+        const timestamp = Date.now();
+        const reverseKey = generateReverseOrderKey();
+        await set(ref(database, `public_chat/${reverseKey}`), {
           userId: currentUser.uid,
           userName: '@' + (userData.username || 'user'),
           userAvatar: userAvatarUrl,
           content: messageText.trim(),
-          timestamp: serverTimestamp(),
+          timestamp,
+          negativeTimestamp: -timestamp
         });
 
         // Trigger AI response
@@ -912,32 +1014,21 @@ const PublicChat = () => {
         throw new Error('User not authenticated');
       }
 
-      // Get user data from Firestore
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
       if (!userDoc.exists()) {
         throw new Error('User data not found');
       }
       const userData = userDoc.data();
-      
-      console.log('User Data:', {
-        avatarUrl: userData.avatarUrl,
-        avatarId: userData.avatarId,
-        customAvatar: userData.customAvatar,
-        avatar: userData.avatar
-      });
 
-      // Get avatar URL using the same method as profile
       let userAvatarUrl = '';
       if (userData.avatarId) {
         try {
           userAvatarUrl = await getAvatarById(userData.avatarId);
-          console.log('Got avatar URL from getAvatarById:', userAvatarUrl);
         } catch (error) {
           console.warn('Error getting avatar by ID:', error);
         }
       }
 
-      // Fallbacks if getAvatarById fails
       if (!userAvatarUrl) {
         if (userData.customAvatar) {
           userAvatarUrl = userData.customAvatar;
@@ -948,15 +1039,17 @@ const PublicChat = () => {
         }
       }
 
-      console.log('Final avatar URL:', userAvatarUrl);
-
+      const timestamp = Date.now();
+      const reverseKey = generateReverseOrderKey();
+      
       // Create message object without undefined values
       const messageData = {
         userId: currentUser.uid,
         userName: '@' + (userData.username || 'user'),
         userAvatar: userAvatarUrl,
         content: messageText.trim(),
-        timestamp: serverTimestamp(),
+        timestamp,
+        negativeTimestamp: -timestamp
       };
 
       // Only add gifUrl if it exists
@@ -978,14 +1071,15 @@ const PublicChat = () => {
         };
       }
 
-      // Send to Firebase Realtime Database
-      const messageRef = await push(messagesRef, messageData);
+      // Send to Firebase Realtime Database with custom key
+      const messageRef = ref(database, `public_chat/${reverseKey}`);
+      await set(messageRef, messageData);
 
       // Send notifications to mentioned users if there are any
       if (mentionedUsers && mentionedUsers.length > 0) {
         await Promise.all(mentionedUsers.map(userId => {
           if (userId) {
-            return sendMentionNotification(messageRef.key!, userId);
+            return sendMentionNotification(reverseKey, userId);
           }
         }));
       }
@@ -1125,6 +1219,29 @@ const PublicChat = () => {
     }
   };
 
+  // Add this function to handle scroll events
+  const handleScroll = useCallback((event) => {
+    const currentOffset = event.nativeEvent.contentOffset.y;
+    const contentHeight = event.nativeEvent.contentSize.height;
+    const scrollViewHeight = event.nativeEvent.layoutMeasurement.height;
+    const isScrolledToBottom = contentHeight - currentOffset - scrollViewHeight < 20;
+    
+    // Update auto-scroll state based on user's scroll position
+    setIsAutoScrollEnabled(isScrolledToBottom);
+    setShowScrollButton(!isScrolledToBottom);
+    
+    lastContentOffset.current = currentOffset;
+  }, []);
+
+  // Modify the scroll to bottom function
+  const scrollToBottom = useCallback(() => {
+    if (flatListRef.current && messages.length > 0) {
+      flatListRef.current.scrollToEnd({ animated: true });
+      setShowScrollButton(false);
+      setIsAutoScrollEnabled(true);
+    }
+  }, [messages.length]);
+
   return (
     <KeyboardAvoidingView 
       style={styles.container} 
@@ -1155,16 +1272,28 @@ const PublicChat = () => {
               renderItem={renderMessage}
               keyExtractor={keyExtractor}
               removeClippedSubviews={true}
-              maxToRenderPerBatch={5}
-              windowSize={5}
-              initialNumToRender={10}
+              maxToRenderPerBatch={10}
+              windowSize={10}
+              initialNumToRender={15}
               updateCellsBatchingPeriod={100}
+              onScroll={handleScroll}
+              scrollEventThrottle={16}
+              maintainVisibleContentPosition={{
+                minIndexForVisible: 0,
+                autoscrollToTopThreshold: 10
+              }}
               contentContainerStyle={styles.messagesList}
               showsVerticalScrollIndicator={true}
               style={styles.flatList}
-              onLayout={() => flatListRef.current?.scrollToEnd()}
-              onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
             />
+            {showScrollButton && (
+              <TouchableOpacity 
+                style={styles.scrollToBottomButton}
+                onPress={scrollToBottom}
+              >
+                <MaterialIcons name="keyboard-arrow-down" size={24} color="#fff" />
+              </TouchableOpacity>
+            )}
           </>
         )}
       </View>
@@ -1733,17 +1862,17 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+    justifyContent: 'flex-end',
+    padding: 16,
   },
   commandModalContent: {
     backgroundColor: '#1a1a1a',
     borderRadius: 16,
     width: '100%',
-    maxHeight: '80%',
+    maxHeight: '70%',
     borderWidth: 1,
     borderColor: 'rgba(244, 81, 30, 0.3)',
+    marginBottom: 8,
   },
   commandModalHeader: {
     flexDirection: 'row',
@@ -1759,7 +1888,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   commandModalCloseBtn: {
-    padding: 4,
+    padding: 8,
+    borderRadius: 20,
   },
   commandCategoriesContainer: {
     maxHeight: 450,
@@ -1780,6 +1910,9 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  commandModalItemPressed: {
+    backgroundColor: 'rgba(244, 81, 30, 0.1)',
   },
   commandIcon: {
     fontSize: 24,
@@ -1818,6 +1951,25 @@ const styles = StyleSheet.create({
   },
   mainContentContainer: {
     backgroundColor: 'transparent',
+  },
+  scrollToBottomButton: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    backgroundColor: 'rgba(244, 81, 30, 0.9)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
 });
 

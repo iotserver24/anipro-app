@@ -3,9 +3,9 @@
     "public_chat": {
       ".read": "auth != null",
       ".write": "auth != null || root.child('public_chat').child(newData.child('userId').val()).exists() || newData.child('userId').val().endsWith('-ai')",
-      ".indexOn": ["timestamp"],
+      ".indexOn": ["timestamp", "negativeTimestamp"],
       "$message_id": {
-        ".validate": "newData.hasChildren(['userId', 'userName', 'content', 'timestamp'])",
+        ".validate": "newData.hasChildren(['userId', 'userName', 'content', 'timestamp', 'negativeTimestamp'])",
         "userId": {
           ".validate": "newData.isString()"
         },
@@ -17,6 +17,9 @@
         },
         "timestamp": {
           ".validate": "newData.isNumber()"
+        },
+        "negativeTimestamp": {
+          ".validate": "newData.isNumber() && newData.val() === -newData.parent().child('timestamp').val()"
         },
         "$other": {
           ".validate": true
