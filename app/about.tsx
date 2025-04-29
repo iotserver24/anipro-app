@@ -1259,8 +1259,18 @@ Architecture: ${deviceInfo.deviceArchitecture}
               <InfoRow icon="email" label="Contact" value={APP_CONFIG.SUPPORT_EMAIL} isLink />
             </TouchableOpacity>
             <SectionDivider />
-            <TouchableOpacity onPress={() => openLink('https://www.buymeacoffee.com/R3AP3Redit')}>
+            <TouchableOpacity onPress={() => openLink('https://www.buymeacoffee.com/r3ap3redit')}>
               <InfoRow icon="favorite" label="Support Development(buy me a coffee)" value="Donate" isLink />
+            </TouchableOpacity>
+            <SectionDivider />
+            <TouchableOpacity onPress={() => openLink('https://www.buymeacoffee.com/r3ap3redit')}>
+              <View style={styles.buyMeCoffeeButton}>
+                <Image 
+                  source={{ uri: 'https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png' }}
+                  style={styles.buyMeCoffeeImage}
+                  resizeMode="contain"
+                />
+              </View>
             </TouchableOpacity>
           </View>
         </View>
@@ -1905,5 +1915,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     borderRadius: 12,
     padding: 4,
+  },
+  buyMeCoffeeButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    marginBottom: 5,
+  },
+  buyMeCoffeeImage: {
+    width: 217,
+    height: 60,
   },
 } as const); 
