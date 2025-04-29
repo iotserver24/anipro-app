@@ -557,8 +557,8 @@ const PublicChat = () => {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [showGifPicker, setShowGifPicker] = useState(false);
   const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
+  const [showMentionsModal, setShowMentionsModal] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
-  const [showMentions, setShowMentions] = useState(false);
   const [userSuggestions, setUserSuggestions] = useState<UserSuggestion[]>([]);
   const [mentionedUsers, setMentionedUsers] = useState<string[]>([]);
   const inputRef = useRef<TextInput>(null);
@@ -652,10 +652,21 @@ const PublicChat = () => {
   const fetchUserSuggestions = useCallback(async (searchText: string) => {
     try {
       const usersRef = collection(db, 'users');
-      const userQuery = query(
-        usersRef,
-        limit(50) // Increased limit to show more users
-      );
+      let userQuery;
+      
+      if (searchText.trim()) {
+        // Get all users and filter client-side for more flexible matching
+        userQuery = query(
+          usersRef,
+          limit(50)
+        );
+      } else {
+        // If no search text, get all users
+        userQuery = query(
+          usersRef,
+          limit(50)
+        );
+      }
 
       const querySnapshot = await getDocs(userQuery);
       const suggestions: UserSuggestion[] = [];
@@ -673,7 +684,18 @@ const PublicChat = () => {
       
       // Sort alphabetically by username
       suggestions.sort((a, b) => a.username.localeCompare(b.username));
-      setUserSuggestions(suggestions);
+      
+      // If there's search text, do client-side filtering for more flexible matching
+      if (searchText.trim()) {
+        const lowerSearchText = searchText.toLowerCase();
+        const filtered = suggestions.filter(user => 
+          user.username.toLowerCase().includes(lowerSearchText) ||
+          user.userId.toLowerCase().includes(lowerSearchText)
+        );
+        setUserSuggestions(filtered);
+      } else {
+        setUserSuggestions(suggestions);
+      }
     } catch (error) {
       console.error('Error fetching user suggestions:', error);
     }
@@ -684,7 +706,8 @@ const PublicChat = () => {
     setMessageText(text);
     
     if (text.endsWith('@')) {
-      setShowMentions(true);
+      setShowMentionsModal(true);
+      setMentionQuery('');
       fetchUserSuggestions('');
       return;
     }
@@ -721,13 +744,13 @@ const PublicChat = () => {
       
       if (!hasSpaceAfterAt) {
         setMentionQuery(query);
-        setShowMentions(true);
+        setShowMentionsModal(false);
         fetchUserSuggestions(query);
       } else {
-        setShowMentions(false);
+        setShowMentionsModal(false);
       }
     } else {
-      setShowMentions(false);
+      setShowMentionsModal(false);
     }
   };
 
@@ -736,7 +759,7 @@ const PublicChat = () => {
     const lastAtIndex = messageText.lastIndexOf('@');
     const newText = messageText.slice(0, lastAtIndex) + `@${user.username} `;
     setMessageText(newText);
-    setShowMentions(false);
+    setShowMentionsModal(false);
     setMentionedUsers([...mentionedUsers, user.userId]);
     inputRef.current?.focus();
   };
@@ -1404,17 +1427,6 @@ const PublicChat = () => {
             )}
           </TouchableOpacity>
         </View>
-        {showMentions && userSuggestions.length > 0 && (
-          <View style={styles.mentionsContainer}>
-            <FlatList
-              data={userSuggestions}
-              renderItem={renderMentionSuggestion}
-              keyExtractor={(item) => item.userId}
-              horizontal={false}
-              style={styles.mentionsList}
-            />
-          </View>
-        )}
         <CommandHintsModal
           visible={showCommandModal}
           onClose={() => setShowCommandModal(false)}
@@ -1496,6 +1508,63 @@ const PublicChat = () => {
               </TouchableOpacity>
             )}
             style={styles.fullscreenAnimeResultsList}
+          />
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showMentionsModal}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => {
+          setShowMentionsModal(false);
+          setMentionQuery('');
+        }}
+      >
+        <View style={styles.fullscreenModalContainer}>
+          <View style={styles.fullscreenInputBar}>
+            <TextInput
+              style={styles.fullscreenAnimeSearchInput}
+              placeholder="Search users..."
+              placeholderTextColor="#999"
+              value={mentionQuery}
+              onChangeText={(text) => {
+                setMentionQuery(text);
+                fetchUserSuggestions(text);
+              }}
+              autoFocus
+            />
+            <TouchableOpacity 
+              onPress={() => {
+                setShowMentionsModal(false);
+                setMentionQuery('');
+              }} 
+              style={styles.fullscreenModalClose}
+            >
+              <MaterialIcons name="close" size={28} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <FlatList
+            data={userSuggestions}
+            keyExtractor={(item) => item.userId}
+            renderItem={({ item }) => (
+              <TouchableOpacity 
+                style={styles.mentionResultItem}
+                onPress={() => {
+                  handleSelectMention(item);
+                  setShowMentionsModal(false);
+                }}
+              >
+                <Image 
+                  source={{ uri: item.avatarUrl }} 
+                  style={styles.mentionResultAvatar}
+                />
+                <View style={styles.mentionResultInfo}>
+                  <Text style={styles.mentionResultUsername}>@{item.username}</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+            style={styles.fullscreenMentionsList}
           />
         </View>
       </Modal>
@@ -2115,6 +2184,31 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+  },
+  mentionResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  mentionResultAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    marginRight: 16,
+    backgroundColor: '#333',
+  },
+  mentionResultInfo: {
+    flex: 1,
+  },
+  mentionResultUsername: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  fullscreenMentionsList: {
+    flex: 1,
   },
 });
 
