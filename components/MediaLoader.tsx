@@ -1,7 +1,8 @@
 import React, { useRef, useState } from 'react';
-import { View, Image, StyleSheet, Text, TouchableOpacity, Animated, ImageProps, ActivityIndicator } from 'react-native';
+import { View, Image, StyleSheet, Text, TouchableOpacity, Animated, ImageProps, ActivityIndicator, Dimensions } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import Video from 'react-native-video';
+import Video, { OnLoadData } from 'react-native-video';
+import Slider from '@react-native-community/slider';
 
 interface MediaLoaderProps {
   type: 'image' | 'video';
@@ -10,12 +11,10 @@ interface MediaLoaderProps {
   resizeMode?: 'cover' | 'contain' | 'stretch' | 'center';
   loadingSize?: number;
   loadingColor?: string;
-  paused?: boolean;
-  muted?: boolean;
-  repeat?: boolean;
+  showControls?: boolean;
+  autoPlay?: boolean;
   onLoad?: () => void;
   onError?: (error: any) => void;
-  showPlayIcon?: boolean;
 }
 
 const MediaLoader: React.FC<MediaLoaderProps> = ({
@@ -25,23 +24,27 @@ const MediaLoader: React.FC<MediaLoaderProps> = ({
   resizeMode = 'cover',
   loadingSize = 30,
   loadingColor = '#fff',
-  paused = true,
-  muted = true,
-  repeat = true,
+  showControls = true,
+  autoPlay = false,
   onLoad,
   onError,
-  showPlayIcon = true
 }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [paused, setPaused] = useState(!autoPlay);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [showingControls, setShowingControls] = useState(true);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const controlsTimeout = useRef<NodeJS.Timeout>();
   const retryCount = useRef(0);
   const MAX_RETRIES = 2;
   const videoRef = useRef<any>(null);
 
-  const handleLoad = () => {
+  const handleLoad = (data: OnLoadData) => {
     setLoading(false);
     setError(false);
+    setDuration(data.duration);
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 200,
@@ -53,7 +56,6 @@ const MediaLoader: React.FC<MediaLoaderProps> = ({
   const handleError = (err: any) => {
     if (retryCount.current < MAX_RETRIES) {
       retryCount.current += 1;
-      // Quick retry for direct URLs
       setLoading(true);
       setError(false);
     } else {
@@ -70,10 +72,47 @@ const MediaLoader: React.FC<MediaLoaderProps> = ({
     fadeAnim.setValue(0);
   };
 
+  const togglePlayPause = () => {
+    setPaused(!paused);
+    showControlsTemporarily();
+  };
+
+  const showControlsTemporarily = () => {
+    setShowingControls(true);
+    if (controlsTimeout.current) {
+      clearTimeout(controlsTimeout.current);
+    }
+    controlsTimeout.current = setTimeout(() => {
+      if (!paused) {
+        setShowingControls(false);
+      }
+    }, 3000);
+  };
+
+  const formatTime = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    seconds = Math.floor(seconds % 60);
+    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+  };
+
+  const handleProgress = (data: { currentTime: number }) => {
+    setCurrentTime(data.currentTime);
+  };
+
+  const handleSliderChange = (value: number) => {
+    if (videoRef.current) {
+      videoRef.current.seek(value);
+    }
+  };
+
   return (
     <View style={[styles.container, style]}>
       {type === 'video' ? (
-        <Animated.View style={{ opacity: fadeAnim, flex: 1 }}>
+        <TouchableOpacity 
+          activeOpacity={1} 
+          style={styles.videoContainer}
+          onPress={showControlsTemporarily}
+        >
           <Video
             ref={videoRef}
             source={source}
@@ -82,24 +121,48 @@ const MediaLoader: React.FC<MediaLoaderProps> = ({
             onLoad={handleLoad}
             onError={handleError}
             paused={paused}
-            muted={muted}
-            repeat={repeat}
+            onProgress={handleProgress}
             playInBackground={false}
             playWhenInactive={false}
           />
-          {!loading && !error && !paused && showPlayIcon && (
-            <View style={styles.playIconOverlay}>
-              <MaterialIcons name="play-circle-filled" size={48} color="white" />
-            </View>
+          
+          {showControls && showingControls && (
+            <Animated.View style={[styles.controlsOverlay, { opacity: fadeAnim }]}>
+              <TouchableOpacity 
+                style={styles.playPauseButton}
+                onPress={togglePlayPause}
+              >
+                <MaterialIcons 
+                  name={paused ? "play-arrow" : "pause"} 
+                  size={40} 
+                  color="white" 
+                />
+              </TouchableOpacity>
+              
+              <View style={styles.progressContainer}>
+                <Text style={styles.timeText}>{formatTime(currentTime)}</Text>
+                <Slider
+                  style={styles.progressBar}
+                  minimumValue={0}
+                  maximumValue={duration}
+                  value={currentTime}
+                  onValueChange={handleSliderChange}
+                  minimumTrackTintColor="#f4511e"
+                  maximumTrackTintColor="#ffffff50"
+                  thumbTintColor="#f4511e"
+                />
+                <Text style={styles.timeText}>{formatTime(duration)}</Text>
+              </View>
+            </Animated.View>
           )}
-        </Animated.View>
+        </TouchableOpacity>
       ) : (
         <Animated.View style={{ opacity: fadeAnim, flex: 1 }}>
           <Image
             source={source}
             style={styles.media}
             resizeMode={resizeMode}
-            onLoad={handleLoad}
+            onLoad={() => handleLoad({ duration: 0 } as OnLoadData)}
             onError={handleError}
             fadeDuration={0}
             progressiveRenderingEnabled={true}
@@ -136,6 +199,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: '#1a1a1a',
     borderRadius: 8,
+    flex: 1,
+  },
+  videoContainer: {
     flex: 1,
   },
   media: {
@@ -176,11 +242,28 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
-  playIconOverlay: {
+  controlsOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'space-between',
+    padding: 20,
+  },
+  playPauseButton: {
+    alignSelf: 'center',
+    padding: 10,
+  },
+  progressContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  progressBar: {
+    flex: 1,
+    marginHorizontal: 10,
+  },
+  timeText: {
+    color: '#fff',
+    fontSize: 12,
   }
 });
 
