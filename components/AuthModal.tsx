@@ -83,6 +83,10 @@ const AuthModal = ({ isVisible, onClose, onAuthSuccess }: AuthModalProps) => {
   const isValidUsername = (username: string): boolean => {
     // Only allow letters, numbers and underscores, length between 3-20 characters
     const usernameRegex = /^[a-zA-Z0-9_]{3,20}$/;
+    // Check if username ends with -ai
+    if (username.toLowerCase().endsWith('-ai')) {
+      return false;
+    }
     return usernameRegex.test(username);
   };
 
@@ -108,6 +112,8 @@ const AuthModal = ({ isVisible, onClose, onAuthSuccess }: AuthModalProps) => {
     if (mode === 'register') {
       if (!username.trim()) {
         newErrors.username = 'Username is required';
+      } else if (username.toLowerCase().endsWith('-ai')) {
+        newErrors.username = 'Username cannot end with "-ai" as this is reserved for AI characters';
       } else if (!isValidUsername(username)) {
         newErrors.username = 'Username can only contain letters, numbers and underscores (3-20 characters)';
       }
