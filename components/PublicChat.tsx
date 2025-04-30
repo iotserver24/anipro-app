@@ -680,11 +680,11 @@ const PublicChat = () => {
   }, [messages.length]);
 
   useEffect(() => {
-    // Subscribe to first 50 messages - using orderByChild with negativeTimestamp
+    // Subscribe to first 1000 messages - using orderByChild with negativeTimestamp
     const messagesQuery = dbQuery(
       messagesRef, 
       orderByChild('negativeTimestamp'),
-      limitToFirst(1000)
+      limitToFirst(500)
     );
     
     onValue(messagesQuery, (snapshot) => {
