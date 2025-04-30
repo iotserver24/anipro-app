@@ -2,26 +2,19 @@ import React from 'react';
 import { View, ActivityIndicator, StyleSheet, Animated } from 'react-native';
 
 interface LoadingAnimationProps {
-  type?: 'spinner' | 'pulse' | 'dots';
+  type: 'dots' | 'pulse' | 'rotate' | 'bounce' | 'default';
   size?: number;
   color?: string;
 }
 
-export const LoadingAnimation: React.FC<LoadingAnimationProps> = ({
-  type = 'spinner',
+const LoadingAnimation: React.FC<LoadingAnimationProps> = ({
+  type = 'default',
   size = 30,
   color = '#fff'
 }) => {
-  switch (type) {
-    case 'spinner':
-      return <ActivityIndicator size={size} color={color} />;
-    
-    // For now we'll default all types to spinner for simplicity
-    case 'pulse':
-    case 'dots':
-    default:
-      return <ActivityIndicator size={size} color={color} />;
-  }
+  // For now we'll use ActivityIndicator for all types
+  // You can implement different animations for each type later
+  return <ActivityIndicator size={size} color={color} />;
 };
 
 const styles = StyleSheet.create({
@@ -29,4 +22,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center'
   }
-}); 
+});
+
+export default LoadingAnimation; 

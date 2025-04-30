@@ -25,12 +25,7 @@ const LoadingOverlay: React.FC<LoadingOverlayProps> = ({
 
   return (
     <View style={[styles.container, { backgroundColor }, style]}>
-      {type === 'default' ? (
-        <ActivityIndicator size="large" color={color} />
-      ) : (
-        <LoadingAnimation type={type} size={size} color={color} />
-      )}
-      
+      <LoadingAnimation type={type} size={size} color={color} />
       {text && <Text style={[styles.text, { color }]}>{text}</Text>}
     </View>
   );

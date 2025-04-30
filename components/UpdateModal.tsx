@@ -14,6 +14,7 @@ import {
   Alert
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import * as Device from 'expo-device';
 import RichChangelog from './RichChangelog';
 import LoadingOverlay from './LoadingOverlay';
 import { getArchitectureSpecificDownloadUrl } from '../utils/deviceUtils';
@@ -35,9 +36,9 @@ interface UpdateInfo {
   changelog: ChangelogItem[];
   downloadUrls: {
     universal: string;
-    'arm64-v8a': string;
-    x86_64: string;
-    x86: string;
+    arm64?: string;
+    'x86_64'?: string;
+    x86?: string;
   };
   releaseDate: string;
   isForced: boolean;
@@ -107,35 +108,117 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
     }
   }, [visible, updateInfo, fadeAnim, slideAnim, onClose]);
 
+  // Get device architecture info
+  const getDeviceArchInfo = async () => {
+    try {
+      const deviceArch = Device.supportedCpuArchitectures;
+      const primaryArch = deviceArch && deviceArch.length > 0 ? deviceArch[0] : 'unknown';
+      
+      // Format architecture for display and URL selection
+      switch(primaryArch.toLowerCase()) {
+        case 'arm64':
+        case 'arm64-v8a':
+          return { urlKey: 'arm64', displayName: 'ARM64 (64-bit)' };
+        case 'armeabi-v7a':
+        case 'armeabi':
+          return { urlKey: 'universal', displayName: 'ARM (32-bit)' };
+        case 'x86_64':
+          return { urlKey: 'x86_64', displayName: 'x86_64 (64-bit Intel/AMD)' };
+        case 'x86':
+          return { urlKey: 'x86', displayName: 'x86 (32-bit Intel/AMD)' };
+        default:
+          return { urlKey: 'universal', displayName: primaryArch };
+      }
+    } catch (error) {
+      logger.error('Error getting device architecture:', error);
+      return { urlKey: 'universal', displayName: 'unknown' };
+    }
+  };
+
   const handleUpdate = async () => {
     setDownloading(true);
     
     try {
-      // Simulate a small delay before opening the URL
-      await new Promise(resolve => setTimeout(resolve, 500));
+      const archInfo = await getDeviceArchInfo();
+      logger.debug('Device architecture info:', archInfo);
       
-      // Get the appropriate download URL based on device architecture
-      const downloadUrl = getArchitectureSpecificDownloadUrl(
-        updateInfo.downloadUrls,
-        simulatedArch
-      );
+      // Get the appropriate download URL
+      let downloadUrl = updateInfo.downloadUrls[archInfo.urlKey] || updateInfo.downloadUrls.universal;
       
-      // Open the URL
-      await Linking.openURL(downloadUrl);
-      
-      // Keep the loading state a bit longer to ensure the URL opens
-      setTimeout(() => {
-        setDownloading(false);
-        
-        // Call the onUpdate callback if it exists
-        if (onUpdate) {
-          onUpdate();
+      logger.debug('Selected download URL:', downloadUrl);
+
+      if (Platform.OS === 'android') {
+        try {
+          const supported = await Linking.canOpenURL(downloadUrl);
+          
+          if (supported) {
+            // Show download starting message
+            Alert.alert(
+              'Starting Download',
+              `Downloading update for ${archInfo.displayName} architecture...`,
+              [{ text: 'OK' }]
+            );
+            
+            // Open the URL
+            await Linking.openURL(downloadUrl);
+            
+            // Close the modal
+            onClose();
+            
+            // Call the onUpdate callback if it exists
+            if (onUpdate) {
+              onUpdate();
+            }
+          } else {
+            throw new Error('Cannot open download URL');
+          }
+        } catch (error) {
+          logger.error('Error starting download:', error);
+          
+          // Show error with option to try universal version
+          if (archInfo.urlKey !== 'universal' && updateInfo.downloadUrls.universal) {
+            Alert.alert(
+              'Download Error',
+              'Could not download the architecture-specific version. Would you like to try the universal version instead?',
+              [
+                {
+                  text: 'Cancel',
+                  style: 'cancel',
+                  onPress: () => setDownloading(false)
+                },
+                {
+                  text: 'Try Universal Version',
+                  onPress: async () => {
+                    try {
+                      await Linking.openURL(updateInfo.downloadUrls.universal);
+                      onClose();
+                    } catch (err) {
+                      logger.error('Error downloading universal version:', err);
+                      Alert.alert('Error', 'Could not download the update. Please try again later.');
+                      setDownloading(false);
+                    }
+                  }
+                }
+              ]
+            );
+          } else {
+            Alert.alert(
+              'Download Error',
+              'Could not start the download. Please try again later.',
+              [{ text: 'OK' }]
+            );
+          }
         }
-      }, 1000);
+      }
     } catch (error) {
-      logger.error('Error opening download URL:', error);
+      logger.error('Error in handleUpdate:', error);
+      Alert.alert(
+        'Update Error',
+        'Failed to start the update download. Please try again later.',
+        [{ text: 'OK' }]
+      );
+    } finally {
       setDownloading(false);
-      Alert.alert('Download Error', 'Failed to open download URL. Please try again later.');
     }
   };
 
