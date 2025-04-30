@@ -5,7 +5,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useMyListStore } from '../store/myListStore';
 import { API_BASE, ENDPOINTS } from '../constants/api';
-import { LoadingAnimation } from '../components/LoadingAnimation';
 
 // Add genre type
 type Genre = {
@@ -293,11 +292,9 @@ export default function Search() {
           />
           <View style={styles.animatedTextContainer}>
             <Text style={styles.emptyStateText}>Start typing to</Text>
-            <LoadingAnimation
-              type="dots"
-              size={4}
+            <ActivityIndicator
+              size="small"
               color="#f4511e"
-              duration={1500}
               style={styles.textAnimation}
             />
             <Text style={[styles.emptyStateText, styles.highlightText]}>
