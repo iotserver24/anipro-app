@@ -79,3 +79,6 @@ yarn-error.*
 
 # Remove Android folder since using Expo cloud builds
 # /android/
+
+# Releases folder containing APKs
+/releases/
