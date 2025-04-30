@@ -19,7 +19,7 @@ import {
 import { FlashList } from '@shopify/flash-list';
 import { Video, ResizeMode } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
-import { getDatabase, ref, push, onValue, off, query as dbQuery, limitToLast, serverTimestamp, remove, get, orderByChild, set } from 'firebase/database';
+import { getDatabase, ref, push, onValue, off, query as dbQuery, limitToLast, serverTimestamp, remove, get, orderByChild, set, limitToFirst } from 'firebase/database';
 import { isAuthenticated, getCurrentUser } from '../services/userService';
 import { doc, getDoc, collection, query, where, limit, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -680,11 +680,11 @@ const PublicChat = () => {
   }, [messages.length]);
 
   useEffect(() => {
-    // Subscribe to last 50 messages - using orderByChild with negativeTimestamp
+    // Subscribe to first 50 messages - using orderByChild with negativeTimestamp
     const messagesQuery = dbQuery(
       messagesRef, 
       orderByChild('negativeTimestamp'),
-      limitToLast(50)
+      limitToFirst(1000)
     );
     
     onValue(messagesQuery, (snapshot) => {
