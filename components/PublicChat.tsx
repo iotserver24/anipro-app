@@ -644,6 +644,9 @@ const PublicChat = () => {
   const [mentionQuery, setMentionQuery] = useState('');
   const [userSuggestions, setUserSuggestions] = useState<UserSuggestion[]>([]);
   const [mentionedUsers, setMentionedUsers] = useState<string[]>([]);
+  const [hasUnreadMentions, setHasUnreadMentions] = useState(false);
+  const [unreadMentionsCount, setUnreadMentionsCount] = useState(0);
+  const [isCheckingMentions, setIsCheckingMentions] = useState(false);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false); // Add this line
   const inputRef = useRef<TextInput>(null);
   const [isAnimeSearchMode, setIsAnimeSearchMode] = useState(false);
@@ -1431,6 +1434,51 @@ const PublicChat = () => {
     }
   };
 
+  // Add a function to check for unread mentions
+  const checkUnreadMentions = useCallback(async () => {
+    try {
+      const currentUser = getCurrentUser();
+      if (!currentUser) return;
+      
+      setIsCheckingMentions(true);
+      
+      // Query the notifications collection for unread mention notifications
+      const notificationsRef = collection(db, 'notifications');
+      const mentionsQuery = query(
+        notificationsRef,
+        where('userId', '==', currentUser.uid),
+        where('type', '==', 'mention'),
+        where('read', '==', false)
+      );
+      
+      const snapshot = await getDocs(mentionsQuery);
+      const count = snapshot.size;
+      setUnreadMentionsCount(count);
+      setHasUnreadMentions(count > 0);
+    } catch (error) {
+      console.error('Error checking unread mentions:', error);
+    } finally {
+      setIsCheckingMentions(false);
+    }
+  }, []);
+  
+  // Check for unread mentions when the component mounts
+  useEffect(() => {
+    checkUnreadMentions();
+    
+    // Set up an interval to periodically check for new mentions (every 30 seconds)
+    const mentionsInterval = setInterval(checkUnreadMentions, 30000);
+    
+    return () => {
+      clearInterval(mentionsInterval);
+    };
+  }, [checkUnreadMentions]);
+
+  // Function to navigate to mentions page
+  const handleViewMentions = () => {
+    router.push('/mentions');
+  };
+
   return (
     <KeyboardAvoidingView 
       style={styles.container} 
@@ -1461,6 +1509,21 @@ const PublicChat = () => {
                 </Text>
               </View>
             )}
+
+            {/* Add mentions notification banner */}
+            {hasUnreadMentions && (
+              <TouchableOpacity 
+                style={styles.mentionsBanner}
+                onPress={handleViewMentions}
+              >
+                <MaterialIcons name="alternate-email" size={18} color="#fff" />
+                <Text style={styles.mentionsBannerText}>
+                  You have {unreadMentionsCount} unread {unreadMentionsCount === 1 ? 'mention' : 'mentions'}
+                </Text>
+                <MaterialIcons name="chevron-right" size={18} color="#fff" />
+              </TouchableOpacity>
+            )}
+
             <FlatList
               ref={flatListRef}
               data={messages}
@@ -2417,6 +2480,24 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     marginTop: 16,
+    textAlign: 'center',
+  },
+  mentionsBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(244, 81, 30, 0.9)',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 8,
+    gap: 8,
+  },
+  mentionsBannerText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
     textAlign: 'center',
   },
 });

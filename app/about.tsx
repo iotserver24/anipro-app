@@ -18,7 +18,7 @@ import { fetchWhatsNewInfo, WhatsNewInfo } from '../utils/whatsNewUtils';
 import { logger } from '../utils/logger';
 import { auth, db } from '../services/firebase';
 import { getCurrentUser } from '../services/userService';
-import { getDoc, doc } from 'firebase/firestore';
+import { getDoc, doc, collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 
@@ -402,6 +402,8 @@ export default function AboutScreen() {
   const [whatsNewInfo, setWhatsNewInfo] = useState<WhatsNewInfo | null>(null);
   const [showWhatsNewModal, setShowWhatsNewModal] = useState(false);
   const [isLoadingWhatsNew, setIsLoadingWhatsNew] = useState(false);
+  const [hasUnreadMentions, setHasUnreadMentions] = useState(false);
+  const [isCheckingMentions, setIsCheckingMentions] = useState(false);
 
   const { history } = useWatchHistoryStore();
   const { myList } = useMyListStore();
@@ -867,6 +869,45 @@ Architecture: ${deviceInfo.deviceArchitecture}
     }
   };
 
+  // Add a function to check for unread mentions
+  const checkUnreadMentions = async () => {
+    try {
+      const currentUser = getCurrentUser();
+      if (!currentUser) return;
+      
+      setIsCheckingMentions(true);
+      
+      // Query the notifications collection for unread mention notifications
+      const notificationsRef = collection(db, 'notifications');
+      const mentionsQuery = query(
+        notificationsRef,
+        where('userId', '==', currentUser.uid),
+        where('type', '==', 'mention'),
+        where('read', '==', false),
+        limit(1)
+      );
+      
+      const snapshot = await getDocs(mentionsQuery);
+      setHasUnreadMentions(!snapshot.empty);
+    } catch (error) {
+      console.error('Error checking unread mentions:', error);
+    } finally {
+      setIsCheckingMentions(false);
+    }
+  };
+  
+  // Check for unread mentions when the screen loads
+  useEffect(() => {
+    checkUnreadMentions();
+    
+    // Set up an interval to periodically check for new mentions
+    const mentionsInterval = setInterval(checkUnreadMentions, 60000); // Check every minute
+    
+    return () => {
+      clearInterval(mentionsInterval);
+    };
+  }, []);
+
   return (
     <>
       <Stack.Screen
@@ -1079,8 +1120,17 @@ Architecture: ${deviceInfo.deviceArchitecture}
               style={styles.supportButton}
               onPress={() => router.push('/mentions')}
             >
-              <MaterialIcons name="alternate-email" size={24} color="#fff" style={styles.buttonIcon} />
-              <Text style={styles.supportButtonText}>Mentions</Text>
+              <View style={styles.mentionsButtonContent}>
+                <MaterialIcons name="alternate-email" size={24} color="#fff" style={styles.buttonIcon} />
+                <Text style={styles.supportButtonText}>Mentions</Text>
+                {isCheckingMentions ? (
+                  <ActivityIndicator size="small" color="#f4511e" style={styles.mentionIndicator} />
+                ) : hasUnreadMentions ? (
+                  <View style={styles.mentionBadge}>
+                    <MaterialIcons name="circle" size={10} color="#f4511e" />
+                  </View>
+                ) : null}
+              </View>
             </TouchableOpacity>
             
             <SectionDivider />
@@ -1925,5 +1975,22 @@ const styles = StyleSheet.create({
   buyMeCoffeeImage: {
     width: 217,
     height: 60,
+  },
+  mentionsButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  mentionBadge: {
+    backgroundColor: 'rgba(244, 81, 30, 0.2)',
+    borderRadius: 12,
+    width: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  mentionIndicator: {
+    marginLeft: 8,
   },
 } as const); 
