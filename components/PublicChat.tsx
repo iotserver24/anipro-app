@@ -19,9 +19,9 @@ import {
 import { FlashList } from '@shopify/flash-list';
 import { Video, ResizeMode } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
-import { getDatabase, ref, push, onValue, off, query as dbQuery, limitToLast, serverTimestamp, remove, get, orderByChild, set, limitToFirst } from 'firebase/database';
+import { getDatabase, ref, push, onValue, off, query as dbQuery, limitToLast, serverTimestamp, remove, get, orderByChild, set, limitToFirst, orderByKey } from 'firebase/database';
 import { isAuthenticated, getCurrentUser } from '../services/userService';
-import { doc, getDoc, collection, query, where, limit, getDocs, addDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, limit, getDocs, addDoc, orderBy } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import AuthModal from './AuthModal';
 import { AVATARS, getAvatarById } from '../constants/avatars';
@@ -644,6 +644,7 @@ const PublicChat = () => {
   const [mentionQuery, setMentionQuery] = useState('');
   const [userSuggestions, setUserSuggestions] = useState<UserSuggestion[]>([]);
   const [mentionedUsers, setMentionedUsers] = useState<string[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false); // Add this line
   const inputRef = useRef<TextInput>(null);
   const [isAnimeSearchMode, setIsAnimeSearchMode] = useState(false);
   const [animeSearchText, setAnimeSearchText] = useState('');
@@ -684,7 +685,7 @@ const PublicChat = () => {
     const messagesQuery = dbQuery(
       messagesRef, 
       orderByChild('negativeTimestamp'),
-      limitToFirst(500)
+      limitToFirst(50)
     );
     
     onValue(messagesQuery, (snapshot) => {
@@ -735,25 +736,20 @@ const PublicChat = () => {
   // Function to fetch user suggestions
   const fetchUserSuggestions = useCallback(async (searchText: string) => {
     try {
+      setIsLoadingUsers(true); // Add this line
       const usersRef = collection(db, 'users');
       let userQuery;
       
-      if (searchText.trim()) {
-        // Get all users and filter client-side for more flexible matching
-        userQuery = query(
-          usersRef,
-          limit(50)
-        );
-      } else {
-        // If no search text, get all users
-        userQuery = query(
-          usersRef,
-          limit(50)
-        );
-      }
+      // Always fetch a larger set of users first, then filter client-side
+      // This is more efficient than creating complex queries that might need new indexes
+      userQuery = query(
+        usersRef,
+        orderBy('username'),
+        limit(200) // Increased limit substantially to include more users
+      );
 
       const querySnapshot = await getDocs(userQuery);
-      const suggestions: UserSuggestion[] = [];
+      let suggestions: UserSuggestion[] = [];
       
       querySnapshot.forEach((doc) => {
         const userData = doc.data();
@@ -766,22 +762,23 @@ const PublicChat = () => {
         }
       });
       
-      // Sort alphabetically by username
-      suggestions.sort((a, b) => a.username.localeCompare(b.username));
-      
-      // If there's search text, do client-side filtering for more flexible matching
+      // If there's search text, filter the results
       if (searchText.trim()) {
         const lowerSearchText = searchText.toLowerCase();
-        const filtered = suggestions.filter(user => 
+        suggestions = suggestions.filter(user => 
           user.username.toLowerCase().includes(lowerSearchText) ||
           user.userId.toLowerCase().includes(lowerSearchText)
         );
-        setUserSuggestions(filtered);
-      } else {
-        setUserSuggestions(suggestions);
       }
+      
+      // Sort alphabetically by username
+      suggestions.sort((a, b) => a.username.localeCompare(b.username));
+      
+      setUserSuggestions(suggestions);
     } catch (error) {
       console.error('Error fetching user suggestions:', error);
+    } finally {
+      setIsLoadingUsers(false); // Add this line
     }
   }, []);
 
@@ -1650,28 +1647,42 @@ const PublicChat = () => {
               <MaterialIcons name="close" size={28} color="#fff" />
             </TouchableOpacity>
           </View>
-          <FlatList
-            data={userSuggestions}
-            keyExtractor={(item) => item.userId}
-            renderItem={({ item }) => (
-              <TouchableOpacity 
-                style={styles.mentionResultItem}
-                onPress={() => {
-                  handleSelectMention(item);
-                  setShowMentionsModal(false);
-                }}
-              >
-                <Image 
-                  source={{ uri: item.avatarUrl }} 
-                  style={styles.mentionResultAvatar}
-                />
-                <View style={styles.mentionResultInfo}>
-                  <Text style={styles.mentionResultUsername}>@{item.username}</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-            style={styles.fullscreenMentionsList}
-          />
+          {isLoadingUsers ? (
+            <View style={styles.mentionsLoadingContainer}>
+              <ActivityIndicator size="large" color="#f4511e" />
+              <Text style={styles.mentionsLoadingText}>Loading users...</Text>
+            </View>
+          ) : userSuggestions.length > 0 ? (
+            <FlatList
+              data={userSuggestions}
+              keyExtractor={(item) => item.userId}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.mentionResultItem}
+                  onPress={() => {
+                    handleSelectMention(item);
+                    setShowMentionsModal(false);
+                  }}
+                >
+                  <Image 
+                    source={{ uri: item.avatarUrl }} 
+                    style={styles.mentionResultAvatar}
+                  />
+                  <View style={styles.mentionResultInfo}>
+                    <Text style={styles.mentionResultUsername}>@{item.username}</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+              style={styles.fullscreenMentionsList}
+            />
+          ) : (
+            <View style={styles.mentionsLoadingContainer}>
+              <MaterialIcons name="person-search" size={40} color="#666" />
+              <Text style={styles.mentionsLoadingText}>
+                {mentionQuery.trim() ? "No users found. Try a different search." : "Start typing to search for users"}
+              </Text>
+            </View>
+          )}
         </View>
       </Modal>
     </KeyboardAvoidingView>
@@ -2395,6 +2406,18 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontStyle: 'italic',
     fontSize: 14,
+  },
+  mentionsLoadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  mentionsLoadingText: {
+    color: '#fff',
+    fontSize: 16,
+    marginTop: 16,
+    textAlign: 'center',
   },
 });
 
