@@ -31,7 +31,7 @@ cd android
 
 
 
-cd "C:\Users\Asus\all repos\anime app\anipro"
+cd "C:\Users\Asus\all repos\anime app\anipro-app"
 
 npx react-native bundle --platform android `
     --dev false `
@@ -39,9 +39,9 @@ npx react-native bundle --platform android `
     --bundle-output android/app/src/main/assets/index.android.bundle `
     --assets-dest android/app/src/main/res
 
-cd android
+
 node scripts/check-version.js
- node scripts/update-version.js 2.22.1 2
+ node scripts/update-version.js 2.23.3 10
 
 cd android
 ./gradlew assembleRelease
