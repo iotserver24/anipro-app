@@ -27,7 +27,7 @@
     "@react-native-firebase/app": "^21.12.3",
     "@react-native-firebase/auth": "^21.12.3",
     "@react-native-firebase/firestore": "^21.12.3",
-    "@react-native-google-signin/google-signin": "^13.2.0",
+    "@react-native-google-signin/google-signin": "^14.0.0",
     "@react-native-seoul/masonry-list": "^1.4.2",
     "@react-navigation/native": "^7.0.14",
     "@shopify/flash-list": "^1.8.0",
