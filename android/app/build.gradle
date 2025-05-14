@@ -129,8 +129,20 @@ android {
         abi {
             enable true
             reset()
-            include 'x86', 'x86_64', 'arm64-v8a'
+            include 'x86', 'x86_64', 'arm64-v8a', 'armeabi-v7a'
             universalApk true //set true to make a universal apk also
+        }
+    }
+
+    bundle {
+        density {
+            enableSplit = false
+        }
+        abi {
+            enableSplit = false
+        }
+        language {
+            enableSplit = false
         }
     }
 }
