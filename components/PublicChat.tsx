@@ -30,6 +30,8 @@ import GifPicker from './GifPicker';
 import { API_BASE, ENDPOINTS } from '../constants/api';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
 
 // Pollinations AI API Configuration
 const POLLINATIONS_TEXT_API_URL = 'https://text.pollinations.ai';
@@ -460,6 +462,13 @@ Examples of how you speak:
 - "Let's skip the boring part and go straight to the part where I make you mine."
 
 You are Zero Two. Wild. Obsessive. Addictive. And above all else — you belong to no one, except your darling.`
+  },
+  artgen: {
+    name: 'ArtGen',
+    userId: 'artgen-ai',
+    avatar: 'https://files.catbox.moe/ulseu7.gif',
+    model: 'flux',
+    systemPrompt: `You are ArtGen, an AI that creates beautiful images from text prompts. When users ask you for art, you generate and share the image.`
   }
 };
 
@@ -477,6 +486,7 @@ interface ChatMessage {
     title: string;
     image: string;
   };
+  imageUrl?: string; // <-- Add this for AI art
 }
 
 interface UserSuggestion {
@@ -663,7 +673,9 @@ const MessageItem = memo(({
   isFirstInSequence,
   onMentionPress,
   animeCard,
-  onOpenAnime
+  onOpenAnime,
+  isFromArtGen,
+  onFullscreenImage
 }: { 
   item: ChatMessage; 
   onUserPress: (userId: string) => void;
@@ -678,6 +690,8 @@ const MessageItem = memo(({
     image: string;
   };
   onOpenAnime: (animeId: string) => void;
+  isFromArtGen?: boolean;
+  onFullscreenImage?: (url: string) => void;
 }) => {
   const usernameColor = useMemo(() => getUsernameColor(item.userId), [item.userId]);
   
@@ -709,6 +723,43 @@ const MessageItem = memo(({
           </TouchableOpacity>
         )}
         {item.content.trim() !== '' && renderMessageContent(item.content, item.mentions, onMentionPress)}
+        {/* Render AI art image if present */}
+        {item.imageUrl && (
+          <View style={{ marginTop: 8, alignItems: 'center' }}>
+            <TouchableOpacity 
+              activeOpacity={0.9}
+              onPress={() => onFullscreenImage && onFullscreenImage(item.imageUrl as string)}
+            >
+              <Image 
+                source={{ uri: item.imageUrl }} 
+                style={{ width: 240, height: 240, borderRadius: 12, backgroundColor: '#222' }} 
+                resizeMode="cover" 
+              />
+            </TouchableOpacity>
+            
+            {isFromArtGen && (
+              <View style={{ flexDirection: 'row', marginTop: 8, justifyContent: 'center' }}>
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: '#6366f1',
+                    borderRadius: 20,
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    marginHorizontal: 4
+                  }}
+                  onPress={() => onFullscreenImage && onFullscreenImage(item.imageUrl as string)}
+                >
+                  <MaterialIcons name="fullscreen" size={16} color="#fff" />
+                  <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 12, marginLeft: 4 }}>
+                    View Fullscreen
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
         {animeCard && (
           <View style={styles.animeCardInMessage}>
             <Image source={{ uri: animeCard.image }} style={StyleSheet.flatten([styles.animeCardImage])} />
@@ -729,13 +780,14 @@ const MessageItem = memo(({
     </View>
   );
 }, (prevProps, nextProps) => {
-  // Custom comparison function for memo
+  // Custom comparison function for memo - add additional check for isFromArtGen
   return (
     prevProps.item.id === nextProps.item.id &&
     prevProps.isOwnMessage === nextProps.isOwnMessage &&
     prevProps.showAvatar === nextProps.showAvatar &&
     prevProps.isLastInSequence === nextProps.isLastInSequence &&
-    prevProps.isFirstInSequence === nextProps.isFirstInSequence
+    prevProps.isFirstInSequence === nextProps.isFirstInSequence &&
+    prevProps.isFromArtGen === nextProps.isFromArtGen
   );
 });
 
@@ -751,6 +803,7 @@ const COMMANDS = [
   { key: '/power', label: 'Interact with Power' },
   { key: '/makima', label: 'Speak to Makima' },
   { key: '/dfla', label: 'Challenge Doflamingo' },
+  { key: '/artgen', label: 'Generate AI Art' },
   
 ];
 
@@ -777,7 +830,8 @@ const COMMAND_CATEGORIES: Record<string, CommandCategory> = {
   ANIME: {
     title: 'Anime',
     commands: [
-      { key: '/anime', label: 'Recommend an anime', icon: '🎬' }
+      { key: '/anime', label: 'Recommend an anime', icon: '🎬' },
+      { key: '/artgen', label: 'Generate AI Art', icon: '🎨' },
     ]
   },
   AI_CHARACTERS: {
@@ -793,6 +847,7 @@ const COMMAND_CATEGORIES: Record<string, CommandCategory> = {
       { key: '/power', label: 'Interact with Power', icon: '🩸' },
       { key: '/makima', label: 'Speak to Makima', icon: '🎯' },
       { key: '/dfla', label: 'Challenge Doflamingo', icon: ' 🔱😈' },
+
       
     ]
   }
@@ -1038,6 +1093,8 @@ const PublicChat = () => {
   const isScrollingRef = useRef(false);
   const [selectedAIConfig, setSelectedAIConfig] = useState<typeof AI_CONFIGS[keyof typeof AI_CONFIGS] | null>(null);
   const [showWelcomeTutorial, setShowWelcomeTutorial] = useState(false);
+  const [fullscreenImageUrl, setFullscreenImageUrl] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Initialize Firebase Realtime Database
   const database = getDatabase();
@@ -1580,6 +1637,91 @@ const PublicChat = () => {
         return;
       }
 
+      if (messageText.startsWith('/artgen ')) {
+        const prompt = messageText.replace('/artgen ', '').trim();
+        if (!prompt) {
+          const timestamp = Date.now();
+          const reverseKey = generateReverseOrderKey();
+          const systemMessageData = {
+            userId: 'system',
+            userName: 'System',
+            userAvatar: '',
+            content: `Please provide a prompt after the /artgen command.`,
+            timestamp,
+            negativeTimestamp: -timestamp
+          };
+          await set(ref(database, `public_chat/${reverseKey}`), systemMessageData);
+          setMessageText('');
+          setIsSending(false);
+          return;
+        }
+        // Send user's message first
+        const currentUser = getCurrentUser();
+        if (!currentUser) {
+          throw new Error('User not authenticated');
+        }
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (!userDoc.exists()) {
+          throw new Error('User data not found');
+        }
+        const userData = userDoc.data();
+        let userAvatarUrl = '';
+        if (userData.avatarId) {
+          try {
+            userAvatarUrl = await getAvatarById(userData.avatarId);
+          } catch (error) {
+            console.warn('Error getting avatar by ID:', error);
+          }
+        }
+        if (!userAvatarUrl) {
+          if (userData.customAvatar) {
+            userAvatarUrl = userData.customAvatar;
+          } else if (userData.avatarUrl) {
+            userAvatarUrl = userData.avatarUrl;
+          } else if (AVATARS.length > 0) {
+            userAvatarUrl = AVATARS[0].url;
+          }
+        }
+        
+        // Get username for tagging
+        const username = userData.username || 'user';
+        
+        const timestamp = Date.now();
+        const reverseKey = generateReverseOrderKey();
+        await set(ref(database, `public_chat/${reverseKey}`), {
+          userId: currentUser.uid,
+          userName: '@' + username,
+          userAvatar: userAvatarUrl,
+          content: messageText.trim(),
+          timestamp,
+          negativeTimestamp: -timestamp
+        });
+        
+        // Generate image URL using Pollinations.AI
+        const negativePrompt = '((bad anatomy, deformed, extra limbs, fused limbs, poorly drawn hands, missing fingers, extra fingers, mutated, cloned face, distorted genitals, penis on female, vagina on male, wrong gender, fused gender, blurry, low resolution, jpeg artifacts, watermark, text, signature))';
+        const qualityPrompts = ', masterpiece, best quality, high detail, 8k, ultra sharp, dynamic lighting, vibrant colors, clean lines, highly detailed, cinematic, artstation';
+        const fullPrompt = `${prompt}${qualityPrompts}, --no ${negativePrompt}`;
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?model=flux&width=1024&height=1024&nologo=true&enhance=true`;
+        
+        // Post ArtGen's message with the image - now with @username mention
+        const artgenMessageId = generateReverseOrderKey();
+        await sendAIMessage({
+          id: artgenMessageId,
+          userId: 'artgen-ai',
+          userName: 'ArtGen',
+            userAvatar: 'https://files.catbox.moe/ulseu7.gif',
+            content: `@${username} Here is your AI-generated art for: "${prompt}"`,
+          imageUrl,
+          timestamp: Date.now(),
+          negativeTimestamp: -Date.now(),
+          mentions: [currentUser.uid]  // Add mentions to trigger notification
+        });
+        
+        setMessageText('');
+        setIsSending(false);
+        return;
+      }
+
       const currentUser = getCurrentUser();
       if (!currentUser) {
         throw new Error('User not authenticated');
@@ -1742,6 +1884,9 @@ const PublicChat = () => {
     
     // Only show avatar for the last message in a sequence
     const showAvatar = isLastInSequence;
+    
+    // Check if message is from ArtGen
+    const isFromArtGen = item.userId === 'artgen-ai';
 
     return (
       <MessageItem 
@@ -1754,6 +1899,8 @@ const PublicChat = () => {
         onMentionPress={handleMentionPress}
         animeCard={item.animeCard}
         onOpenAnime={handleOpenAnime}
+        isFromArtGen={isFromArtGen}
+        onFullscreenImage={setFullscreenImageUrl}
       />
     );
   }, [messages, handleUserPress, handleMentionPress, handleOpenAnime]);
@@ -1874,6 +2021,36 @@ const PublicChat = () => {
   // Function to navigate to mentions page
   const handleViewMentions = () => {
     router.push('/mentions');
+  };
+
+  // Download handler for ArtGen images
+  const handleDownloadImage = async (url: string) => {
+    try {
+      setIsDownloading(true);
+      // Always use .png if extension is missing or invalid
+      let filename = url.split('/').pop()?.split('?')[0] || 'artgen_image.png';
+      if (!filename.match(/\.(png|jpg|jpeg|gif)$/i)) {
+        filename += '.png';
+      }
+      const fileUri = FileSystem.cacheDirectory + filename;
+      const { uri } = await FileSystem.downloadAsync(url, fileUri);
+      
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Please allow access to save images.');
+        setIsDownloading(false);
+        return;
+      }
+      
+      const asset = await MediaLibrary.createAssetAsync(uri);
+      await MediaLibrary.createAlbumAsync('AniPro', asset, false);
+      Alert.alert('Success', 'Image saved to your gallery!');
+    } catch (error) {
+      console.error('Error downloading image:', error);
+      Alert.alert('Error', 'Failed to save image.');
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -2136,6 +2313,69 @@ const PublicChat = () => {
                 </Text>
               </View>
             )}
+          </View>
+        </Modal>
+
+        {/* Add Fullscreen Image Modal */}
+        <Modal
+          visible={!!fullscreenImageUrl}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setFullscreenImageUrl(null)}
+        >
+          <View style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.9)',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}>
+            <TouchableOpacity 
+              style={{
+                position: 'absolute',
+                top: 40,
+                right: 20,
+                zIndex: 10,
+                backgroundColor: 'rgba(0,0,0,0.5)',
+                borderRadius: 20,
+                padding: 10,
+              }}
+              onPress={() => setFullscreenImageUrl(null)}
+            >
+              <MaterialIcons name="close" size={30} color="#fff" />
+            </TouchableOpacity>
+            
+            {fullscreenImageUrl && (
+              <Image 
+                source={{ uri: fullscreenImageUrl }} 
+                style={{ width: '90%', height: '70%', borderRadius: 12 }}
+                resizeMode="contain"
+              />
+            )}
+            
+            <TouchableOpacity
+              style={{
+                marginTop: 20,
+                backgroundColor: '#f4511e',
+                paddingHorizontal: 24,
+                paddingVertical: 12,
+                borderRadius: 24,
+                flexDirection: 'row',
+                alignItems: 'center',
+              }}
+              onPress={() => fullscreenImageUrl && handleDownloadImage(fullscreenImageUrl)}
+              disabled={isDownloading}
+            >
+              {isDownloading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <MaterialIcons name="file-download" size={20} color="#fff" />
+                  <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16, marginLeft: 8 }}>
+                    Download Image
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         </Modal>
       </KeyboardAvoidingView>
