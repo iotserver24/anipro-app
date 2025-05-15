@@ -56,7 +56,12 @@ service cloud.firestore {
       // 2. They are the sender (fromUserId matches their uid)
       // 3. Required fields are present
       allow create: if request.auth != null && 
-                     request.resource.data.fromUserId == request.auth.uid &&
+                     (
+                       // Regular user-to-user mentions where the sender is the authenticated user
+                       (request.resource.data.fromUserId == request.auth.uid) ||
+                       // Allow AI character mentions (AI character IDs end with -ai)
+                       (request.resource.data.fromUserId.matches('.*-ai$'))
+                     ) &&
                      request.resource.data.keys().hasAll(['type', 'fromUserId', 'fromUsername', 'userId', 'content', 'timestamp']);
       
       // Allow updating only the read status

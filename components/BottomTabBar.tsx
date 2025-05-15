@@ -102,8 +102,8 @@ function BottomTabBar() {
   const navigateTo = useCallback((path) => {
     if (pathname === path) return; // Don't navigate if already on the page
     
-    // Direct navigation - fastest approach
-    router.replace(path);
+    // Use push instead of replace to preserve navigation history
+    router.push(path);
   }, [pathname]);
 
   // Search button animation
@@ -123,9 +123,9 @@ function BottomTabBar() {
     }).start();
   };
 
-  // Handle search button press - direct approach
+  // Handle search button press - use push instead of replace
   const handleSearchPress = useCallback(() => {
-    router.replace({
+    router.push({
       pathname: '/search',
       params: { query: '' }
     });

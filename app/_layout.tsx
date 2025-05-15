@@ -369,6 +369,7 @@ export default function RootLayout() {
   const [isVideoFullscreen, setIsVideoFullscreen] = useState(false);
   const pathname = usePathname();
   const isWatchPage = pathname?.includes('/anime/watch/');
+  const isChatPage = pathname?.includes('/chat');
 
   useEffect(() => {
     const subscription = ScreenOrientation.addOrientationChangeListener((event) => {
@@ -400,7 +401,7 @@ export default function RootLayout() {
             },
             contentStyle: {
               backgroundColor: '#121212',
-              paddingBottom: isVideoFullscreen || isWatchPage ? 0 : 60,
+              paddingBottom: isVideoFullscreen || isWatchPage || isChatPage ? 0 : 60,
             },
             animation: 'none',
             animationDuration: 0,
@@ -486,7 +487,7 @@ export default function RootLayout() {
         </Stack>
         {/* Position the bottom tab bar with absolute positioning outside the Stack */}
         <View style={styles.bottomTabContainer}>
-          {!isVideoFullscreen && !isWatchPage && <BottomTabBar />}
+          {!isVideoFullscreen && !isWatchPage && !isChatPage && <BottomTabBar />}
         </View>
       </View>
     </ThemeProvider>

@@ -93,34 +93,89 @@ export default function MentionsScreen() {
 
   // Navigate to chat message
   const navigateToMessage = (messageId: string) => {
-    // TODO: Implement navigation to specific chat message
+    // Navigate to public chat where the message was sent
     router.push('/chat');
+  };
+  
+  // Helper function to render message content with @mentions highlighted
+  const renderMessageContent = (content: string) => {
+    if (!content) return null;
+    
+    // Split content by @mentions
+    const parts = content.split(/(@\w+)/g);
+    
+    return (
+      <Text style={styles.messageText}>
+        {parts.map((part, index) => {
+          if (part.startsWith('@')) {
+            // It's a mention, highlight it
+            return <Text key={index} style={styles.highlightedMention}>{part}</Text>;
+          }
+          return <Text key={index}>{part}</Text>;
+        })}
+      </Text>
+    );
+  };
+
+  // Check if the message is from an AI character
+  const isAICharacter = (userId: string) => {
+    return userId.endsWith('-ai');
   };
 
   // Render mention item
   const renderMentionItem = ({ item }: { item: MentionNotification }) => {
     const timestamp = item.timestamp?.toDate?.() || new Date();
     const timeString = timestamp.toLocaleString();
+    const isAI = isAICharacter(item.fromUserId);
 
     return (
-      <TouchableOpacity
+      <View
         style={[styles.mentionItem, !item.read && styles.unreadMention]}
-        onPress={() => {
-          handleMarkAsRead(item.id);
-          navigateToMessage(item.messageId);
-        }}
       >
         <View style={styles.mentionHeader}>
-          <Text style={styles.username}>@{item.fromUsername}</Text>
+          <View style={styles.userInfoContainer}>
+            {isAI && (
+              <View style={styles.aiIndicator}>
+                <MaterialIcons name="smart-toy" size={12} color="#fff" />
+              </View>
+            )}
+            <Text style={styles.username}>@{item.fromUsername}</Text>
+            {!item.read && (
+              <View style={styles.unreadIndicator}>
+                <MaterialIcons name="fiber-manual-record" size={10} color="#f4511e" />
+              </View>
+            )}
+          </View>
           <Text style={styles.timestamp}>{timeString}</Text>
         </View>
-        <Text style={styles.content}>{item.content}</Text>
-        {!item.read && (
-          <View style={styles.unreadIndicator}>
-            <MaterialIcons name="fiber-manual-record" size={12} color="#f4511e" />
-          </View>
-        )}
-      </TouchableOpacity>
+        
+        <View style={styles.messageContainer}>
+          {renderMessageContent(item.content)}
+        </View>
+        
+        <View style={styles.actionsContainer}>
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => {
+              handleMarkAsRead(item.id);
+              navigateToMessage(item.messageId);
+            }}
+          >
+            <MaterialIcons name="chat" size={16} color="#fff" />
+            <Text style={styles.actionButtonText}>View in Chat</Text>
+          </TouchableOpacity>
+          
+          {!item.read && (
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.markReadButton]}
+              onPress={() => handleMarkAsRead(item.id)}
+            >
+              <MaterialIcons name="done-all" size={16} color="#fff" />
+              <Text style={styles.actionButtonText}>Mark as Read</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
     );
   };
 
@@ -150,6 +205,10 @@ export default function MentionsScreen() {
           <View style={styles.emptyContainer}>
             <MaterialIcons name="notifications-none" size={48} color="#666" />
             <Text style={styles.emptyText}>No mentions yet</Text>
+            <Text style={styles.emptySubtext}>
+              When someone mentions you in a chat or an AI responds to you, 
+              those mentions will appear here.
+            </Text>
           </View>
         }
       />
@@ -170,14 +229,20 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 16,
+    paddingBottom: 100, // Extra padding at bottom for better scrolling
   },
   mentionItem: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    backgroundColor: 'rgba(30, 30, 30, 0.95)',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   unreadMention: {
     backgroundColor: 'rgba(244, 81, 30, 0.1)',
@@ -187,7 +252,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
+  },
+  userInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  aiIndicator: {
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   username: {
     color: '#f4511e',
@@ -195,28 +271,67 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   timestamp: {
-    color: '#666',
+    color: '#888',
     fontSize: 12,
   },
-  content: {
+  messageContainer: {
+    backgroundColor: 'rgba(40, 40, 40, 0.8)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  messageText: {
     color: '#fff',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  highlightedMention: {
+    color: '#f4511e',
+    fontWeight: 'bold',
   },
   unreadIndicator: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
+    marginLeft: 6,
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#333',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    gap: 4,
+  },
+  markReadButton: {
+    backgroundColor: '#444',
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
   },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 32,
+    paddingHorizontal: 24,
   },
   emptyText: {
+    color: '#888',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 12,
+  },
+  emptySubtext: {
     color: '#666',
-    fontSize: 16,
+    fontSize: 14,
+    textAlign: 'center',
     marginTop: 8,
+    lineHeight: 20,
   },
 }); 

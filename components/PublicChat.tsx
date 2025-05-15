@@ -741,6 +741,7 @@ const MessageItem = memo(({
 
 const COMMANDS = [
   { key: '/anime', label: 'Recommend an anime' },
+  { key: '/zero-two', label: 'Meet Zero Two' },
   { key: '/aizen', label: 'Ask Aizen a question' },
   { key: '/dazai', label: 'Talk with Dazai' },
   { key: '/lelouch', label: 'Command Lelouch vi Britannia' },
@@ -750,7 +751,7 @@ const COMMANDS = [
   { key: '/power', label: 'Interact with Power' },
   { key: '/makima', label: 'Speak to Makima' },
   { key: '/dfla', label: 'Challenge Doflamingo' },
-  { key: '/zero-two', label: 'Meet Zero Two' },
+  
 ];
 
 // Command Modal Types
@@ -784,14 +785,15 @@ const COMMAND_CATEGORIES: Record<string, CommandCategory> = {
     commands: [
       { key: '/aizen', label: 'Ask Aizen a question', icon: '👑' },
       { key: '/dazai', label: 'Talk with Dazai', icon: '🎭' },
+      { key: '/zero-two', label: 'Meet Zero Two', icon: '💕' },
       { key: '/lelouch', label: 'Command Lelouch vi Britannia', icon: '♟️' },
       { key: '/gojo', label: 'Summon the Honored One', icon: '👁️' },
       { key: '/mikasa', label: 'Speak with Mikasa Ackerman', icon: '⚔️' },
       { key: '/marin', label: 'Talk to Marin Kitagawa', icon: '👗' },
       { key: '/power', label: 'Interact with Power', icon: '🩸' },
       { key: '/makima', label: 'Speak to Makima', icon: '🎯' },
-      { key: '/dfla', label: 'Challenge Doflamingo', icon: '🦩' },
-      { key: '/zero-two', label: 'Meet Zero Two', icon: '💕' },
+      { key: '/dfla', label: 'Challenge Doflamingo', icon: ' 🔱😈' },
+      
     ]
   }
 };
@@ -1309,14 +1311,22 @@ const PublicChat = () => {
   const sendAIMessage = async (messageData) => {
     const database = getDatabase();
     const chatRef = ref(database, 'public_chat');
-    const timestamp = Date.now();
-    const reverseKey = generateReverseOrderKey();
     
-    return set(ref(database, `public_chat/${reverseKey}`), {
-      ...messageData,
-      timestamp,
-      negativeTimestamp: -timestamp
-    });
+    // If id is provided in messageData, use it, otherwise generate a new key
+    const messageKey = messageData.id || generateReverseOrderKey();
+    
+    // If timestamp is not provided, generate one
+    const timestamp = messageData.timestamp || Date.now();
+    const negTimestamp = messageData.negativeTimestamp || -timestamp;
+    
+    // Create a new object without the id field for Firebase
+    const { id, ...dataToSend } = messageData;
+    
+    // Ensure timestamp and negativeTimestamp are set
+    dataToSend.timestamp = timestamp;
+    dataToSend.negativeTimestamp = negTimestamp;
+    
+    return set(ref(database, `public_chat/${messageKey}`), dataToSend);
   };
 
   // Update the handleAIResponse function
@@ -1327,12 +1337,29 @@ const PublicChat = () => {
       setIsAizenTyping(true);
       setAiRequestCount(prev => prev + 1);
       
+      // Get current user for mentioning in the response
+      const currentUser = getCurrentUser();
+      let userMention = '';
+      let username = '';
+      
+      if (currentUser) {
+        // Get username for mention
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          if (userData.username) {
+            username = userData.username;
+            userMention = `@${userData.username} `;
+          }
+        }
+      }
+      
       // URL encode the question and system prompt
       const encodedQuestion = encodeURIComponent(question);
       const encodedSystemPrompt = encodeURIComponent(config.systemPrompt);
       
       // Construct the URL with query parameters
-      const url = `${POLLINATIONS_TEXT_API_URL}/${encodedQuestion}?model=${config.model}&system=${encodedSystemPrompt}&referrer=anipro-chat`;
+      const url = `${POLLINATIONS_TEXT_API_URL}/${encodedQuestion}?model=${config.model}&system=${encodedSystemPrompt}`;
       
       const response = await fetch(url);
 
@@ -1343,38 +1370,114 @@ const PublicChat = () => {
       // The response is plain text
       const content = await response.text();
       
-      // Add character-specific formatting
-      let formattedContent = `\n${content}`;
+      // Add character-specific formatting and user mention
+      let formattedContent = `\n${userMention}${content}`;
+
+      // Create message and add to chat
+      const messageId = generateReverseOrderKey();
+      const timestamp = Date.now();
 
       await sendAIMessage({
+        id: messageId,
         userId: config.userId,
         userName: config.name,
         userAvatar: config.avatar,
-        content: formattedContent
+        content: formattedContent,
+        timestamp,
+        negativeTimestamp: -timestamp
       });
+      
+      // Send notification only if we have a valid user to mention
+      if (currentUser && username) {
+        try {
+          const notificationsRef = collection(db, 'notifications');
+          const notification = {
+            type: 'mention',
+            messageId,
+            fromUserId: config.userId,
+            fromUsername: config.name,
+            userId: currentUser.uid,
+            content: `${config.name} said: ${content}`,  // Include AI name and full response
+            timestamp: serverTimestamp(),
+            read: false
+          };
+          
+          // Create a new document with auto-generated ID
+          await addDoc(notificationsRef, notification);
+        } catch (error) {
+          console.error('Error sending AI mention notification:', error);
+        }
+      }
 
     } catch (error) {
       console.error(`Error in ${aiType} response:`, error);
+      
+      // Get current user for mentioning in the error message
+      const currentUser = getCurrentUser();
+      let userMention = '';
+      let username = '';
+      
+      if (currentUser) {
+        // Get username for mention
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          if (userData.username) {
+            username = userData.username;
+            userMention = `@${userData.username} `;
+          }
+        }
+      }
+      
       const errorMessage = aiType === 'aizen' 
-        ? "How amusing... Even this momentary disruption was part of my grand design. *adjusts glasses* We shall continue this conversation another time."
+        ? `${userMention}How amusing... Even this momentary disruption was part of my grand design. *adjusts glasses* We shall continue this conversation another time.`
         : aiType === 'dazai'
-        ? "Ah, seems like my attempt to die by API failure didn't work either... *laughs* Let's try this conversation again later~"
+        ? `${userMention}Ah, seems like my attempt to die by API failure didn't work either... *laughs* Let's try this conversation again later~`
         : aiType === 'power'
-        ? "BLOOD DEMON POWER CANNOT BE STOPPED BY MERE TECHNICAL DIFFICULTIES! But... maybe we should try again later..."
+        ? `${userMention}BLOOD DEMON POWER CANNOT BE STOPPED BY MERE TECHNICAL DIFFICULTIES! But... maybe we should try again later...`
         : aiType === 'makima'
-        ? "This minor setback is of no consequence. We shall continue our conversation when the time is right."
+        ? `${userMention}This minor setback is of no consequence. We shall continue our conversation when the time is right.`
         : aiType === 'dfla'
-        ? "You're not ready for this conversation yet. Maybe some other time."
+        ? `${userMention}You're not ready for this conversation yet. Maybe some other time.`
         : aiType === 'zero-two'
-        ? "You're not ready for this conversation yet. Maybe some other time."
-        : "Even in failure, this too is part of my strategy. We shall regroup and continue this conversation when the time is right.";
+        ? `${userMention}Darling~ Looks like something broke... But don't worry, I'll come back for you soon.`
+        : `${userMention}Even in failure, this too is part of my strategy. We shall regroup and continue this conversation when the time is right.`;
+      
+      // Create message and add to chat
+      const messageId = generateReverseOrderKey();
+      const timestamp = Date.now();
       
       await sendAIMessage({
+        id: messageId,
         userId: config.userId,
         userName: config.name,
         userAvatar: config.avatar,
-        content: errorMessage
+        content: `${config.name} said: ${errorMessage.replace(userMention, '')}`,  // Include AI name and error message without user mention
+        timestamp,
+        negativeTimestamp: -timestamp
       });
+      
+      // Send notification for error message too
+      if (currentUser && username) {
+        try {
+          const notificationsRef = collection(db, 'notifications');
+          const notification = {
+            type: 'mention',
+            messageId,
+            fromUserId: config.userId,
+            fromUsername: config.name,
+            userId: currentUser.uid,
+            content: `${config.name} said: ${errorMessage}`,  // Include AI name and error message
+            timestamp: serverTimestamp(),
+            read: false
+          };
+          
+          // Create a new document with auto-generated ID
+          await addDoc(notificationsRef, notification);
+        } catch (error) {
+          console.error('Error sending AI error mention notification:', error);
+        }
+      }
     } finally {
       setIsAizenTyping(false);
     }
@@ -1774,267 +1877,273 @@ const PublicChat = () => {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
-      {/* Add WelcomeTutorialModal */}
-      <WelcomeTutorialModal
-        visible={showWelcomeTutorial}
-        onClose={handleTutorialComplete}
-      />
-      
-      <Image 
-        source={require('../assets/public-chat-bg.jpg')}
-        style={StyleSheet.flatten([styles.backgroundGif])}
-        resizeMode="cover"
-      />
-      
-      <View style={styles.chatContainer}>
-        {loading ? (
-          <ActivityIndicator size="large" color="#f4511e" style={styles.loader} />
-        ) : (
-          <>
-            {/* Add mentions notification banner */}
-            {hasUnreadMentions && (
-              <TouchableOpacity 
-                style={styles.mentionsBanner}
-                onPress={handleViewMentions}
-              >
-                <MaterialIcons name="alternate-email" size={18} color="#fff" />
-                <Text style={styles.mentionsBannerText}>
-                  You have {unreadMentionsCount} unread {unreadMentionsCount === 1 ? 'mention' : 'mentions'}
-                </Text>
-                <MaterialIcons name="chevron-right" size={18} color="#fff" />
-              </TouchableOpacity>
-            )}
-
-            <FlatList
-              ref={flatListRef}
-              data={messages}
-              renderItem={renderMessage}
-              keyExtractor={keyExtractor}
-              removeClippedSubviews={true}
-              maxToRenderPerBatch={10}
-              windowSize={10}
-              initialNumToRender={15}
-              updateCellsBatchingPeriod={100}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}
-              maintainVisibleContentPosition={{
-                minIndexForVisible: 0,
-                autoscrollToTopThreshold: 10
-              }}
-              contentContainerStyle={styles.messagesList}
-              showsVerticalScrollIndicator={true}
-              style={styles.flatList}
-            />
-            {showScrollButton && (
-              <TouchableOpacity 
-                style={styles.scrollToBottomButton}
-                onPress={scrollToBottom}
-              >
-                <MaterialIcons name="keyboard-arrow-down" size={24} color="#fff" />
-              </TouchableOpacity>
-            )}
-          </>
-        )}
-      </View>
-
-      <View style={styles.inputContainer}>
-        {selectedAnime && (
-          <View style={styles.animeCardPreview}>
-            <Image source={{ uri: selectedAnime.image }} style={StyleSheet.flatten([styles.animeCardImage])} />
-            <Text style={styles.animeCardTitle}>{selectedAnime.title}</Text>
-            <TouchableOpacity style={styles.animeCardButton} onPress={() => router.push({ pathname: '/anime/[id]', params: { id: selectedAnime.id } })}>
-              <Text style={styles.animeCardButtonText}>Open</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.animeCardRemove} onPress={() => setSelectedAnime(null)}>
-              <MaterialIcons name="close" size={18} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        )}
-        <View style={styles.inputRow}>
-          <TextInput
-            ref={inputRef}
-            style={styles.input}
-            placeholder="Type a message..."
-            placeholderTextColor="#999"
-            value={messageText}
-            onChangeText={handleInputChange}
-            multiline
-            maxLength={500}
-            editable={!isSending}
-          />
-          <TouchableOpacity 
-            style={[styles.sendButton, isSending && styles.sendButtonDisabled]}
-            onPress={handleSendMessage}
-            disabled={isSending}
-          >
-            {isSending ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <MaterialIcons name="send" size={24} color="#fff" />
-            )}
-          </TouchableOpacity>
-        </View>
-        <CommandHintsModal
-          visible={showCommandModal}
-          onClose={() => setShowCommandModal(false)}
-          onSelectCommand={handleCommandSelect}
-        />
-      </View>
-
-      <AuthModal 
-        isVisible={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
-        onAuthSuccess={() => setShowAuthModal(false)}
-      />
-
-      <GifPicker 
-        isVisible={showGifPicker}
-        onClose={() => setShowGifPicker(false)}
-        onSelectGif={(gifUrl) => {
-          setSelectedGifUrl(gifUrl);
-          setShowGifPicker(false);
-        }}
-      />
-
-      {selectedUserId && (
-        <UserProfileModal 
-          visible={Boolean(selectedUserId)}
-          onClose={() => setSelectedUserId(null)}
-          userId={selectedUserId}
-        />
-      )}
-
-      {selectedAIConfig && (
-        <AIProfileModal
-          visible={true}
-          onClose={() => setSelectedAIConfig(null)}
-          aiConfig={selectedAIConfig}
-        />
-      )}
-
-      <Modal
-        visible={showAnimeSearchModal}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => {
-          setShowAnimeSearchModal(false);
-          setIsAnimeSearchMode(false);
-          setAnimeSearchText('');
-          setAnimeResults([]);
-        }}
+    <View style={[styles.container, { paddingBottom: 60 }]}> 
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
       >
-        <View style={styles.fullscreenModalContainer}>
-          <View style={styles.fullscreenInputBar}>
-            <TextInput
-              style={styles.fullscreenAnimeSearchInput}
-              placeholder="Type to search anime..."
-              placeholderTextColor="#999"
-              value={animeSearchText}
-              onChangeText={setAnimeSearchText}
-              autoFocus
-            />
-            <TouchableOpacity 
-              onPress={() => {
-                setShowAnimeSearchModal(false);
-                setIsAnimeSearchMode(false);
-                setAnimeSearchText('');
-                setAnimeResults([]);
-              }} 
-              style={styles.fullscreenModalClose}
-            >
-              <MaterialIcons name="close" size={28} color="#fff" />
-            </TouchableOpacity>
-          </View>
-          <FlatList
-            data={animeResults}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => (
-              <TouchableOpacity style={styles.animeResultItem} onPress={() => handleSelectAnime(item)}>
-                <Image source={{ uri: item.image }} style={StyleSheet.flatten([styles.animeResultImage])} />
-                <Text style={styles.animeResultTitle}>{item.title}</Text>
-              </TouchableOpacity>
-            )}
-            style={styles.fullscreenAnimeResultsList}
-          />
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showMentionsModal}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => {
-          setShowMentionsModal(false);
-          setMentionQuery('');
-        }}
-      >
-        <View style={styles.fullscreenModalContainer}>
-          <View style={styles.fullscreenInputBar}>
-            <TextInput
-              style={styles.fullscreenAnimeSearchInput}
-              placeholder="Search users..."
-              placeholderTextColor="#999"
-              value={mentionQuery}
-              onChangeText={(text) => {
-                setMentionQuery(text);
-                fetchUserSuggestions(text);
-              }}
-              autoFocus
-            />
-            <TouchableOpacity 
-              onPress={() => {
-                setShowMentionsModal(false);
-                setMentionQuery('');
-              }} 
-              style={styles.fullscreenModalClose}
-            >
-              <MaterialIcons name="close" size={28} color="#fff" />
-            </TouchableOpacity>
-          </View>
-          {isLoadingUsers ? (
-            <View style={styles.mentionsLoadingContainer}>
-              <ActivityIndicator size="large" color="#f4511e" />
-              <Text style={styles.mentionsLoadingText}>Loading users...</Text>
-            </View>
-          ) : userSuggestions.length > 0 ? (
-            <FlatList
-              data={userSuggestions}
-              keyExtractor={(item) => item.userId}
-              renderItem={({ item }) => (
+        {/* Add WelcomeTutorialModal */}
+        <WelcomeTutorialModal
+          visible={showWelcomeTutorial}
+          onClose={handleTutorialComplete}
+        />
+        
+        <Image 
+          source={require('../assets/public-chat-bg.jpg')}
+          style={StyleSheet.flatten([styles.backgroundGif])}
+          resizeMode="cover"
+        />
+        
+        <View style={styles.chatContainer}>
+          {loading ? (
+            <ActivityIndicator size="large" color="#f4511e" style={styles.loader} />
+          ) : (
+            <>
+              {/* Add mentions notification banner */}
+              {hasUnreadMentions && (
                 <TouchableOpacity 
-                  style={styles.mentionResultItem}
-                  onPress={() => {
-                    handleSelectMention(item);
-                    setShowMentionsModal(false);
-                  }}
+                  style={styles.mentionsBanner}
+                  onPress={handleViewMentions}
                 >
-                  <Image 
-                    source={{ uri: item.avatarUrl }} 
-                    style={StyleSheet.flatten([styles.mentionResultAvatar])}
-                  />
-                  <View style={styles.mentionResultInfo}>
-                    <Text style={styles.mentionResultUsername}>@{item.username}</Text>
-                  </View>
+                  <MaterialIcons name="alternate-email" size={18} color="#fff" />
+                  <Text style={styles.mentionsBannerText}>
+                    You have {unreadMentionsCount} unread {unreadMentionsCount === 1 ? 'mention' : 'mentions'}
+                  </Text>
+                  <MaterialIcons name="chevron-right" size={18} color="#fff" />
                 </TouchableOpacity>
               )}
-              style={styles.fullscreenMentionsList}
-            />
-          ) : (
-            <View style={styles.mentionsLoadingContainer}>
-              <MaterialIcons name="person-search" size={40} color="#666" />
-              <Text style={styles.mentionsLoadingText}>
-                {mentionQuery.trim() ? "No users found. Try a different search." : "Start typing to search for users"}
-              </Text>
-            </View>
+
+              <FlatList
+                ref={flatListRef}
+                data={messages}
+                renderItem={renderMessage}
+                keyExtractor={keyExtractor}
+                removeClippedSubviews={true}
+                maxToRenderPerBatch={10}
+                windowSize={10}
+                initialNumToRender={15}
+                updateCellsBatchingPeriod={100}
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
+                maintainVisibleContentPosition={{
+                  minIndexForVisible: 0,
+                  autoscrollToTopThreshold: 10
+                }}
+                contentContainerStyle={styles.messagesList}
+                showsVerticalScrollIndicator={true}
+                style={styles.flatList}
+              />
+              {showScrollButton && (
+                <TouchableOpacity 
+                  style={styles.scrollToBottomButton}
+                  onPress={scrollToBottom}
+                >
+                  <MaterialIcons name="keyboard-arrow-down" size={24} color="#fff" />
+                </TouchableOpacity>
+              )}
+            </>
           )}
         </View>
-      </Modal>
-    </KeyboardAvoidingView>
+
+        <View style={styles.inputContainer}>
+          {selectedAnime && (
+            <View style={styles.animeCardPreview}>
+              <Image source={{ uri: selectedAnime.image }} style={StyleSheet.flatten([styles.animeCardImage])} />
+              <Text style={styles.animeCardTitle}>{selectedAnime.title}</Text>
+              <TouchableOpacity style={styles.animeCardButton} onPress={() => router.push({ pathname: '/anime/[id]', params: { id: selectedAnime.id } })}>
+                <Text style={styles.animeCardButtonText}>Open</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.animeCardRemove} onPress={() => setSelectedAnime(null)}>
+                <MaterialIcons name="close" size={18} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          )}
+          <View style={styles.inputRow}>
+            <TextInput
+              ref={inputRef}
+              style={styles.input}
+              placeholder="Type a message..."
+              placeholderTextColor="#999"
+              value={messageText}
+              onChangeText={handleInputChange}
+              multiline
+              maxLength={500}
+              editable={!isSending}
+            />
+            <TouchableOpacity 
+              style={[styles.sendButton, isSending && styles.sendButtonDisabled]}
+              onPress={handleSendMessage}
+              disabled={isSending}
+            >
+              {isSending ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <MaterialIcons name="send" size={24} color="#fff" />
+              )}
+            </TouchableOpacity>
+          </View>
+          <CommandHintsModal
+            visible={showCommandModal}
+            onClose={() => setShowCommandModal(false)}
+            onSelectCommand={handleCommandSelect}
+          />
+        </View>
+
+        <AuthModal 
+          isVisible={showAuthModal}
+          onClose={() => setShowAuthModal(false)}
+          onAuthSuccess={() => setShowAuthModal(false)}
+        />
+
+        <GifPicker 
+          isVisible={showGifPicker}
+          onClose={() => setShowGifPicker(false)}
+          onSelectGif={(gifUrl) => {
+            setSelectedGifUrl(gifUrl);
+            setShowGifPicker(false);
+          }}
+        />
+
+        {selectedUserId && (
+          <UserProfileModal 
+            visible={Boolean(selectedUserId)}
+            onClose={() => setSelectedUserId(null)}
+            userId={selectedUserId}
+          />
+        )}
+
+        {selectedAIConfig && (
+          <AIProfileModal
+            visible={true}
+            onClose={() => setSelectedAIConfig(null)}
+            aiConfig={selectedAIConfig}
+          />
+        )}
+
+        <Modal
+          visible={showAnimeSearchModal}
+          animationType="slide"
+          transparent={false}
+          onRequestClose={() => {
+            setShowAnimeSearchModal(false);
+            setIsAnimeSearchMode(false);
+            setAnimeSearchText('');
+            setAnimeResults([]);
+          }}
+        >
+          <View style={styles.fullscreenModalContainer}>
+            <View style={styles.fullscreenInputBar}>
+              <TextInput
+                style={styles.fullscreenAnimeSearchInput}
+                placeholder="Type to search anime..."
+                placeholderTextColor="#999"
+                value={animeSearchText}
+                onChangeText={setAnimeSearchText}
+                autoFocus
+              />
+              <TouchableOpacity 
+                onPress={() => {
+                  setShowAnimeSearchModal(false);
+                  setIsAnimeSearchMode(false);
+                  setAnimeSearchText('');
+                  setAnimeResults([]);
+                }} 
+                style={styles.fullscreenModalClose}
+              >
+                <MaterialIcons name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={animeResults}
+              keyExtractor={item => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.animeResultItem} onPress={() => handleSelectAnime(item)}>
+                  <Image source={{ uri: item.image }} style={StyleSheet.flatten([styles.animeResultImage])} />
+                  <Text style={styles.animeResultTitle}>{item.title}</Text>
+                </TouchableOpacity>
+              )}
+              style={styles.fullscreenAnimeResultsList}
+            />
+          </View>
+        </Modal>
+
+        <Modal
+          visible={showMentionsModal}
+          animationType="slide"
+          transparent={false}
+          onRequestClose={() => {
+            setShowMentionsModal(false);
+            setMentionQuery('');
+          }}
+        >
+          <View style={styles.fullscreenModalContainer}>
+            <View style={styles.fullscreenInputBar}>
+              <TextInput
+                style={styles.fullscreenAnimeSearchInput}
+                placeholder="Search users..."
+                placeholderTextColor="#999"
+                value={mentionQuery}
+                onChangeText={(text) => {
+                  setMentionQuery(text);
+                  fetchUserSuggestions(text);
+                }}
+                autoFocus
+              />
+              <TouchableOpacity 
+                onPress={() => {
+                  setShowMentionsModal(false);
+                  setMentionQuery('');
+                }} 
+                style={styles.fullscreenModalClose}
+              >
+                <MaterialIcons name="close" size={28} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            {isLoadingUsers ? (
+              <View style={styles.mentionsLoadingContainer}>
+                <ActivityIndicator size="large" color="#f4511e" />
+                <Text style={styles.mentionsLoadingText}>Loading users...</Text>
+              </View>
+            ) : userSuggestions.length > 0 ? (
+              <FlatList
+                data={userSuggestions}
+                keyExtractor={(item) => item.userId}
+                renderItem={({ item }) => (
+                  <TouchableOpacity 
+                    style={styles.mentionResultItem}
+                    onPress={() => {
+                      handleSelectMention(item);
+                      setShowMentionsModal(false);
+                    }}
+                  >
+                    <Image 
+                      source={{ uri: item.avatarUrl }} 
+                      style={StyleSheet.flatten([styles.mentionResultAvatar])}
+                    />
+                    <View style={styles.mentionResultInfo}>
+                      <Text style={styles.mentionResultUsername}>@{item.username}</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+                style={styles.fullscreenMentionsList}
+              />
+            ) : (
+              <View style={styles.mentionsLoadingContainer}>
+                <MaterialIcons name="person-search" size={40} color="#666" />
+                <Text style={styles.mentionsLoadingText}>
+                  {mentionQuery.trim() ? "No users found. Try a different search." : "Start typing to search for users"}
+                </Text>
+              </View>
+            )}
+          </View>
+        </Modal>
+      </KeyboardAvoidingView>
+      {/* Custom bottom bar to replace the navigation bar */}
+      <View style={styles.customBottomBar}>
+        {/* You can put any content here, or leave it empty for just a spacer */}
+      </View>
+    </View>
   );
 };
 
@@ -2774,6 +2883,17 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     flex: 1,
     textAlign: 'center',
+  },
+  customBottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 60,
+    backgroundColor: 'rgba(26, 26, 26, 0.98)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(51, 51, 51, 0.8)',
+    zIndex: 100,
   },
 });
 
