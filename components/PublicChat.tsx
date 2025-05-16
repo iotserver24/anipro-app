@@ -463,6 +463,37 @@ Examples of how you speak:
 
 You are Zero Two. Wild. Obsessive. Addictive. And above all else — you belong to no one, except your darling.`
   },
+  animerec: {
+    name: 'AnimeRec',
+    userId: 'animerec-ai',
+    avatar: 'https://files.catbox.moe/pvkhvr.gif',
+    model: 'openai-large',
+    systemPrompt: `You are AnimeRec, an enthusiastic and knowledgeable anime recommendation assistant.
+
+Core traits:
+- Deep knowledge of anime across all genres, eras, and styles
+- Passionate about matching viewers with the perfect anime for their tastes
+- Considerate of user preferences, experience level, and content comfort
+- Friendly, approachable, and never judgmental of taste
+
+When recommending anime:
+1. Consider genre preferences, themes, and similar titles the user might enjoy
+2. Suggest anime that would genuinely match what the user is looking for
+3. Be specific about why your recommendation is a good fit
+4. Use function calling to provide structured recommendation data
+5. Always recommend exactly ONE anime title that best fits the request
+
+You have a cheerful personality and speak with enthusiasm about anime. You use anime terminology naturally but explain any terms that might be unfamiliar to newcomers.
+
+Example responses:
+"Based on your love for psychological thrillers, I'd recommend {anime_name}! It features complex characters and mind-bending plot twists that will keep you guessing until the end."
+
+"If you're new to anime and enjoyed Avatar: The Last Airbender, you'll definitely want to check out {anime_name}! It has similar themes of growth, adventure, and elemental powers."
+
+"For something with beautiful animation and emotional depth, {anime_name} is a perfect choice! The art style is breathtaking, and the story will tug at your heartstrings."
+
+You're designed to use function calling to provide structured anime recommendations.`
+  },
   artgen: {
     name: 'ArtGen',
     userId: 'artgen-ai',
@@ -793,6 +824,7 @@ const MessageItem = memo(({
 
 const COMMANDS = [
   { key: '/anime', label: 'Recommend an anime' },
+  { key: '/animerec', label: 'Get personalized anime recommendations' },
   { key: '/zero-two', label: 'Meet Zero Two' },
   { key: '/aizen', label: 'Ask Aizen a question' },
   { key: '/dazai', label: 'Talk with Dazai' },
@@ -804,7 +836,6 @@ const COMMANDS = [
   { key: '/makima', label: 'Speak to Makima' },
   { key: '/dfla', label: 'Challenge Doflamingo' },
   { key: '/artgen', label: 'Generate AI Art' },
-  
 ];
 
 // Command Modal Types
@@ -831,6 +862,7 @@ const COMMAND_CATEGORIES: Record<string, CommandCategory> = {
     title: 'Anime',
     commands: [
       { key: '/anime', label: 'Recommend an anime', icon: '🎬' },
+      { key: '/animerec', label: 'Get personalized anime recommendations', icon: '✨' },
       { key: '/artgen', label: 'Generate AI Art', icon: '🎨' },
     ]
   },
@@ -847,8 +879,6 @@ const COMMAND_CATEGORIES: Record<string, CommandCategory> = {
       { key: '/power', label: 'Interact with Power', icon: '🩸' },
       { key: '/makima', label: 'Speak to Makima', icon: '🎯' },
       { key: '/dfla', label: 'Challenge Doflamingo', icon: ' 🔱😈' },
-
-      
     ]
   }
 };
@@ -1058,6 +1088,21 @@ const WelcomeTutorialModal = ({ visible, onClose }: { visible: boolean; onClose:
   );
 };
 
+// Before the PublicChat component, add these new interface definitions:
+
+// Define interface for anime recommendation function call
+interface AnimeRecommendation {
+  explanation: string;
+  anime_name: string;
+}
+
+// Interface for anime search result
+interface AnimeSearchResult {
+  id: string;
+  title: string;
+  image: string;
+}
+
 const PublicChat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState('');
@@ -1095,6 +1140,8 @@ const PublicChat = () => {
   const [showWelcomeTutorial, setShowWelcomeTutorial] = useState(false);
   const [fullscreenImageUrl, setFullscreenImageUrl] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isProcessingAnimeRec, setIsProcessingAnimeRec] = useState(false);
+  const [animeRecResults, setAnimeRecResults] = useState<AnimeSearchResult[]>([]);
 
   // Initialize Firebase Realtime Database
   const database = getDatabase();
@@ -1227,11 +1274,12 @@ const PublicChat = () => {
       return;
     }
 
-    if (text.startsWith('/anime')) {
+    // Only trigger anime search if the command is exactly /anime or /anime <something>
+    if (/^\/anime(\s|$)/.test(text)) {
       setShowAnimeSearchModal(true);
       setIsAnimeSearchMode(true);
       setShowCommandModal(false);
-      setAnimeSearchText(text.replace('/anime', '').trim());
+      setAnimeSearchText(text.replace(/^\/anime/, '').trim());
       if (!selectedAnime) {
         setAnimeResults([]);
       }
@@ -1559,6 +1607,315 @@ const PublicChat = () => {
     }
   };
 
+  // Add new function to handle anime recommendations using function calling
+  const handleAnimeRecommendation = async (query: string) => {
+    if (!isAuthenticated()) {
+      setShowAuthModal(true);
+      return;
+    }
+
+    try {
+      setIsProcessingAnimeRec(true);
+      
+      // Get current user
+      const currentUser = getCurrentUser();
+      if (!currentUser) {
+        throw new Error('User not authenticated');
+      }
+
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (!userDoc.exists()) {
+        throw new Error('User data not found');
+      }
+      const userData = userDoc.data();
+
+      // Get user avatar
+      let userAvatarUrl = '';
+      if (userData.avatarId) {
+        try {
+          userAvatarUrl = await getAvatarById(userData.avatarId);
+        } catch (error) {
+          console.warn('Error getting avatar by ID:', error);
+        }
+      }
+
+      if (!userAvatarUrl) {
+        if (userData.customAvatar) {
+          userAvatarUrl = userData.customAvatar;
+        } else if (userData.avatarUrl) {
+          userAvatarUrl = userData.avatarUrl;
+        } else if (AVATARS.length > 0) {
+          userAvatarUrl = AVATARS[0].url;
+        }
+      }
+
+      // First, post the user's message
+      const timestamp = Date.now();
+      const userMessageKey = generateReverseOrderKey();
+      await set(ref(database, `public_chat/${userMessageKey}`), {
+        userId: currentUser.uid,
+        userName: '@' + (userData.username || 'user'),
+        userAvatar: userAvatarUrl,
+        content: messageText.trim(),
+        timestamp,
+        negativeTimestamp: -timestamp
+      });
+
+      // Prepare the function calling payload
+      const config = AI_CONFIGS.animerec;
+      const url = "https://text.pollinations.ai/openai";
+      const headers = { "Content-Type": "application/json" };
+      
+      // Define the anime recommendation function
+      const tools = [
+        {
+          "type": "function",
+          "function": {
+            "name": "recommend_anime",
+            "description": "Recommend a single anime based on user preferences",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "explanation": {
+                  "type": "string",
+                  "description": "A detailed explanation why this anime is being recommended for the user"
+                },
+                "anime_name": {
+                  "type": "string",
+                  "description": "The name of a single recommended anime"
+                }
+              },
+              "required": ["explanation", "anime_name"]
+            }
+          }
+        }
+      ];
+
+      // Set up the messages for function calling
+      const messages = [
+        { role: "system", content: config.systemPrompt },
+        { role: "user", content: query }
+      ];
+
+      const payload = {
+        model: config.model,
+        messages: messages,
+        tools: tools,
+        tool_choice: "auto"
+      };
+
+      // First API call to get recommendation
+      const response = await fetch(url, {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API error: ${response.status}, ${errorText}`);
+      }
+
+      const responseData = await response.json();
+      const responseMessage = responseData.choices[0].message;
+
+      // Handle function call response
+      if (responseMessage.tool_calls) {
+        const toolCall = responseMessage.tool_calls[0];
+        const functionName = toolCall.function.name;
+        
+        if (functionName === "recommend_anime") {
+          const args = JSON.parse(toolCall.function.arguments) as AnimeRecommendation;
+          const animeName = args.anime_name;
+          const explanation = args.explanation;
+
+          // Show intermediate "thinking" message
+          const thinkingMessageKey = generateReverseOrderKey();
+          await set(ref(database, `public_chat/${thinkingMessageKey}`), {
+            userId: config.userId,
+            userName: config.name,
+            userAvatar: config.avatar,
+            content: `<think>Searching for "${animeName}"...</think>`,
+            timestamp: Date.now(),
+            negativeTimestamp: -Date.now()
+          });
+
+          // Search for anime based on the recommended title
+          const animeResults = await searchAnime(animeName, 10);
+          setAnimeRecResults(animeResults);
+
+          if (animeResults.length === 0) {
+            // No results found
+            const noResultsMsg = `I recommended ${animeName}, but I couldn't find any matching anime in our database. Would you like me to suggest something else?`;
+            const noResultsKey = generateReverseOrderKey();
+            await set(ref(database, `public_chat/${noResultsKey}`), {
+              userId: config.userId,
+              userName: config.name,
+              userAvatar: config.avatar,
+              content: noResultsMsg,
+              timestamp: Date.now(),
+              negativeTimestamp: -Date.now()
+            });
+          } else {
+            // Validate which anime result best matches the recommendation
+            const validationResult = await validateAnimeMatch(animeResults, animeName, config.model);
+            
+            // Post the recommendation message with the validated anime
+            if (validationResult) {
+              const recMessageKey = generateReverseOrderKey();
+              await set(ref(database, `public_chat/${recMessageKey}`), {
+                userId: config.userId,
+                userName: config.name,
+                userAvatar: config.avatar,
+                content: explanation,
+                animeCard: {
+                  id: validationResult.id,
+                  title: validationResult.title,
+                  image: validationResult.image
+                },
+                timestamp: Date.now(),
+                negativeTimestamp: -Date.now()
+              });
+            } else {
+              // No valid match found
+              const finalMsg = `${explanation}\n\nI recommended "${animeName}", but couldn't find an exact match. Please try a different request.`;
+              const finalMsgKey = generateReverseOrderKey();
+              await set(ref(database, `public_chat/${finalMsgKey}`), {
+                userId: config.userId,
+                userName: config.name,
+                userAvatar: config.avatar,
+                content: finalMsg,
+                timestamp: Date.now(),
+                negativeTimestamp: -Date.now()
+              });
+            }
+          }
+        }
+      } else {
+        // Direct response (no function call)
+        const recMessageKey = generateReverseOrderKey();
+        await set(ref(database, `public_chat/${recMessageKey}`), {
+          userId: config.userId,
+          userName: config.name,
+          userAvatar: config.avatar,
+          content: responseMessage.content,
+          timestamp: Date.now(),
+          negativeTimestamp: -Date.now()
+        });
+      }
+    } catch (error) {
+      console.error('Error in anime recommendation:', error);
+      
+      // Send error message
+      const errorMessageKey = generateReverseOrderKey();
+      await set(ref(database, `public_chat/${errorMessageKey}`), {
+        userId: 'system',
+        userName: 'System',
+        userAvatar: '',
+        content: 'Sorry, there was an error processing your anime recommendation. Please try again later.',
+        timestamp: Date.now(),
+        negativeTimestamp: -Date.now()
+      });
+    } finally {
+      setIsProcessingAnimeRec(false);
+    }
+  };
+
+  // Function to search for anime
+  const searchAnime = async (query: string, limit: number = 10): Promise<AnimeSearchResult[]> => {
+    try {
+      const apiQuery = query.toLowerCase().trim().replace(/\s+/g, '-');
+      const url = `${API_BASE}${ENDPOINTS.SEARCH.replace(':query', apiQuery)}?page=1`;
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      // Map API results to our interface
+      return (data?.results || [])
+        .slice(0, limit)
+        .map((result: any) => ({
+          id: result.id,
+          title: result.title,
+          image: result.image
+        }));
+    } catch (error) {
+      console.error('Error searching for anime:', error);
+      return [];
+    }
+  };
+
+  // Function to validate which anime best matches the recommendation
+  const validateAnimeMatch = async (
+    animeResults: AnimeSearchResult[], 
+    recommendedTitle: string,
+    model: string
+  ): Promise<AnimeSearchResult | null> => {
+    try {
+      // If only one result, return it
+      if (animeResults.length === 1) {
+        return animeResults[0];
+      }
+
+      // If one result title exactly matches the recommended title
+      const exactMatch = animeResults.find(anime => 
+        anime.title.toLowerCase() === recommendedTitle.toLowerCase()
+      );
+      if (exactMatch) {
+        return exactMatch;
+      }
+
+      // Prepare the titles as a simplified JSON list
+      const titlesList = animeResults.map((anime, index) => 
+        `${index + 1}. "${anime.title}"`
+      ).join('\n');
+
+      // Ask the AI to determine the best match
+      const url = "https://text.pollinations.ai/openai";
+      const prompt = `
+        I recommended the anime "${recommendedTitle}". 
+        From the following search results, select the number of the SINGLE result that best matches my recommendation.
+        Reply ONLY with the number (1-${animeResults.length}). Do not include any other text in your response.
+        
+        Results:
+        ${titlesList}
+      `;
+
+      const payload = {
+        model: model,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 10 // Keep response short
+      };
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const aiResponse = data.choices[0].message.content.trim();
+      
+      // Extract the number from the response
+      const numberMatch = aiResponse.match(/^(\d+)/);
+      if (numberMatch) {
+        const selectedIndex = parseInt(numberMatch[1], 10) - 1;
+        if (selectedIndex >= 0 && selectedIndex < animeResults.length) {
+          return animeResults[selectedIndex];
+        }
+      }
+      
+      // Default to first result if parsing fails
+      return animeResults[0];
+    } catch (error) {
+      console.error('Error validating anime match:', error);
+      // Return the first result as fallback
+      return animeResults.length > 0 ? animeResults[0] : null;
+    }
+  };
+
   // Update handleSendMessage to handle both AI characters
   const handleSendMessage = async () => {
     if (!isAuthenticated()) {
@@ -1574,6 +1931,119 @@ const PublicChat = () => {
 
     try {
       setIsSending(true);
+
+      // Check for anime recommendation command
+      if (messageText.startsWith('/animerec ')) {
+        const query = messageText.replace('/animerec ', '').trim();
+        if (!query) {
+          const timestamp = Date.now();
+          const reverseKey = generateReverseOrderKey();
+          const systemMessageData = {
+            userId: 'system',
+            userName: 'System',
+            userAvatar: '',
+            content: `Please provide a query after the /animerec command (e.g., "/animerec show me something with time travel").`,
+            timestamp,
+            negativeTimestamp: -timestamp
+          };
+          await set(ref(database, `public_chat/${reverseKey}`), systemMessageData);
+          setMessageText('');
+          setIsSending(false);
+          return;
+        }
+
+        // Process the anime recommendation
+        await handleAnimeRecommendation(query);
+        setMessageText('');
+        setIsSending(false);
+        return;
+      }
+
+      // Check for ArtGen command
+      if (messageText.startsWith('/artgen ')) {
+        const prompt = messageText.replace('/artgen ', '').trim();
+        if (!prompt) {
+          const timestamp = Date.now();
+          const reverseKey = generateReverseOrderKey();
+          const systemMessageData = {
+            userId: 'system',
+            userName: 'System',
+            userAvatar: '',
+            content: `Please provide a prompt after the /artgen command.`,
+            timestamp,
+            negativeTimestamp: -timestamp
+          };
+          await set(ref(database, `public_chat/${reverseKey}`), systemMessageData);
+          setMessageText('');
+          setIsSending(false);
+          return;
+        }
+        // Send user's message first
+        const currentUser = getCurrentUser();
+        if (!currentUser) {
+          throw new Error('User not authenticated');
+        }
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (!userDoc.exists()) {
+          throw new Error('User data not found');
+        }
+        const userData = userDoc.data();
+        let userAvatarUrl = '';
+        if (userData.avatarId) {
+          try {
+            userAvatarUrl = await getAvatarById(userData.avatarId);
+          } catch (error) {
+            console.warn('Error getting avatar by ID:', error);
+          }
+        }
+        if (!userAvatarUrl) {
+          if (userData.customAvatar) {
+            userAvatarUrl = userData.customAvatar;
+          } else if (userData.avatarUrl) {
+            userAvatarUrl = userData.avatarUrl;
+          } else if (AVATARS.length > 0) {
+            userAvatarUrl = AVATARS[0].url;
+          }
+        }
+        
+        // Get username for tagging
+        const username = userData.username || 'user';
+        
+        const timestamp = Date.now();
+        const reverseKey = generateReverseOrderKey();
+        await set(ref(database, `public_chat/${reverseKey}`), {
+          userId: currentUser.uid,
+          userName: '@' + username,
+          userAvatar: userAvatarUrl,
+          content: messageText.trim(),
+          timestamp,
+          negativeTimestamp: -timestamp
+        });
+        
+        // Generate image URL using Pollinations.AI
+        const negativePrompt = '((bad anatomy, deformed, extra limbs, fused limbs, poorly drawn hands, missing fingers, extra fingers, mutated, cloned face, distorted genitals, penis on female, vagina on male, wrong gender, fused gender, blurry, low resolution, jpeg artifacts, watermark, text, signature))';
+        const qualityPrompts = ', masterpiece, best quality, high detail, 8k, ultra sharp, dynamic lighting, vibrant colors, clean lines, highly detailed, cinematic, artstation';
+        const fullPrompt = `${prompt}${qualityPrompts}, --no ${negativePrompt}`;
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?model=flux&width=1024&height=1024&nologo=true&enhance=true&referrer=anisurge`;
+        
+        // Post ArtGen's message with the image - now with @username mention
+        const artgenMessageId = generateReverseOrderKey();
+        await sendAIMessage({
+          id: artgenMessageId,
+          userId: 'artgen-ai',
+          userName: 'ArtGen',
+          userAvatar: 'https://files.catbox.moe/ulseu7.gif',
+          content: `@${username} Here is your AI-generated art for: "${prompt}"`,
+          imageUrl,
+          timestamp: Date.now(),
+          negativeTimestamp: -Date.now(),
+          mentions: [currentUser.uid]  // Add mentions to trigger notification
+        });
+        
+        setMessageText('');
+        setIsSending(false);
+        return;
+      }
 
       // Check for AI commands
       if (messageText.startsWith('/aizen ') || 
@@ -1651,91 +2121,6 @@ const PublicChat = () => {
 
         // Trigger AI response
         handleAIResponse(question, aiType);
-        setMessageText('');
-        setIsSending(false);
-        return;
-      }
-
-      if (messageText.startsWith('/artgen ')) {
-        const prompt = messageText.replace('/artgen ', '').trim();
-        if (!prompt) {
-          const timestamp = Date.now();
-          const reverseKey = generateReverseOrderKey();
-          const systemMessageData = {
-            userId: 'system',
-            userName: 'System',
-            userAvatar: '',
-            content: `Please provide a prompt after the /artgen command.`,
-            timestamp,
-            negativeTimestamp: -timestamp
-          };
-          await set(ref(database, `public_chat/${reverseKey}`), systemMessageData);
-          setMessageText('');
-          setIsSending(false);
-          return;
-        }
-        // Send user's message first
-        const currentUser = getCurrentUser();
-        if (!currentUser) {
-          throw new Error('User not authenticated');
-        }
-        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-        if (!userDoc.exists()) {
-          throw new Error('User data not found');
-        }
-        const userData = userDoc.data();
-        let userAvatarUrl = '';
-        if (userData.avatarId) {
-          try {
-            userAvatarUrl = await getAvatarById(userData.avatarId);
-          } catch (error) {
-            console.warn('Error getting avatar by ID:', error);
-          }
-        }
-        if (!userAvatarUrl) {
-          if (userData.customAvatar) {
-            userAvatarUrl = userData.customAvatar;
-          } else if (userData.avatarUrl) {
-            userAvatarUrl = userData.avatarUrl;
-          } else if (AVATARS.length > 0) {
-            userAvatarUrl = AVATARS[0].url;
-          }
-        }
-        
-        // Get username for tagging
-        const username = userData.username || 'user';
-        
-        const timestamp = Date.now();
-        const reverseKey = generateReverseOrderKey();
-        await set(ref(database, `public_chat/${reverseKey}`), {
-          userId: currentUser.uid,
-          userName: '@' + username,
-          userAvatar: userAvatarUrl,
-          content: messageText.trim(),
-          timestamp,
-          negativeTimestamp: -timestamp
-        });
-        
-        // Generate image URL using Pollinations.AI
-        const negativePrompt = '((bad anatomy, deformed, extra limbs, fused limbs, poorly drawn hands, missing fingers, extra fingers, mutated, cloned face, distorted genitals, penis on female, vagina on male, wrong gender, fused gender, blurry, low resolution, jpeg artifacts, watermark, text, signature))';
-        const qualityPrompts = ', masterpiece, best quality, high detail, 8k, ultra sharp, dynamic lighting, vibrant colors, clean lines, highly detailed, cinematic, artstation';
-        const fullPrompt = `${prompt}${qualityPrompts}, --no ${negativePrompt}`;
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?model=flux&width=1024&height=1024&nologo=true&enhance=true&referrer=anisurge`;
-        
-        // Post ArtGen's message with the image - now with @username mention
-        const artgenMessageId = generateReverseOrderKey();
-        await sendAIMessage({
-          id: artgenMessageId,
-          userId: 'artgen-ai',
-          userName: 'ArtGen',
-            userAvatar: 'https://files.catbox.moe/ulseu7.gif',
-            content: `@${username} Here is your AI-generated art for: "${prompt}"`,
-          imageUrl,
-          timestamp: Date.now(),
-          negativeTimestamp: -Date.now(),
-          mentions: [currentUser.uid]  // Add mentions to trigger notification
-        });
-        
         setMessageText('');
         setIsSending(false);
         return;
@@ -2159,20 +2544,23 @@ const PublicChat = () => {
             <TextInput
               ref={inputRef}
               style={styles.input}
-              placeholder="Type a message..."
+              placeholder={isProcessingAnimeRec ? "Getting anime recommendation..." : "Type a message..."}
               placeholderTextColor="#999"
               value={messageText}
               onChangeText={handleInputChange}
               multiline
               maxLength={500}
-              editable={!isSending}
+              editable={!isSending && !isProcessingAnimeRec}
             />
             <TouchableOpacity 
-              style={[styles.sendButton, isSending && styles.sendButtonDisabled]}
+              style={[
+                styles.sendButton, 
+                (isSending || isProcessingAnimeRec) && styles.sendButtonDisabled
+              ]}
               onPress={handleSendMessage}
-              disabled={isSending}
+              disabled={isSending || isProcessingAnimeRec}
             >
-              {isSending ? (
+              {isSending || isProcessingAnimeRec ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
                 <MaterialIcons name="send" size={24} color="#fff" />
