@@ -1025,12 +1025,12 @@ const WelcomeTutorialModal = ({ visible, onClose }: { visible: boolean; onClose:
       title: "Special Commands with /",
       description: "Type / to see available commands like /anime to share anime, or chat with AI characters like /aizen!",
       icon: "code"
+    },
+    {
+      title: "Personalized Anime Recommendations",
+      description: "Try the /animerec command to get anime recommendations from a special AI that considers your watch history and watchlist! The more you watch and add to your list, the smarter the recommendations get.",
+      icon: "star"
     }
-    // {
-    //   title: "Share GIFs and More!(upcoming featuree)",
-    //   description: "Use commands to share GIFs, anime cards, and interact with our AI characters in unique ways.",
-    //   icon: "gif"
-    // }
   ];
 
   const handleNext = () => {
@@ -1145,6 +1145,9 @@ function getPreviousChatMemory(aiType: string, userId: string, messages: ChatMes
     { role: 'assistant', content: pair.bot }
   ]);
 }
+
+// Add version constant at the top (after imports)
+const CHAT_TUTORIAL_VERSION = '2'; // Increment this when you update the tutorial
 
 const PublicChat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1524,13 +1527,13 @@ const PublicChat = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('API Error Response:', errorText);
         throw new Error(`API response was not ok. Status: ${response.status}, Body: ${errorText}`);
       }
-      
+
       // The response is OpenAI chat completion JSON
       const data = await response.json();
       const content = data.choices?.[0]?.message?.content || '';
@@ -1538,11 +1541,11 @@ const PublicChat = () => {
       
       // Add character-specific formatting and user mention
       let formattedContent = `\n${userMention}${content}`;
-      
+
       // Create message and add to chat
       const messageId = generateReverseOrderKey();
       const timestamp = Date.now();
-      
+
       await sendAIMessage({
         id: messageId,
         userId: config.userId,
@@ -2487,7 +2490,7 @@ const PublicChat = () => {
   useEffect(() => {
     const checkFirstTimeUser = async () => {
       try {
-        const hasSeenTutorial = await AsyncStorage.getItem('has_seen_chat_tutorial');
+        const hasSeenTutorial = await AsyncStorage.getItem(`has_seen_chat_tutorial_v${CHAT_TUTORIAL_VERSION}`);
         if (!hasSeenTutorial) {
           setShowWelcomeTutorial(true);
         }
@@ -2502,7 +2505,7 @@ const PublicChat = () => {
   // Add function to handle tutorial completion
   const handleTutorialComplete = async () => {
     try {
-      await AsyncStorage.setItem('has_seen_chat_tutorial', 'true');
+      await AsyncStorage.setItem(`has_seen_chat_tutorial_v${CHAT_TUTORIAL_VERSION}`, 'true');
       setShowWelcomeTutorial(false);
     } catch (error) {
       console.error('Error saving tutorial status:', error);
