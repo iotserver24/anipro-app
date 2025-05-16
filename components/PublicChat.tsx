@@ -1418,14 +1418,24 @@ const PublicChat = () => {
       // Construct the URL with query parameters
       const url = `${POLLINATIONS_TEXT_API_URL}/${encodedQuestion}?model=${config.model}&system=${encodedSystemPrompt}`;
       
+      console.log('AI Request URL:', url);
+      console.log('AI Type:', aiType);
+      console.log('Model:', config.model);
+      
       const response = await fetch(url);
+      
+      console.log('API Response Status:', response.status);
+      console.log('API Response Headers:', JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2));
 
       if (!response.ok) {
-        throw new Error('API response was not ok');
+        const errorText = await response.text();
+        console.error('API Error Response:', errorText);
+        throw new Error(`API response was not ok. Status: ${response.status}, Body: ${errorText}`);
       }
 
       // The response is plain text
       const content = await response.text();
+      console.log('API Response Content:', content);
       
       // Add character-specific formatting and user mention
       let formattedContent = `\n${userMention}${content}`;
@@ -1468,6 +1478,11 @@ const PublicChat = () => {
 
     } catch (error) {
       console.error(`Error in ${aiType} response:`, error);
+      console.error('Full error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
       
       // Get current user for mentioning in the error message
       const currentUser = getCurrentUser();
