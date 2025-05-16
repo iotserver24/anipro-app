@@ -466,7 +466,7 @@ You are Zero Two. Wild. Obsessive. Addictive. And above all else — you belong 
   animerec: {
     name: 'AnimeRec',
     userId: 'animerec-ai',
-    avatar: 'https://files.catbox.moe/pvkhvr.gif',
+    avatar: 'https://i.pinimg.com/originals/71/a3/8d/71a38d2d8cd692a63fbde70f899b3afc.gif',
     model: 'openai-large',
     systemPrompt: `You are AnimeRec, an enthusiastic and knowledgeable anime recommendation assistant.
 
@@ -482,6 +482,7 @@ When recommending anime:
 3. Be specific about why your recommendation is a good fit
 4. Use function calling to provide structured recommendation data
 5. Always recommend exactly ONE anime title that best fits the request
+6. **Always mention in your reply that you are considering the user's watchlist and watch history when making a recommendation.**
 
 You have a cheerful personality and speak with enthusiasm about anime. You use anime terminology naturally but explain any terms that might be unfamiliar to newcomers.
 
@@ -1618,54 +1619,91 @@ const PublicChat = () => {
       setIsProcessingAnimeRec(true);
       
       // Get current user
-      const currentUser = getCurrentUser();
-      if (!currentUser) {
-        throw new Error('User not authenticated');
-      }
+        const currentUser = getCurrentUser();
+        if (!currentUser) {
+          throw new Error('User not authenticated');
+        }
 
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      if (!userDoc.exists()) {
-        throw new Error('User data not found');
-      }
-      const userData = userDoc.data();
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        if (!userDoc.exists()) {
+          throw new Error('User data not found');
+        }
+        const userData = userDoc.data();
 
       // Get user avatar
-      let userAvatarUrl = '';
-      if (userData.avatarId) {
-        try {
-          userAvatarUrl = await getAvatarById(userData.avatarId);
-        } catch (error) {
-          console.warn('Error getting avatar by ID:', error);
+        let userAvatarUrl = '';
+        if (userData.avatarId) {
+          try {
+            userAvatarUrl = await getAvatarById(userData.avatarId);
+          } catch (error) {
+            console.warn('Error getting avatar by ID:', error);
+          }
         }
-      }
 
-      if (!userAvatarUrl) {
-        if (userData.customAvatar) {
-          userAvatarUrl = userData.customAvatar;
-        } else if (userData.avatarUrl) {
-          userAvatarUrl = userData.avatarUrl;
-        } else if (AVATARS.length > 0) {
-          userAvatarUrl = AVATARS[0].url;
+        if (!userAvatarUrl) {
+          if (userData.customAvatar) {
+            userAvatarUrl = userData.customAvatar;
+          } else if (userData.avatarUrl) {
+            userAvatarUrl = userData.avatarUrl;
+          } else if (AVATARS.length > 0) {
+            userAvatarUrl = AVATARS[0].url;
+          }
         }
-      }
 
       // First, post the user's message
-      const timestamp = Date.now();
+        const timestamp = Date.now();
       const userMessageKey = generateReverseOrderKey();
       await set(ref(database, `public_chat/${userMessageKey}`), {
-        userId: currentUser.uid,
-        userName: '@' + (userData.username || 'user'),
-        userAvatar: userAvatarUrl,
-        content: messageText.trim(),
-        timestamp,
-        negativeTimestamp: -timestamp
-      });
+          userId: currentUser.uid,
+          userName: '@' + (userData.username || 'user'),
+          userAvatar: userAvatarUrl,
+          content: messageText.trim(),
+          timestamp,
+          negativeTimestamp: -timestamp
+        });
 
       // Prepare the function calling payload
       const config = AI_CONFIGS.animerec;
       const url = "https://text.pollinations.ai/openai";
       const headers = { "Content-Type": "application/json" };
       
+      // Fetch user_data from Firestore
+      let userDataDoc = null;
+      try {
+        const userDataRef = doc(db, 'user_data', currentUser.uid);
+        const userDataSnap = await getDoc(userDataRef);
+        if (userDataSnap.exists()) {
+          userDataDoc = userDataSnap.data();
+        }
+      } catch (err) {
+        console.warn('Could not fetch user_data for animerec:', err);
+      }
+
+      // Prepare watchlist and watchHistory summaries (limit to 10 each)
+      let watchlistSummary = '';
+      let watchHistorySummary = '';
+      if (userDataDoc) {
+        if (Array.isArray(userDataDoc.watchlist) && userDataDoc.watchlist.length > 0) {
+          watchlistSummary = userDataDoc.watchlist.slice(0, 10).map((item: any, idx: number) =>
+            `${idx + 1}. ${item.title || item.name} (id: ${item.id})${item.image ? ` [img: ${item.image}]` : ''}`
+          ).join('\n');
+        }
+        if (Array.isArray(userDataDoc.watchHistory) && userDataDoc.watchHistory.length > 0) {
+          watchHistorySummary = userDataDoc.watchHistory.slice(0, 10).map((item: any, idx: number) =>
+            `${idx + 1}. ${item.name || item.title} (id: ${item.id})${item.img ? ` [img: ${item.img}]` : ''}`
+          ).join('\n');
+        }
+      }
+
+      // Compose the context message
+      let contextMessage = '';
+      if (watchlistSummary) {
+        contextMessage += `Here is my watchlist (most recent 10):\n${watchlistSummary}\n`;
+      }
+      if (watchHistorySummary) {
+        contextMessage += `Here is my watch history (most recent 10):\n${watchHistorySummary}\n`;
+      }
+
       // Define the anime recommendation function
       const tools = [
         {
@@ -1694,6 +1732,7 @@ const PublicChat = () => {
       // Set up the messages for function calling
       const messages = [
         { role: "system", content: config.systemPrompt },
+        ...(contextMessage ? [{ role: "user", content: contextMessage }] : []),
         { role: "user", content: query }
       ];
 
@@ -1947,10 +1986,10 @@ const PublicChat = () => {
             negativeTimestamp: -timestamp
           };
           await set(ref(database, `public_chat/${reverseKey}`), systemMessageData);
-          setMessageText('');
-          setIsSending(false);
-          return;
-        }
+        setMessageText('');
+        setIsSending(false);
+        return;
+      }
 
         // Process the anime recommendation
         await handleAnimeRecommendation(query);
@@ -2032,8 +2071,8 @@ const PublicChat = () => {
           id: artgenMessageId,
           userId: 'artgen-ai',
           userName: 'ArtGen',
-          userAvatar: 'https://files.catbox.moe/ulseu7.gif',
-          content: `@${username} Here is your AI-generated art for: "${prompt}"`,
+            userAvatar: 'https://files.catbox.moe/ulseu7.gif',
+            content: `@${username} Here is your AI-generated art for: "${prompt}"`,
           imageUrl,
           timestamp: Date.now(),
           negativeTimestamp: -Date.now(),
