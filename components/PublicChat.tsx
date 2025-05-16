@@ -1668,51 +1668,56 @@ const PublicChat = () => {
       setIsProcessingAnimeRec(true);
       
       // Get current user
-        const currentUser = getCurrentUser();
-        if (!currentUser) {
-          throw new Error('User not authenticated');
-        }
+      const currentUser = getCurrentUser();
+      if (!currentUser) {
+        throw new Error('User not authenticated');
+      }
 
-        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-        if (!userDoc.exists()) {
-          throw new Error('User data not found');
-        }
-        const userData = userDoc.data();
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (!userDoc.exists()) {
+        throw new Error('User data not found');
+      }
+      const userData = userDoc.data();
 
       // Get user avatar
-        let userAvatarUrl = '';
-        if (userData.avatarId) {
-          try {
-            userAvatarUrl = await getAvatarById(userData.avatarId);
-          } catch (error) {
-            console.warn('Error getting avatar by ID:', error);
-          }
+      let userAvatarUrl = '';
+      if (userData.avatarId) {
+        try {
+          userAvatarUrl = await getAvatarById(userData.avatarId);
+        } catch (error) {
+          console.warn('Error getting avatar by ID:', error);
         }
+      }
 
-        if (!userAvatarUrl) {
-          if (userData.customAvatar) {
-            userAvatarUrl = userData.customAvatar;
-          } else if (userData.avatarUrl) {
-            userAvatarUrl = userData.avatarUrl;
-          } else if (AVATARS.length > 0) {
-            userAvatarUrl = AVATARS[0].url;
-          }
+      if (!userAvatarUrl) {
+        if (userData.customAvatar) {
+          userAvatarUrl = userData.customAvatar;
+        } else if (userData.avatarUrl) {
+          userAvatarUrl = userData.avatarUrl;
+        } else if (AVATARS.length > 0) {
+          userAvatarUrl = AVATARS[0].url;
         }
+      }
 
       // First, post the user's message
-        const timestamp = Date.now();
+      const timestamp = Date.now();
       const userMessageKey = generateReverseOrderKey();
       await set(ref(database, `public_chat/${userMessageKey}`), {
-          userId: currentUser.uid,
-          userName: '@' + (userData.username || 'user'),
-          userAvatar: userAvatarUrl,
-          content: messageText.trim(),
-          timestamp,
-          negativeTimestamp: -timestamp
-        });
+        userId: currentUser.uid,
+        userName: '@' + (userData.username || 'user'),
+        userAvatar: userAvatarUrl,
+        content: messageText.trim(),
+        timestamp,
+        negativeTimestamp: -timestamp
+      });
+
+      // Get the AI config
+      const aiConfig = AI_CONFIGS.animerec;
+      if (!aiConfig) {
+        throw new Error('AI configuration not found');
+      }
 
       // Prepare the function calling payload
-      const config = AI_CONFIGS.animerec;
       const url = "https://text.pollinations.ai/openai";
       const headers = { "Content-Type": "application/json" };
       
@@ -1820,7 +1825,7 @@ const PublicChat = () => {
 
       // In the messages array for the AI call, insert the previous context messages before the new query
       const messagesForAI = [
-        { role: "system", content: config.systemPrompt },
+        { role: "system", content: aiConfig.systemPrompt },
         ...(contextMessage ? [{ role: "user", content: contextMessage }] : []),
         ...previousContextMessages,
         { role: "user", content: query }
@@ -1828,7 +1833,7 @@ const PublicChat = () => {
 
       // Use messagesForAI instead of messages in the payload
       const payload = {
-        model: config.model,
+        model: aiConfig.model,
         messages: messagesForAI,
         tools: tools,
         tool_choice: "auto"
@@ -1859,12 +1864,17 @@ const PublicChat = () => {
           const animeName = args.anime_name;
           const explanation = args.explanation;
 
+          // Validate content before saving
+          if (!animeName || !explanation) {
+            throw new Error('Invalid recommendation content');
+          }
+
           // Show intermediate "thinking" message
           const thinkingMessageKey = generateReverseOrderKey();
           await set(ref(database, `public_chat/${thinkingMessageKey}`), {
-            userId: config.userId,
-            userName: config.name,
-            userAvatar: config.avatar,
+            userId: aiConfig.userId,
+            userName: aiConfig.name,
+            userAvatar: aiConfig.avatar,
             content: `<think>Searching for "${animeName}"...</think>`,
             timestamp: Date.now(),
             negativeTimestamp: -Date.now()
@@ -1879,24 +1889,24 @@ const PublicChat = () => {
             const noResultsMsg = `I recommended ${animeName}, but I couldn't find any matching anime in our database. Would you like me to suggest something else?`;
             const noResultsKey = generateReverseOrderKey();
             await set(ref(database, `public_chat/${noResultsKey}`), {
-              userId: config.userId,
-              userName: config.name,
-              userAvatar: config.avatar,
+              userId: aiConfig.userId,
+              userName: aiConfig.name,
+              userAvatar: aiConfig.avatar,
               content: noResultsMsg,
               timestamp: Date.now(),
               negativeTimestamp: -Date.now()
             });
           } else {
             // Validate which anime result best matches the recommendation
-            const validationResult = await validateAnimeMatch(animeResults, animeName, config.model);
+            const validationResult = await validateAnimeMatch(animeResults, animeName, aiConfig.model);
             
             // Post the recommendation message with the validated anime
             if (validationResult) {
               const recMessageKey = generateReverseOrderKey();
               await set(ref(database, `public_chat/${recMessageKey}`), {
-                userId: config.userId,
-                userName: config.name,
-                userAvatar: config.avatar,
+                userId: aiConfig.userId,
+                userName: aiConfig.name,
+                userAvatar: aiConfig.avatar,
                 content: explanation,
                 animeCard: {
                   id: validationResult.id,
@@ -1911,9 +1921,9 @@ const PublicChat = () => {
               const finalMsg = `${explanation}\n\nI recommended "${animeName}", but couldn't find an exact match. Please try a different request.`;
               const finalMsgKey = generateReverseOrderKey();
               await set(ref(database, `public_chat/${finalMsgKey}`), {
-                userId: config.userId,
-                userName: config.name,
-                userAvatar: config.avatar,
+                userId: aiConfig.userId,
+                userName: aiConfig.name,
+                userAvatar: aiConfig.avatar,
                 content: finalMsg,
                 timestamp: Date.now(),
                 negativeTimestamp: -Date.now()
@@ -1925,9 +1935,9 @@ const PublicChat = () => {
         // Direct response (no function call)
         const recMessageKey = generateReverseOrderKey();
         await set(ref(database, `public_chat/${recMessageKey}`), {
-          userId: config.userId,
-          userName: config.name,
-          userAvatar: config.avatar,
+          userId: aiConfig.userId,
+          userName: aiConfig.name,
+          userAvatar: aiConfig.avatar,
           content: responseMessage.content,
           timestamp: Date.now(),
           negativeTimestamp: -Date.now()
@@ -1936,13 +1946,20 @@ const PublicChat = () => {
     } catch (error) {
       console.error('Error in anime recommendation:', error);
       
-      // Send error message
+      // Get the AI config for error message
+      const aiConfig = AI_CONFIGS.animerec;
+      if (!aiConfig) {
+        console.error('AI configuration not found for error message');
+        return;
+      }
+      
+      // Send a more user-friendly error message
       const errorMessageKey = generateReverseOrderKey();
       await set(ref(database, `public_chat/${errorMessageKey}`), {
-        userId: 'system',
-        userName: 'System',
-        userAvatar: '',
-        content: 'Sorry, there was an error processing your anime recommendation. Please try again later.',
+        userId: aiConfig.userId,
+        userName: aiConfig.name,
+        userAvatar: aiConfig.avatar,
+        content: "I apologize, but I cannot provide recommendations for that type of content. Please try asking for a different genre or theme.",
         timestamp: Date.now(),
         negativeTimestamp: -Date.now()
       });
