@@ -1104,6 +1104,48 @@ interface AnimeSearchResult {
   image: string;
 }
 
+/**
+ * Get previous chat memory for a given AI character and user.
+ * Returns last N user+bot pairs as OpenAI chat messages.
+ */
+function getPreviousChatMemory(aiType: string, userId: string, messages: ChatMessage[], N: number = 5) {
+  const aiUserId = aiType + '-ai';
+  const previousPairs: { user: string; bot: string }[] = [];
+  let count = 0;
+  for (let i = messages.length - 1; i >= 0 && count < N; i--) {
+    const msg = messages[i];
+    // Find user /aiType request
+    if (
+      msg.userId === userId &&
+      typeof msg.content === 'string' &&
+      msg.content.trim().startsWith('/' + aiType + ' ')
+    ) {
+      // Try to find the next bot response after this user message
+      let botMsg = null;
+      for (let j = i + 1; j < messages.length; j++) {
+        const nextMsg = messages[j];
+        if (nextMsg.userId === aiUserId) {
+          botMsg = nextMsg;
+          break;
+        }
+        if (nextMsg.userId === userId) break;
+      }
+      if (botMsg) {
+        previousPairs.unshift({
+          user: msg.content.replace('/' + aiType + ' ', '').trim(),
+          bot: botMsg.content
+        });
+        count++;
+      }
+    }
+  }
+  // Format as OpenAI chat messages
+  return previousPairs.flatMap(pair => [
+    { role: 'user', content: pair.user },
+    { role: 'assistant', content: pair.bot }
+  ]);
+}
+
 const PublicChat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState('');
@@ -1460,43 +1502,47 @@ const PublicChat = () => {
         }
       }
       
-      // URL encode the question and system prompt
-      const encodedQuestion = encodeURIComponent(question);
-      const encodedSystemPrompt = encodeURIComponent(config.systemPrompt);
+      // Prepare previous chat memory for this AI
+      const previousContextMessages = getPreviousChatMemory(aiType, currentUser ? currentUser.uid : '', messages, 3);
       
-      // First attempt with model parameter
-      let url = `${POLLINATIONS_TEXT_API_URL}/${encodedQuestion}?model=${config.model}&system=${encodedSystemPrompt}&referrer=anisurge`;
+      // Compose OpenAI messages array
+      const openaiMessages = [
+        { role: 'system', content: config.systemPrompt },
+        ...previousContextMessages,
+        { role: 'user', content: question }
+      ];
       
-      console.log('AI Request URL (First Attempt):', url);
-      console.log('AI Type:', aiType);
-      console.log('Model:', config.model);
+      // Call the OpenAI-compatible endpoint
+      const url = `${POLLINATIONS_TEXT_API_URL}/openai`;
+      const payload = {
+        model: config.model,
+        messages: openaiMessages,
+        referrer: 'anisurge'
+      };
+      let response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
       
-      let response = await fetch(url);
-      
-      // If first attempt fails, try again without model parameter
-      if (!response.ok) {
-        console.log('First attempt failed, trying without model parameter...');
-        url = `${POLLINATIONS_TEXT_API_URL}/${encodedQuestion}?system=${encodedSystemPrompt}&referrer=anisurge`;
-        response = await fetch(url);
-      }
-
       if (!response.ok) {
         const errorText = await response.text();
         console.error('API Error Response:', errorText);
         throw new Error(`API response was not ok. Status: ${response.status}, Body: ${errorText}`);
       }
-
-      // The response is plain text
-      const content = await response.text();
-      console.log('API Response Content:', content);
+      
+      // The response is OpenAI chat completion JSON
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content || '';
+      console.log('AI Response Content:', content);
       
       // Add character-specific formatting and user mention
       let formattedContent = `\n${userMention}${content}`;
-
+      
       // Create message and add to chat
       const messageId = generateReverseOrderKey();
       const timestamp = Date.now();
-
+      
       await sendAIMessage({
         id: messageId,
         userId: config.userId,
