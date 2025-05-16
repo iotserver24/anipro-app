@@ -1729,16 +1729,58 @@ const PublicChat = () => {
         }
       ];
 
-      // Set up the messages for function calling
-      const messages = [
+      // --- Add previous /animerec chat memory as context ---
+      // Find last 5 user /animerec requests and their bot responses
+      const previousPairs: { user: string; bot: string }[] = [];
+      let count = 0;
+      // Go backwards through messages to find pairs
+      for (let i = messages.length - 1; i >= 0 && count < 5; i--) {
+        const msg = messages[i];
+        // Find user /animerec request
+        if (
+          msg.userId === currentUser.uid &&
+          typeof msg.content === 'string' &&
+          msg.content.trim().startsWith('/animerec ')
+        ) {
+          // Try to find the next bot response after this user message
+          let botMsg = null;
+          for (let j = i + 1; j < messages.length; j++) {
+            const nextMsg = messages[j];
+            if (nextMsg.userId === 'animerec-ai') {
+              botMsg = nextMsg;
+              break;
+            }
+            // If another user message comes before a bot reply, break
+            if (nextMsg.userId === currentUser.uid) break;
+          }
+          if (botMsg) {
+            previousPairs.unshift({
+              user: msg.content.replace('/animerec ', '').trim(),
+              bot: botMsg.content
+            });
+            count++;
+          }
+        }
+      }
+
+      // Format as OpenAI chat messages
+      const previousContextMessages = previousPairs.flatMap(pair => [
+        { role: 'user', content: pair.user },
+        { role: 'assistant', content: pair.bot }
+      ]);
+
+      // In the messages array for the AI call, insert the previous context messages before the new query
+      const messagesForAI = [
         { role: "system", content: config.systemPrompt },
         ...(contextMessage ? [{ role: "user", content: contextMessage }] : []),
+        ...previousContextMessages,
         { role: "user", content: query }
       ];
 
+      // Use messagesForAI instead of messages in the payload
       const payload = {
         model: config.model,
-        messages: messages,
+        messages: messagesForAI,
         tools: tools,
         tool_choice: "auto"
       };
