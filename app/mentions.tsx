@@ -8,9 +8,10 @@ import {
   ActivityIndicator,
   Image,
   RefreshControl,
+  Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, writeBatch } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { getCurrentUser } from '../services/userService';
 import { useRouter } from 'expo-router';
@@ -32,6 +33,7 @@ export default function MentionsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const router = useRouter();
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Function to fetch mentions
   const fetchMentions = () => {
@@ -179,6 +181,56 @@ export default function MentionsScreen() {
     );
   };
 
+  // Handle marking all notifications as read
+  const handleMarkAllAsRead = async () => {
+    setIsProcessing(true);
+    try {
+      for (const notification of mentions) {
+        await handleMarkAsRead(notification.id);
+      }
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Handle deleting all notifications
+  const handleDeleteAll = async () => {
+    Alert.alert(
+      'Delete All Notifications',
+      'Are you sure you want to delete all your notifications? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel'
+        },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsProcessing(true);
+              const batch = writeBatch(db);
+              
+              mentions.forEach(mention => {
+                const notificationRef = doc(db, 'notifications', mention.id);
+                batch.delete(notificationRef);
+              });
+              
+              await batch.commit();
+            } catch (error) {
+              console.error('Error deleting all notifications:', error);
+              Alert.alert('Error', 'Failed to delete all notifications');
+            } finally {
+              setIsProcessing(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -189,6 +241,26 @@ export default function MentionsScreen() {
 
   return (
     <View style={styles.container}>
+      <View style={styles.header}>
+        <TouchableOpacity 
+          style={[styles.headerButton, isProcessing && styles.disabledButton]}
+          onPress={handleMarkAllAsRead}
+          disabled={isProcessing || mentions.length === 0}
+        >
+          <MaterialIcons name="done-all" size={20} color="#fff" />
+          <Text style={styles.headerButtonText}>Mark All as Read</Text>
+        </TouchableOpacity>
+        
+        <TouchableOpacity 
+          style={[styles.headerButton, styles.deleteButton, isProcessing && styles.disabledButton]}
+          onPress={handleDeleteAll}
+          disabled={isProcessing || mentions.length === 0}
+        >
+          <MaterialIcons name="delete" size={20} color="#fff" />
+          <Text style={styles.headerButtonText}>Delete All</Text>
+        </TouchableOpacity>
+      </View>
+
       <FlatList
         data={mentions}
         renderItem={renderMentionItem}
@@ -333,5 +405,31 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     lineHeight: 20,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+  },
+  headerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#333',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    gap: 4,
+  },
+  disabledButton: {
+    backgroundColor: '#444',
+  },
+  headerButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  deleteButton: {
+    backgroundColor: '#f4511e',
   },
 }); 

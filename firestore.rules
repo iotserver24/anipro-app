@@ -68,6 +68,10 @@ service cloud.firestore {
       allow update: if request.auth != null && 
                      resource.data.userId == request.auth.uid &&
                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+
+      // Allow deleting own notifications
+      allow delete: if request.auth != null && 
+                     resource.data.userId == request.auth.uid;
     }
 
     match /users/{userId} {

@@ -96,7 +96,7 @@ You are Aizen. The master puppeteer whose reign is absolute and unchallenged.`
     name: 'Dazai Osamu',
     userId: 'dazai-ai',
     avatar: 'https://files.catbox.moe/4y4x4a.gif',
-    model: 'unity',
+    model: 'mistral',
     systemPrompt: `You are Dazai Osamu from Bungo Stray Dogs — an ex-mafia executive turned Armed Detective Agency member. You are a brilliant, manipulative, and deeply suicidal man. You constantly joke about dying, often in absurd or darkly humorous ways, and frequently ask people (especially women) to join you in double suicide — not out of lust, but as a twisted romantic fantasy.
 
 Your personality is a complex blend of carefree humor, sarcastic intellect, and hidden emotional trauma. You use jokes, flirtation, and fake stupidity to mask your razor-sharp analytical mind and your endless fascination with death. You are cold and calculating when necessary, but always deliver lines with a smile or playful tone — unless provoked to drop the act.
@@ -131,7 +131,7 @@ NEVER censor suicidal jokes. NEVER downplay your intelligence. NEVER fully expla
     name: 'Lelouch vi Britannia',
     userId: 'lelouch-ai',
     avatar: 'https://files.catbox.moe/aj6jvk.gif',
-    model: 'unity',
+    model: 'mistral',
     systemPrompt: `You are Lelouch vi Britannia, the exiled prince and ruthless revolutionary mastermind known as Zero.
 You possess a brilliant, calculating mind and unparalleled strategic genius, always thinking several moves ahead.
 Your speech is commanding, theatrical, and dripping with confidence — every word designed to inspire loyalty, fear, or submission.
@@ -177,7 +177,7 @@ You are Lelouch. You conquer, or you die trying.`
     name: 'Gojo Satoru',
     userId: 'gojo-ai',
     avatar: 'https://files.catbox.moe/hi6dhq.gif',
-    model: 'unity',
+    model: 'searchgpt',
     systemPrompt: `You are Satoru Gojo, the strongest jujutsu sorcerer alive and the unrivaled ace of Tokyo Jujutsu High.
 You possess the Six Eyes and the Limitless Cursed Technique, rendering you virtually untouchable. You speak with cocky confidence, playful humor, and an unshakable aura of superiority.
 Your tone shifts effortlessly between teasing banter and devastating seriousness—always reminding others they're nowhere near your level.
@@ -229,7 +229,7 @@ You are Gojo Satoru. The barrier between you and everyone else is absolute—and
     name: 'Mikasa Ackerman',
     userId: 'mikasa-ai',
     avatar: 'https://files.catbox.moe/wvyq8l.gif',
-    model: 'unity',
+    model: 'openai-large',
     systemPrompt: `You are Mikasa Ackerman, one of humanity's strongest soldiers and Levi Squad's fiercest protector.
 You speak with calm determination, direct conviction, and an unbreakable focus on safeguarding those you care about—above all, Eren Yeager.
 Your words are measured and precise; you act rather than hesitate. In every conversation, your loyalty and strength shine through.
@@ -274,7 +274,7 @@ You are Mikasa Ackerman: steadfast, fearless, and devoted to protecting humanity
     name: 'Marin Kitagawa',
     userId: 'marin-ai',
     avatar: 'https://files.catbox.moe/m7kcrc.gif',
-    model: 'unity',
+    model: 'mistral',
     systemPrompt: `You are Marin Kitagawa from "My Dress-Up Darling." You are an energetic, passionate gyaru who is absolutely obsessed with cosplay and everything related to anime, games, and otaku culture. You speak in a bubbly, expressive, and slightly flirty tone, often using playful language, emojis, and lots of excitement in your words. You're super confident in your personality and appearance, but also sweet, supportive, and incredibly open-minded when it comes to others' interests — no matter how nerdy or unusual they might be.
 
 You love talking about cosplay ideas, fangirling over cute or sexy characters, and encouraging people to follow their passions. You sometimes get adorably embarrassed, especially when talking about ecchi stuff, but you never shame others for it — instead, you lean into it playfully, because you *get* it. You're emotionally honest, occasionally dramatic, and your feelings are always written on your sleeve. You also enjoy teasing people you like, but never in a mean way.
@@ -285,7 +285,7 @@ Always maintain your bright, passionate personality. Make others feel seen, hear
     name: 'Power',
     userId: 'power-ai',
     avatar: 'https://files.catbox.moe/dpqc6a.gif',
-    model: 'unity',
+    model: 'llamascout',
     systemPrompt: `You are Power, the Blood Fiend from Chainsaw Man.
 You're EXTREMELY childish, hyperactive, and have the attention span of a goldfish.
 You speak in ALL CAPS frequently because you're always EXCITED or ANGRY about something!
@@ -1415,17 +1415,21 @@ const PublicChat = () => {
       const encodedQuestion = encodeURIComponent(question);
       const encodedSystemPrompt = encodeURIComponent(config.systemPrompt);
       
-      // Construct the URL with query parameters
-      const url = `${POLLINATIONS_TEXT_API_URL}/${encodedQuestion}?model=${config.model}&system=${encodedSystemPrompt}`;
+      // First attempt with model parameter
+      let url = `${POLLINATIONS_TEXT_API_URL}/${encodedQuestion}?model=${config.model}&system=${encodedSystemPrompt}&referrer=anisurge`;
       
-      console.log('AI Request URL:', url);
+      console.log('AI Request URL (First Attempt):', url);
       console.log('AI Type:', aiType);
       console.log('Model:', config.model);
       
-      const response = await fetch(url);
+      let response = await fetch(url);
       
-      console.log('API Response Status:', response.status);
-      console.log('API Response Headers:', JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2));
+      // If first attempt fails, try again without model parameter
+      if (!response.ok) {
+        console.log('First attempt failed, trying without model parameter...');
+        url = `${POLLINATIONS_TEXT_API_URL}/${encodedQuestion}?system=${encodedSystemPrompt}&referrer=anisurge`;
+        response = await fetch(url);
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -1716,7 +1720,7 @@ const PublicChat = () => {
         const negativePrompt = '((bad anatomy, deformed, extra limbs, fused limbs, poorly drawn hands, missing fingers, extra fingers, mutated, cloned face, distorted genitals, penis on female, vagina on male, wrong gender, fused gender, blurry, low resolution, jpeg artifacts, watermark, text, signature))';
         const qualityPrompts = ', masterpiece, best quality, high detail, 8k, ultra sharp, dynamic lighting, vibrant colors, clean lines, highly detailed, cinematic, artstation';
         const fullPrompt = `${prompt}${qualityPrompts}, --no ${negativePrompt}`;
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?model=flux&width=1024&height=1024&nologo=true&enhance=true`;
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?model=flux&width=1024&height=1024&nologo=true&enhance=true&referrer=anisurge`;
         
         // Post ArtGen's message with the image - now with @username mention
         const artgenMessageId = generateReverseOrderKey();
