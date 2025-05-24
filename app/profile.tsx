@@ -28,6 +28,8 @@ import { useMyListStore } from '../store/myListStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { WebView } from 'react-native-webview';
 import * as Linking from 'expo-linking';
+import { API_BASE, ENDPOINTS } from '../constants/api';
+import LoadingModal from '../components/LoadingModal';
 
 type UserData = {
   username: string;
@@ -67,6 +69,17 @@ export default function ProfileScreen() {
   const [commentLoading, setCommentLoading] = useState(false);
   const [donationStatus, setDonationStatus] = useState<UserDonation | null>(null);
   const [donationLoading, setDonationLoading] = useState(false);
+  const [loadingModal, setLoadingModal] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    progress: {
+      current: 0,
+      total: 0,
+      success: 0,
+      failed: 0
+    }
+  });
 
   useEffect(() => {
     checkAuthStatus();
@@ -483,6 +496,19 @@ export default function ProfileScreen() {
       if (result.canceled === false && result.assets && result.assets.length > 0) {
         const fileUri = result.assets[0].uri;
         
+        // Show initial loading state
+        setLoadingModal({
+          visible: true,
+          title: 'Reading File',
+          message: 'Processing your anime list...',
+          progress: {
+            current: 0,
+            total: 0,
+            success: 0,
+            failed: 0
+          }
+        });
+        
         // Read file content
         const fileContent = await FileSystem.readAsStringAsync(fileUri);
         
@@ -492,44 +518,160 @@ export default function ProfileScreen() {
         
         // Get all anime entries
         const animeNodes = xmlDoc.getElementsByTagName('anime');
-        const animeList = [];
         
-        for (let i = 0; i < animeNodes.length; i++) {
-          const animeNode = animeNodes[i];
-          const idNode = animeNode.getElementsByTagName('series_animedb_id')[0];
-          const titleNode = animeNode.getElementsByTagName('series_title')[0];
-          
-          const id = idNode?.textContent || '';
-          const title = titleNode?.textContent || '';
-          
-          if (id && title) {
-            animeList.push({
-              id,
-              name: title,
-              img: 'https://cdn.myanimelist.net/images/anime/default.jpg', // Default placeholder
-              addedAt: Date.now()
-            });
-          }
-        }
-        
-        if (animeList.length === 0) {
-          Alert.alert('Error', 'No valid anime entries found in the imported file.');
+        if (animeNodes.length === 0) {
+          setLoadingModal(prev => ({ ...prev, visible: false }));
+          Alert.alert('Error', 'No anime entries found in the imported file.');
           return;
         }
         
-        // Use the store to add all anime
+        // Update loading modal with total count
+        setLoadingModal(prev => ({
+          ...prev,
+          title: 'Importing Anime',
+          message: 'Searching and adding anime to your list...',
+          progress: {
+            ...prev.progress,
+            total: animeNodes.length
+          }
+        }));
+        
+        // Access MyListStore functions
         const { addAnime } = useMyListStore.getState();
-        let addedCount = 0;
         
-        for (const anime of animeList) {
-          const result = await addAnime(anime);
-          if (result) addedCount++;
-        }
+        // Process in batches to prevent UI freezing
+        const BATCH_SIZE = 3;
         
-        Alert.alert('Success', `Imported ${addedCount} anime to your list.`);
+        // Function to search for an anime by title and match MAL ID
+        const searchAndAddAnime = async (malId: string, title: string) => {
+          try {
+            const searchQuery = title.toLowerCase().trim().replace(/\s+/g, '-');
+            const apiUrl = `${API_BASE}${ENDPOINTS.SEARCH.replace(':query', searchQuery)}`;
+            
+            const response = await fetch(apiUrl);
+            
+            if (!response.ok) {
+              throw new Error(`API error: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            if (data && data.results && data.results.length > 0) {
+              let matchedAnime = null;
+              
+              for (const result of data.results) {
+                if (
+                  (result.malId && result.malId === malId) ||
+                  (result.idMal && result.idMal === malId) ||
+                  (result.mappings && result.mappings.mal === malId)
+                ) {
+                  matchedAnime = result;
+                  break;
+                }
+              }
+              
+              if (!matchedAnime) {
+                matchedAnime = data.results[0];
+              }
+              
+              await addAnime({
+                id: matchedAnime.id,
+                name: matchedAnime.title || title,
+                img: matchedAnime.image || '',
+                addedAt: Date.now(),
+                malId: malId
+              });
+              
+              setLoadingModal(prev => ({
+                ...prev,
+                progress: {
+                  ...prev.progress,
+                  success: prev.progress.success + 1
+                }
+              }));
+              
+              return true;
+            }
+            return false;
+          } catch (error) {
+            return false;
+          }
+        };
+        
+        // Process anime in batches
+        const processBatch = async (startIndex: number) => {
+          const endIndex = Math.min(startIndex + BATCH_SIZE, animeNodes.length);
+          
+          for (let i = startIndex; i < endIndex; i++) {
+            const animeNode = animeNodes[i];
+            
+            try {
+              const idNode = animeNode.getElementsByTagName('series_animedb_id')[0];
+              const titleNode = animeNode.getElementsByTagName('series_title')[0];
+              
+              if (idNode && titleNode) {
+                const malId = idNode.textContent || '';
+                const title = titleNode.textContent || '';
+                
+                if (malId && title) {
+                  const success = await searchAndAddAnime(malId, title);
+                  if (!success) {
+                    setLoadingModal(prev => ({
+                      ...prev,
+                      progress: {
+                        ...prev.progress,
+                        failed: prev.progress.failed + 1
+                      }
+                    }));
+                  }
+                } else {
+                  setLoadingModal(prev => ({
+                    ...prev,
+                    progress: {
+                      ...prev.progress,
+                      failed: prev.progress.failed + 1
+                    }
+                  }));
+                }
+              }
+            } catch (error) {
+              setLoadingModal(prev => ({
+                ...prev,
+                progress: {
+                  ...prev.progress,
+                  failed: prev.progress.failed + 1
+                }
+              }));
+            }
+            
+            setLoadingModal(prev => ({
+              ...prev,
+              progress: {
+                ...prev.progress,
+                current: prev.progress.current + 1
+              }
+            }));
+          }
+          
+          if (endIndex < animeNodes.length) {
+            setTimeout(() => processBatch(endIndex), 1000);
+          } else {
+            // All done
+            setTimeout(() => {
+              setLoadingModal(prev => ({ ...prev, visible: false }));
+              Alert.alert(
+                'Import Complete',
+                `Successfully imported ${loadingModal.progress.success} anime.\nFailed to import ${loadingModal.progress.failed} anime.`
+              );
+            }, 1000);
+          }
+        };
+        
+        // Start processing
+        processBatch(0);
       }
     } catch (error) {
-      console.error('Import error:', error);
+      setLoadingModal(prev => ({ ...prev, visible: false }));
       Alert.alert('Error', 'Failed to import list. Please try again.');
     }
   };
@@ -542,10 +684,24 @@ export default function ProfileScreen() {
     }
 
     try {
+      // Show loading modal
+      setLoadingModal({
+        visible: true,
+        title: 'Exporting List',
+        message: 'Preparing your anime list for export...',
+        progress: {
+          current: 0,
+          total: 1,
+          success: 0,
+          failed: 0
+        }
+      });
+
       // Get anime list from store
       const { myList } = useMyListStore.getState();
       
       if (myList.length === 0) {
+        setLoadingModal(prev => ({ ...prev, visible: false }));
         Alert.alert('Empty List', 'Your watchlist is empty. Nothing to export.');
         return;
       }
@@ -554,27 +710,39 @@ export default function ProfileScreen() {
       let xmlContent = '<?xml version="1.0"?>\n<myanimelist>\n';
       xmlContent += '  <myinfo>\n    <user_export_type>1</user_export_type>\n  </myinfo>\n';
       
-      // Add each anime entry
       for (const anime of myList) {
         xmlContent += '  <anime>\n';
-        xmlContent += `    <series_animedb_id>${anime.id}</series_animedb_id>\n`;
+        xmlContent += `    <series_animedb_id>${anime.malId || anime.id}</series_animedb_id>\n`;
         xmlContent += `    <series_title>${anime.name}</series_title>\n`;
-        xmlContent += '    <my_status>Watching</my_status>\n'; // Always set to "Watching"
+        xmlContent += '    <my_status>Watching</my_status>\n';
         xmlContent += '    <update_on_import>1</update_on_import>\n';
         xmlContent += '  </anime>\n';
       }
       
       xmlContent += '</myanimelist>';
       
+      // Update progress
+      setLoadingModal(prev => ({
+        ...prev,
+        message: 'Creating export file...',
+        progress: {
+          ...prev.progress,
+          current: 1
+        }
+      }));
+      
       // Save file
       const fileName = `anipro_export_${Date.now()}.xml`;
       const fileUri = FileSystem.documentDirectory + fileName;
       await FileSystem.writeAsStringAsync(fileUri, xmlContent);
       
-      // Check if sharing is available on this device
+      // Check if sharing is available
       const isAvailable = await Sharing.isAvailableAsync();
       
       if (isAvailable) {
+        // Hide loading modal before share dialog
+        setLoadingModal(prev => ({ ...prev, visible: false }));
+        
         // Share file
         await Sharing.shareAsync(fileUri, {
           mimeType: 'text/xml',
@@ -582,10 +750,11 @@ export default function ProfileScreen() {
           UTI: 'public.xml'
         });
       } else {
+        setLoadingModal(prev => ({ ...prev, visible: false }));
         Alert.alert('Sharing not available', 'Sharing is not available on this device.');
       }
     } catch (error) {
-      console.error('Export error:', error);
+      setLoadingModal(prev => ({ ...prev, visible: false }));
       Alert.alert('Error', 'Failed to export list. Please try again.');
     }
   };
@@ -1059,6 +1228,13 @@ export default function ProfileScreen() {
         onClose={() => setShowAvatarModal(false)}
         onSelect={handleAvatarSelect}
         selectedAvatarId={userData?.avatarId}
+      />
+
+      <LoadingModal
+        visible={loadingModal.visible}
+        title={loadingModal.title}
+        message={loadingModal.message}
+        progress={loadingModal.progress}
       />
     </ScrollView>
   );
