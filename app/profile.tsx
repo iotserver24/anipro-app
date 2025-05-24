@@ -545,6 +545,11 @@ export default function ProfileScreen() {
         // Create a cache to avoid duplicate API calls
         const apiCache = new Map();
         
+        // Track import counts separately from state to ensure accuracy
+        let successCount = 0;
+        let failedCount = 0;
+        let processedCount = 0;
+        
         // Function to search for an anime by title and match MAL ID
         const searchAndAddAnime = async (malId: string, title: string) => {
           try {
@@ -668,26 +673,37 @@ export default function ProfileScreen() {
             currentBatch.map(({ malId, title }) => 
               searchAndAddAnime(malId, title)
                 .then(success => {
-                  // Update progress for each completed anime
+                  // Update local counters
+                  processedCount++;
+                  if (success) {
+                    successCount++;
+                  } else {
+                    failedCount++;
+                  }
+                  
+                  // Update UI
                   setLoadingModal(prev => ({
                     ...prev,
                     progress: {
                       ...prev.progress,
-                      current: prev.progress.current + 1,
-                      success: success ? prev.progress.success + 1 : prev.progress.success,
-                      failed: success ? prev.progress.failed : prev.progress.failed + 1
+                      current: processedCount,
+                      success: successCount,
+                      failed: failedCount
                     }
                   }));
                   return success;
                 })
                 .catch(() => {
-                  // Update failed count on error
+                  // Update local counters and UI on error
+                  processedCount++;
+                  failedCount++;
+                  
                   setLoadingModal(prev => ({
                     ...prev,
                     progress: {
                       ...prev.progress,
-                      current: prev.progress.current + 1,
-                      failed: prev.progress.failed + 1
+                      current: processedCount,
+                      failed: failedCount
                     }
                   }));
                   return false;
@@ -699,12 +715,12 @@ export default function ProfileScreen() {
             // Process next batch with minimal delay
             setTimeout(() => processBatch(endIndex), 100);
           } else {
-            // All done
+            // All done - use local counters for the alert
             setTimeout(() => {
               setLoadingModal(prev => ({ ...prev, visible: false }));
               Alert.alert(
                 'Import Complete',
-                `Successfully imported ${loadingModal.progress.success} anime.\nFailed to import ${loadingModal.progress.failed} anime.`
+                `Successfully imported ${successCount} anime.\nFailed to import ${failedCount} anime.`
               );
             }, 500);
           }
