@@ -30,6 +30,7 @@ import { WebView } from 'react-native-webview';
 import * as Linking from 'expo-linking';
 import { API_BASE, ENDPOINTS } from '../constants/api';
 import LoadingModal from '../components/LoadingModal';
+import { useWatchHistoryStore } from '../store/watchHistoryStore';
 
 type UserData = {
   username: string;
@@ -765,6 +766,20 @@ export default function ProfileScreen() {
         return;
       }
       
+      // Get watch history to include watched episodes in export
+      const { history } = useWatchHistoryStore.getState();
+      
+      // Create a map of animeId to highest episode watched
+      const animeWatchedEpisodes = new Map<string, number>();
+      
+      // Process watch history to find highest episode watched for each anime
+      history.forEach(item => {
+        const currentEpisode = animeWatchedEpisodes.get(item.id) || 0;
+        if (item.episodeNumber > currentEpisode) {
+          animeWatchedEpisodes.set(item.id, item.episodeNumber);
+        }
+      });
+      
       // Generate XML content
       let xmlContent = '<?xml version="1.0"?>\n<myanimelist>\n';
       xmlContent += '  <myinfo>\n    <user_export_type>1</user_export_type>\n  </myinfo>\n';
@@ -776,6 +791,13 @@ export default function ProfileScreen() {
         xmlContent += `    <series_animedb_id>${anime.malId || anime.id}</series_animedb_id>\n`;
         xmlContent += `    <series_title>${anime.name}</series_title>\n`;
         xmlContent += '    <my_status>Watching</my_status>\n';
+        
+        // Add watched episodes if this anime is in watch history
+        const watchedEpisodes = animeWatchedEpisodes.get(anime.id);
+        if (watchedEpisodes) {
+          xmlContent += `    <my_watched_episodes>${watchedEpisodes}</my_watched_episodes>\n`;
+        }
+        
         xmlContent += '    <update_on_import>1</update_on_import>\n';
         xmlContent += '  </anime>\n';
       }
