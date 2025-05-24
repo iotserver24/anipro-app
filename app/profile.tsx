@@ -537,8 +537,9 @@ export default function ProfileScreen() {
           }
         }));
         
-        // Access MyListStore functions
+        // Access store functions
         const { addAnime } = useMyListStore.getState();
+        const { addToHistory } = useWatchHistoryStore.getState();
         
         // Increased batch size for better performance
         const BATCH_SIZE = 10;
@@ -550,15 +551,22 @@ export default function ProfileScreen() {
         let successCount = 0;
         let failedCount = 0;
         let processedCount = 0;
+        let watchHistoryCount = 0;
         
         // Function to search for an anime by title and match MAL ID
-        const searchAndAddAnime = async (malId: string, title: string) => {
+        const searchAndAddAnime = async (malId: string, title: string, watchedEpisodes?: number) => {
           try {
             // Check cache first
             const cacheKey = `${malId}:${title}`;
             if (apiCache.has(cacheKey)) {
               const cachedData = apiCache.get(cacheKey);
               await addAnime(cachedData);
+              
+              // If there are watched episodes, try to add to watch history
+              if (watchedEpisodes && watchedEpisodes > 0) {
+                await addAnimeToWatchHistory(cachedData.id, cachedData.name, cachedData.img, watchedEpisodes);
+              }
+              
               return true;
             }
             
@@ -614,6 +622,11 @@ export default function ProfileScreen() {
                 // Add the anime
                 await addAnime(animeToAdd);
                 
+                // If there are watched episodes, try to add to watch history
+                if (watchedEpisodes && watchedEpisodes > 0) {
+                  await addAnimeToWatchHistory(animeToAdd.id, animeToAdd.name, animeToAdd.img, watchedEpisodes);
+                }
+                
                 return true;
               }
               return false;
@@ -637,6 +650,11 @@ export default function ProfileScreen() {
                 // Add the anime
                 await addAnime(animeToAdd);
                 
+                // If there are watched episodes, try to add to watch history
+                if (watchedEpisodes && watchedEpisodes > 0) {
+                  await addAnimeToWatchHistory(animeData.id, animeData.title || title, animeData.image || '', watchedEpisodes);
+                }
+                
                 return true;
               }
               return false;
@@ -647,19 +665,84 @@ export default function ProfileScreen() {
           }
         };
         
+        // Function to add an anime to watch history based on episode number
+        const addAnimeToWatchHistory = async (animeId: string, animeName: string, animeImg: string, episodeNumber: number) => {
+          try {
+            // Fetch episodes for this anime
+            const episodesUrl = `${API_BASE}${ENDPOINTS.INFO}?id=${animeId}`;
+            const response = await fetch(episodesUrl);
+            
+            if (!response.ok) {
+              return false;
+            }
+            
+            const animeData = await response.json();
+            
+            if (!animeData || !animeData.episodes || !animeData.episodes.length) {
+              return false;
+            }
+            
+            // Find the episode with matching number
+            let targetEpisode = animeData.episodes.find(ep => ep.number === episodeNumber);
+            
+            // If exact match not found, find the closest episode number that's less than or equal to watched episodes
+            if (!targetEpisode) {
+              // Sort episodes by number in descending order
+              const sortedEpisodes = [...animeData.episodes].sort((a, b) => b.number - a.number);
+              // Find the first episode with number less than or equal to watchedEpisodes
+              targetEpisode = sortedEpisodes.find(ep => ep.number <= episodeNumber);
+            }
+            
+            // If still no match, use the latest episode
+            if (!targetEpisode && animeData.episodes.length > 0) {
+              // Sort episodes by number and take the latest
+              const sortedByNumber = [...animeData.episodes].sort((a, b) => b.number - a.number);
+              targetEpisode = sortedByNumber[0];
+            }
+            
+            if (targetEpisode) {
+              // Add to watch history
+              const watchHistoryItem = {
+                id: animeId,
+                name: animeName,
+                img: animeImg,
+                episodeId: targetEpisode.id,
+                episodeNumber: targetEpisode.number,
+                timestamp: Date.now(),
+                progress: 0, // Set to 0 since we don't know actual progress
+                duration: 1440, // Default duration of 24 minutes (in seconds)
+                lastWatched: Date.now(),
+                subOrDub: 'sub' as 'sub' | 'dub' // Default to sub
+              };
+              
+              await addToHistory(watchHistoryItem);
+              watchHistoryCount++;
+              return true;
+            }
+            
+            return false;
+          } catch (error) {
+            console.error('Error adding to watch history:', error);
+            return false;
+          }
+        };
+        
         // Extract all anime entries first
         const animeEntries = [];
         for (let i = 0; i < animeNodes.length; i++) {
           const animeNode = animeNodes[i];
           const idNode = animeNode.getElementsByTagName('series_animedb_id')[0];
           const titleNode = animeNode.getElementsByTagName('series_title')[0];
+          const watchedEpisodesNode = animeNode.getElementsByTagName('my_watched_episodes')[0];
           
           if (idNode && titleNode) {
             const malId = idNode.textContent || '';
             const title = titleNode.textContent || '';
+            const watchedEpisodes = watchedEpisodesNode ? 
+              parseInt(watchedEpisodesNode.textContent || '0', 10) : undefined;
             
             if (malId && title) {
-              animeEntries.push({ malId, title });
+              animeEntries.push({ malId, title, watchedEpisodes });
             }
           }
         }
@@ -671,8 +754,8 @@ export default function ProfileScreen() {
           
           // Process batch in parallel
           const results = await Promise.all(
-            currentBatch.map(({ malId, title }) => 
-              searchAndAddAnime(malId, title)
+            currentBatch.map(({ malId, title, watchedEpisodes }) => 
+              searchAndAddAnime(malId, title, watchedEpisodes)
                 .then(success => {
                   // Update local counters
                   processedCount++;
@@ -721,7 +804,9 @@ export default function ProfileScreen() {
               setLoadingModal(prev => ({ ...prev, visible: false }));
               Alert.alert(
                 'Import Complete',
-                `Successfully imported ${successCount} anime.\nFailed to import ${failedCount} anime.`
+                `Successfully imported ${successCount} anime.\n` +
+                `Added ${watchHistoryCount} anime to continue watching.\n` +
+                `Failed to import ${failedCount} anime.`
               );
             }, 500);
           }
