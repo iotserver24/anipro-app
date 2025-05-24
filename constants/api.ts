@@ -9,6 +9,7 @@ export const ENDPOINTS = {
   NEW_RELEASES: '/recent-added',
   SEARCH: '/:query',
   INFO: '/info',
+  ANIME_INFO: '/info',
   WATCH: '/watch/:episodeId',
   GENRE_LIST: '/genre/list',
   GENRE: '/genre/:genre',

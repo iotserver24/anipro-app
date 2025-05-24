@@ -5,6 +5,7 @@ export type MyListAnime = {
   name: string;
   img: string;
   addedAt: number;
+  malId?: string; // Optional MAL ID for integration with MyAnimeList
 };
 
 export const addToMyList = async (anime: MyListAnime) => {

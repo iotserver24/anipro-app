@@ -545,55 +545,95 @@ export default function ProfileScreen() {
         // Function to search for an anime by title and match MAL ID
         const searchAndAddAnime = async (malId: string, title: string) => {
           try {
-            const searchQuery = title.toLowerCase().trim().replace(/\s+/g, '-');
-            const apiUrl = `${API_BASE}${ENDPOINTS.SEARCH.replace(':query', searchQuery)}`;
+            // First try to fetch the anime by direct MAL ID (more accurate)
+            const apiUrl = `${API_BASE}${ENDPOINTS.ANIME_INFO}?malId=${malId}`;
+            let response = await fetch(apiUrl);
             
-            const response = await fetch(apiUrl);
-            
+            // If direct MAL ID search fails, fall back to title search
             if (!response.ok) {
-              throw new Error(`API error: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            
-            if (data && data.results && data.results.length > 0) {
-              let matchedAnime = null;
+              const searchQuery = title.toLowerCase().trim().replace(/\s+/g, '-');
+              const searchUrl = `${API_BASE}${ENDPOINTS.SEARCH.replace(':query', searchQuery)}`;
+              response = await fetch(searchUrl);
               
-              for (const result of data.results) {
-                if (
-                  (result.malId && result.malId === malId) ||
-                  (result.idMal && result.idMal === malId) ||
-                  (result.mappings && result.mappings.mal === malId)
-                ) {
-                  matchedAnime = result;
-                  break;
-                }
+              if (!response.ok) {
+                throw new Error(`API error: ${response.status}`);
               }
               
-              if (!matchedAnime) {
-                matchedAnime = data.results[0];
-              }
+              const data = await response.json();
               
-              await addAnime({
-                id: matchedAnime.id,
-                name: matchedAnime.title || title,
-                img: matchedAnime.image || '',
-                addedAt: Date.now(),
-                malId: malId
-              });
-              
-              setLoadingModal(prev => ({
-                ...prev,
-                progress: {
-                  ...prev.progress,
-                  success: prev.progress.success + 1
+              if (data && data.results && data.results.length > 0) {
+                // Try to find exact MAL ID match first
+                let matchedAnime = null;
+                
+                for (const result of data.results) {
+                  // Check for MAL ID in different possible properties
+                  if (
+                    (result.malId && result.malId === malId) ||
+                    (result.idMal && result.idMal === malId) ||
+                    (result.mappings && result.mappings.mal === malId)
+                  ) {
+                    console.log(`Found exact MAL ID match for ${title} (MAL ID: ${malId})`);
+                    matchedAnime = result;
+                    break;
+                  }
                 }
-              }));
+                
+                // If no exact match, take the first result
+                if (!matchedAnime) {
+                  console.log(`No exact MAL ID match for ${title}, using first result`);
+                  matchedAnime = data.results[0];
+                }
+                
+                // Add the anime with MAL ID explicitly included
+                await addAnime({
+                  id: matchedAnime.id,
+                  name: matchedAnime.title || title,
+                  img: matchedAnime.image || '',
+                  addedAt: Date.now(),
+                  malId: malId // Important: Save the MAL ID from the import file
+                });
+                
+                setLoadingModal(prev => ({
+                  ...prev,
+                  progress: {
+                    ...prev.progress,
+                    success: prev.progress.success + 1
+                  }
+                }));
+                
+                return true;
+              }
+              return false;
+            } else {
+              // Direct MAL ID search succeeded
+              const animeData = await response.json();
               
-              return true;
+              if (animeData) {
+                console.log(`Found anime directly by MAL ID: ${malId}`);
+                
+                // Add the anime with MAL ID explicitly included
+                await addAnime({
+                  id: animeData.id,
+                  name: animeData.title || title,
+                  img: animeData.image || '',
+                  addedAt: Date.now(),
+                  malId: malId // Store the MAL ID explicitly
+                });
+                
+                setLoadingModal(prev => ({
+                  ...prev,
+                  progress: {
+                    ...prev.progress,
+                    success: prev.progress.success + 1
+                  }
+                }));
+                
+                return true;
+              }
+              return false;
             }
-            return false;
           } catch (error) {
+            console.error('Error searching anime:', error);
             return false;
           }
         };
@@ -710,8 +750,10 @@ export default function ProfileScreen() {
       let xmlContent = '<?xml version="1.0"?>\n<myanimelist>\n';
       xmlContent += '  <myinfo>\n    <user_export_type>1</user_export_type>\n  </myinfo>\n';
       
+      // Add each anime entry with proper MAL ID
       for (const anime of myList) {
         xmlContent += '  <anime>\n';
+        // Use the stored malId if available, otherwise use anime.id as a fallback
         xmlContent += `    <series_animedb_id>${anime.malId || anime.id}</series_animedb_id>\n`;
         xmlContent += `    <series_title>${anime.name}</series_title>\n`;
         xmlContent += '    <my_status>Watching</my_status>\n';
