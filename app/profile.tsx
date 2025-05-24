@@ -539,12 +539,23 @@ export default function ProfileScreen() {
         // Access MyListStore functions
         const { addAnime } = useMyListStore.getState();
         
-        // Process in batches to prevent UI freezing
-        const BATCH_SIZE = 3;
+        // Increased batch size for better performance
+        const BATCH_SIZE = 10;
+        
+        // Create a cache to avoid duplicate API calls
+        const apiCache = new Map();
         
         // Function to search for an anime by title and match MAL ID
         const searchAndAddAnime = async (malId: string, title: string) => {
           try {
+            // Check cache first
+            const cacheKey = `${malId}:${title}`;
+            if (apiCache.has(cacheKey)) {
+              const cachedData = apiCache.get(cacheKey);
+              await addAnime(cachedData);
+              return true;
+            }
+            
             // First try to fetch the anime by direct MAL ID (more accurate)
             const apiUrl = `${API_BASE}${ENDPOINTS.ANIME_INFO}?malId=${malId}`;
             let response = await fetch(apiUrl);
@@ -572,7 +583,6 @@ export default function ProfileScreen() {
                     (result.idMal && result.idMal === malId) ||
                     (result.mappings && result.mappings.mal === malId)
                   ) {
-                    console.log(`Found exact MAL ID match for ${title} (MAL ID: ${malId})`);
                     matchedAnime = result;
                     break;
                   }
@@ -580,26 +590,23 @@ export default function ProfileScreen() {
                 
                 // If no exact match, take the first result
                 if (!matchedAnime) {
-                  console.log(`No exact MAL ID match for ${title}, using first result`);
                   matchedAnime = data.results[0];
                 }
                 
-                // Add the anime with MAL ID explicitly included
-                await addAnime({
+                // Create anime object with MAL ID
+                const animeToAdd = {
                   id: matchedAnime.id,
                   name: matchedAnime.title || title,
                   img: matchedAnime.image || '',
                   addedAt: Date.now(),
                   malId: malId // Important: Save the MAL ID from the import file
-                });
+                };
                 
-                setLoadingModal(prev => ({
-                  ...prev,
-                  progress: {
-                    ...prev.progress,
-                    success: prev.progress.success + 1
-                  }
-                }));
+                // Cache the result
+                apiCache.set(cacheKey, animeToAdd);
+                
+                // Add the anime
+                await addAnime(animeToAdd);
                 
                 return true;
               }
@@ -609,24 +616,20 @@ export default function ProfileScreen() {
               const animeData = await response.json();
               
               if (animeData) {
-                console.log(`Found anime directly by MAL ID: ${malId}`);
-                
-                // Add the anime with MAL ID explicitly included
-                await addAnime({
+                // Create anime object with MAL ID
+                const animeToAdd = {
                   id: animeData.id,
                   name: animeData.title || title,
                   img: animeData.image || '',
                   addedAt: Date.now(),
                   malId: malId // Store the MAL ID explicitly
-                });
+                };
                 
-                setLoadingModal(prev => ({
-                  ...prev,
-                  progress: {
-                    ...prev.progress,
-                    success: prev.progress.success + 1
-                  }
-                }));
+                // Cache the result
+                apiCache.set(cacheKey, animeToAdd);
+                
+                // Add the anime
+                await addAnime(animeToAdd);
                 
                 return true;
               }
@@ -638,63 +641,63 @@ export default function ProfileScreen() {
           }
         };
         
-        // Process anime in batches
-        const processBatch = async (startIndex: number) => {
-          const endIndex = Math.min(startIndex + BATCH_SIZE, animeNodes.length);
+        // Extract all anime entries first
+        const animeEntries = [];
+        for (let i = 0; i < animeNodes.length; i++) {
+          const animeNode = animeNodes[i];
+          const idNode = animeNode.getElementsByTagName('series_animedb_id')[0];
+          const titleNode = animeNode.getElementsByTagName('series_title')[0];
           
-          for (let i = startIndex; i < endIndex; i++) {
-            const animeNode = animeNodes[i];
+          if (idNode && titleNode) {
+            const malId = idNode.textContent || '';
+            const title = titleNode.textContent || '';
             
-            try {
-              const idNode = animeNode.getElementsByTagName('series_animedb_id')[0];
-              const titleNode = animeNode.getElementsByTagName('series_title')[0];
-              
-              if (idNode && titleNode) {
-                const malId = idNode.textContent || '';
-                const title = titleNode.textContent || '';
-                
-                if (malId && title) {
-                  const success = await searchAndAddAnime(malId, title);
-                  if (!success) {
-                    setLoadingModal(prev => ({
-                      ...prev,
-                      progress: {
-                        ...prev.progress,
-                        failed: prev.progress.failed + 1
-                      }
-                    }));
-                  }
-                } else {
+            if (malId && title) {
+              animeEntries.push({ malId, title });
+            }
+          }
+        }
+        
+        // Process anime in batches with Promise.all for parallel processing
+        const processBatch = async (startIndex: number) => {
+          const endIndex = Math.min(startIndex + BATCH_SIZE, animeEntries.length);
+          const currentBatch = animeEntries.slice(startIndex, endIndex);
+          
+          // Process batch in parallel
+          const results = await Promise.all(
+            currentBatch.map(({ malId, title }) => 
+              searchAndAddAnime(malId, title)
+                .then(success => {
+                  // Update progress for each completed anime
                   setLoadingModal(prev => ({
                     ...prev,
                     progress: {
                       ...prev.progress,
+                      current: prev.progress.current + 1,
+                      success: success ? prev.progress.success + 1 : prev.progress.success,
+                      failed: success ? prev.progress.failed : prev.progress.failed + 1
+                    }
+                  }));
+                  return success;
+                })
+                .catch(() => {
+                  // Update failed count on error
+                  setLoadingModal(prev => ({
+                    ...prev,
+                    progress: {
+                      ...prev.progress,
+                      current: prev.progress.current + 1,
                       failed: prev.progress.failed + 1
                     }
                   }));
-                }
-              }
-            } catch (error) {
-              setLoadingModal(prev => ({
-                ...prev,
-                progress: {
-                  ...prev.progress,
-                  failed: prev.progress.failed + 1
-                }
-              }));
-            }
-            
-            setLoadingModal(prev => ({
-              ...prev,
-              progress: {
-                ...prev.progress,
-                current: prev.progress.current + 1
-              }
-            }));
-          }
+                  return false;
+                })
+            )
+          );
           
-          if (endIndex < animeNodes.length) {
-            setTimeout(() => processBatch(endIndex), 1000);
+          if (endIndex < animeEntries.length) {
+            // Process next batch with minimal delay
+            setTimeout(() => processBatch(endIndex), 100);
           } else {
             // All done
             setTimeout(() => {
@@ -703,11 +706,11 @@ export default function ProfileScreen() {
                 'Import Complete',
                 `Successfully imported ${loadingModal.progress.success} anime.\nFailed to import ${loadingModal.progress.failed} anime.`
               );
-            }, 1000);
+            }, 500);
           }
         };
         
-        // Start processing
+        // Start processing the first batch
         processBatch(0);
       }
     } catch (error) {
