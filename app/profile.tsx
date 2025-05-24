@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView, ImageSourcePropType, ToastAndroid, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import { DOMParser } from 'xmldom';
 import { 
   isAuthenticated, 
   getCurrentUser, 
@@ -20,6 +24,7 @@ import { AVATARS, getAvatarById } from '../constants/avatars';
 import { logger } from '../utils/logger';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import donationService, { DonationTier } from '../services/donationService';
+import { useMyListStore } from '../store/myListStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { WebView } from 'react-native-webview';
 import * as Linking from 'expo-linking';
@@ -461,6 +466,130 @@ export default function ProfileScreen() {
     }
   };
 
+  // Function to handle importing watchlist from XML
+  const handleImportWatchlist = async () => {
+    if (!authenticated) {
+      Alert.alert('Login Required', 'Please log in to import a watchlist.');
+      return;
+    }
+
+    try {
+      // Pick document
+      const result = await DocumentPicker.getDocumentAsync({
+        type: 'text/xml',
+        copyToCacheDirectory: true
+      });
+      
+      if (result.canceled === false && result.assets && result.assets.length > 0) {
+        const fileUri = result.assets[0].uri;
+        
+        // Read file content
+        const fileContent = await FileSystem.readAsStringAsync(fileUri);
+        
+        // Parse XML
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(fileContent, 'text/xml');
+        
+        // Get all anime entries
+        const animeNodes = xmlDoc.getElementsByTagName('anime');
+        const animeList = [];
+        
+        for (let i = 0; i < animeNodes.length; i++) {
+          const animeNode = animeNodes[i];
+          const idNode = animeNode.getElementsByTagName('series_animedb_id')[0];
+          const titleNode = animeNode.getElementsByTagName('series_title')[0];
+          
+          const id = idNode?.textContent || '';
+          const title = titleNode?.textContent || '';
+          
+          if (id && title) {
+            animeList.push({
+              id,
+              name: title,
+              img: 'https://cdn.myanimelist.net/images/anime/default.jpg', // Default placeholder
+              addedAt: Date.now()
+            });
+          }
+        }
+        
+        if (animeList.length === 0) {
+          Alert.alert('Error', 'No valid anime entries found in the imported file.');
+          return;
+        }
+        
+        // Use the store to add all anime
+        const { addAnime } = useMyListStore.getState();
+        let addedCount = 0;
+        
+        for (const anime of animeList) {
+          const result = await addAnime(anime);
+          if (result) addedCount++;
+        }
+        
+        Alert.alert('Success', `Imported ${addedCount} anime to your list.`);
+      }
+    } catch (error) {
+      console.error('Import error:', error);
+      Alert.alert('Error', 'Failed to import list. Please try again.');
+    }
+  };
+
+  // Function to handle exporting watchlist to XML
+  const handleExportWatchlist = async () => {
+    if (!authenticated) {
+      Alert.alert('Login Required', 'Please log in to export your watchlist.');
+      return;
+    }
+
+    try {
+      // Get anime list from store
+      const { myList } = useMyListStore.getState();
+      
+      if (myList.length === 0) {
+        Alert.alert('Empty List', 'Your watchlist is empty. Nothing to export.');
+        return;
+      }
+      
+      // Generate XML content
+      let xmlContent = '<?xml version="1.0"?>\n<myanimelist>\n';
+      xmlContent += '  <myinfo>\n    <user_export_type>1</user_export_type>\n  </myinfo>\n';
+      
+      // Add each anime entry
+      for (const anime of myList) {
+        xmlContent += '  <anime>\n';
+        xmlContent += `    <series_animedb_id>${anime.id}</series_animedb_id>\n`;
+        xmlContent += `    <series_title>${anime.name}</series_title>\n`;
+        xmlContent += '    <my_status>Watching</my_status>\n'; // Always set to "Watching"
+        xmlContent += '    <update_on_import>1</update_on_import>\n';
+        xmlContent += '  </anime>\n';
+      }
+      
+      xmlContent += '</myanimelist>';
+      
+      // Save file
+      const fileName = `anipro_export_${Date.now()}.xml`;
+      const fileUri = FileSystem.documentDirectory + fileName;
+      await FileSystem.writeAsStringAsync(fileUri, xmlContent);
+      
+      // Check if sharing is available on this device
+      const isAvailable = await Sharing.isAvailableAsync();
+      
+      if (isAvailable) {
+        // Share file
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'text/xml',
+          dialogTitle: 'Export Watchlist',
+          UTI: 'public.xml'
+        });
+      } else {
+        Alert.alert('Sharing not available', 'Sharing is not available on this device.');
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      Alert.alert('Error', 'Failed to export list. Please try again.');
+    }
+  };
+
   // Function to render donor tier badge
   const renderDonorBadge = () => {
     if (!donationStatus || donationStatus.tier === DonationTier.NONE) return null;
@@ -874,6 +1003,30 @@ export default function ProfileScreen() {
         <View style={styles.benefitItem}>
           <MaterialIcons name="timer" size={24} color="#FFD700" />
           <Text style={styles.benefitText}>Early access to new features</Text>
+        </View>
+      </View>
+
+      {/* Watchlist Management Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Watchlist Management</Text>
+        <Text style={styles.infoText}>Import your anime list from MyAnimeList or export your current watchlist.</Text>
+        
+        <View style={styles.watchlistActionsContainer}>
+          <TouchableOpacity 
+            style={[styles.watchlistActionButton, {backgroundColor: '#4CAF50'}]}
+            onPress={handleImportWatchlist}
+          >
+            <MaterialIcons name="file-upload" size={24} color="#fff" />
+            <Text style={styles.buttonText}>Import List</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.watchlistActionButton, {backgroundColor: '#2196F3'}]}
+            onPress={handleExportWatchlist}
+          >
+            <MaterialIcons name="file-download" size={24} color="#fff" />
+            <Text style={styles.buttonText}>Export List</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -1399,5 +1552,24 @@ const styles = StyleSheet.create({
     color: '#ccc',
     fontSize: 14,
     marginLeft: 8,
+  },
+  watchlistActionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    width: '100%',
+  },
+  watchlistActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    justifyContent: 'center',
+    flex: 0.48, // To allow two buttons side by side with space
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
   },
 }); 
