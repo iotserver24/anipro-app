@@ -1346,23 +1346,14 @@ export default function ProfileScreen() {
       {/* Watchlist Management Section */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Watchlist Management</Text>
-        <Text style={styles.infoText}>Import your anime list from MyAnimeList or export your current watchlist.</Text>
-        
+        <Text style={styles.infoText}>Import or export your anime list using the dedicated page.</Text>
         <View style={styles.watchlistActionsContainer}>
           <TouchableOpacity 
-            style={[styles.watchlistActionButton, {backgroundColor: '#4CAF50'}]}
-            onPress={handleImportWatchlist}
-          >
-            <MaterialIcons name="file-upload" size={24} color="#fff" />
-            <Text style={styles.buttonText}>Import List</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
             style={[styles.watchlistActionButton, {backgroundColor: '#2196F3'}]}
-            onPress={handleExportWatchlist}
+            onPress={() => router.push('/importExport')}
           >
-            <MaterialIcons name="file-download" size={24} color="#fff" />
-            <Text style={styles.buttonText}>Export List</Text>
+            <MaterialIcons name="import-export" size={24} color="#fff" />
+            <Text style={styles.buttonText}>Import/Export List</Text>
           </TouchableOpacity>
         </View>
       </View>

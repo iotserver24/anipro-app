@@ -1035,6 +1035,14 @@ Architecture: ${deviceInfo.deviceArchitecture}
                 {auth.currentUser ? "View Profile" : "Login / Register"}
               </Text>
             </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.profileButton}
+              onPress={() => router.push('/importExport')}
+            >
+              <MaterialIcons name="import-export" size={24} color="#fff" />
+              <Text style={styles.profileButtonText}>Import/Export List</Text>
+            </TouchableOpacity>
 
             <TouchableOpacity 
               style={styles.profileButton}
@@ -1214,6 +1222,10 @@ Architecture: ${deviceInfo.deviceArchitecture}
             <SectionDivider />
             <TouchableOpacity onPress={() => router.push('/mylist')}>
               <InfoRow icon="bookmark" label="My List" value="View" isLink />
+            </TouchableOpacity>
+            <SectionDivider />
+            <TouchableOpacity onPress={() => router.push('/importExport')}>
+              <InfoRow icon="import-export" label="Import/Export List" value="Open" isLink />
             </TouchableOpacity>
             <SectionDivider />
             <TouchableOpacity onPress={navigateToDownloads}>
