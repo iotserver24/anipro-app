@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, ToastAndroid, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, ToastAndroid, Platform, Modal } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
@@ -31,6 +31,9 @@ export default function ImportExportScreen() {
   const [lastExportPath, setLastExportPath] = useState<string | null>(null);
   const [exportFolder, setExportFolder] = useState<string | null>(null);
   const [storageFolder, setStorageFolder] = useState<string | null>(null);
+  const [showExportFormatModal, setShowExportFormatModal] = useState(false);
+  const [pendingExportFormat, setPendingExportFormat] = useState<'xml' | 'json' | 'txt' | null>(null);
+  const [showImportFormatModal, setShowImportFormatModal] = useState(false);
 
   // Load export folder from storage on mount
   useEffect(() => {
@@ -83,14 +86,84 @@ export default function ImportExportScreen() {
   };
 
   // Function to handle importing watchlist from XML
-  const handleImportWatchlist = async () => {
+  const handleImportWatchlist = () => {
+    setShowImportFormatModal(true);
+  };
+
+  const onSelectImportFormat = (format: 'xml' | 'json' | 'txt') => {
+    setShowImportFormatModal(false);
+    setTimeout(() => importWithFormat(format), 200);
+  };
+
+  // --- TXT/JSON format helpers ---
+  function exportToTxtFormat(myList: { name: string; link?: string; mal_id?: number; watchedEpisodes?: number }[]): string {
+    let txt = '# Watching\n';
+    for (const anime of myList) {
+      let line = anime.name + ' | ' + (anime.link || `https://myanimelist.net/anime/${anime.mal_id}`);
+      if (anime.watchedEpisodes) line += ' | ' + anime.watchedEpisodes;
+      txt += line + '\n';
+    }
+    return txt;
+  }
+
+  function exportToJsonFormat(myList: { name: string; link?: string; mal_id?: number; watchedEpisodes?: number }[]): string {
+    const watching = myList.map(anime => ({
+      name: anime.name,
+      link: anime.link || `https://myanimelist.net/anime/${anime.mal_id}`,
+      mal_id: anime.mal_id,
+      watchListType: 1,
+      ...(anime.watchedEpisodes ? { watchedEpisodes: anime.watchedEpisodes } : {})
+    }));
+    return JSON.stringify({ Watching: watching }, null, 2);
+  }
+
+  function parseTxtFormat(txt: string): { name: string; link: string; watchedEpisodes?: number }[] {
+    const lines = txt.split(/\r?\n/);
+    let inSection = false;
+    const result: { name: string; link: string; watchedEpisodes?: number }[] = [];
+    for (const line of lines) {
+      if (line.trim().startsWith('#')) {
+        inSection = true;
+        continue;
+      }
+      if (!inSection || !line.trim()) continue;
+      const parts = line.split('|').map(s => s.trim());
+      if (parts.length >= 2) {
+        const entry: { name: string; link: string; watchedEpisodes?: number } = { name: parts[0], link: parts[1] };
+        if (parts[2]) entry.watchedEpisodes = parseInt(parts[2], 10);
+        result.push(entry);
+      }
+    }
+    return result;
+  }
+
+  function parseJsonFormat(jsonStr: string): { name: string; link: string; mal_id: number; watchedEpisodes?: number }[] {
     try {
-      // Pick document
+      const obj = JSON.parse(jsonStr);
+      let all: { name: string; link: string; mal_id: number; watchedEpisodes?: number }[] = [];
+      for (const key of Object.keys(obj)) {
+        if (Array.isArray(obj[key])) {
+          all = all.concat(
+            obj[key].map((item: any) => ({
+              name: item.name,
+              link: item.link,
+              mal_id: item.mal_id,
+              watchedEpisodes: item.watchedEpisodes
+            }))
+          );
+        }
+      }
+      return all;
+    } catch {}
+    return [];
+  }
+
+  const importWithFormat = async (format: 'xml' | 'json' | 'txt') => {
+    try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: 'text/xml',
+        type: format === 'xml' ? 'text/xml' : format === 'json' ? 'application/json' : 'text/plain',
         copyToCacheDirectory: true
       });
-      
       if (result.canceled === false && result.assets && result.assets.length > 0) {
         const fileUri = result.assets[0].uri;
         setLoadingModal({
@@ -100,10 +173,31 @@ export default function ImportExportScreen() {
           progress: { current: 0, total: 0, success: 0, failed: 0 }
         });
         const fileContent = await FileSystem.readAsStringAsync(fileUri);
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(fileContent, 'text/xml');
-        const animeNodes = xmlDoc.getElementsByTagName('anime');
-        if (animeNodes.length === 0) {
+        let animeEntries: { name: string; link: string; mal_id?: number; watchedEpisodes?: number }[] = [];
+        if (format === 'xml') {
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(fileContent, 'text/xml');
+          const animeNodes = xmlDoc.getElementsByTagName('anime');
+          for (let i = 0; i < animeNodes.length; i++) {
+            const animeNode = animeNodes[i];
+            const idNode = animeNode.getElementsByTagName('series_animedb_id')[0];
+            const titleNode = animeNode.getElementsByTagName('series_title')[0];
+            const watchedEpisodesNode = animeNode.getElementsByTagName('my_watched_episodes')[0];
+            if (idNode && titleNode) {
+              const malId: string = idNode.textContent || '';
+              const title: string = titleNode.textContent || '';
+              const watchedEpisodes: number | undefined = watchedEpisodesNode ? parseInt(watchedEpisodesNode.textContent || '0', 10) : undefined;
+              if (malId && title) {
+                animeEntries.push({ name: title, link: `https://myanimelist.net/anime/${malId}`, mal_id: parseInt(malId, 10), watchedEpisodes });
+              }
+            }
+          }
+        } else if (format === 'json') {
+          animeEntries = parseJsonFormat(fileContent);
+        } else if (format === 'txt') {
+          animeEntries = parseTxtFormat(fileContent);
+        }
+        if (animeEntries.length === 0) {
           setLoadingModal(prev => ({ ...prev, visible: false }));
           Alert.alert('Error', 'No anime entries found in the imported file.');
           return;
@@ -112,7 +206,7 @@ export default function ImportExportScreen() {
           ...prev,
           title: 'Importing Anime',
           message: 'Searching and adding anime to your list...',
-          progress: { ...prev.progress, total: animeNodes.length }
+          progress: { ...prev.progress, total: animeEntries.length }
         }));
         const { addAnime } = useMyListStore.getState();
         const { addToHistory } = useWatchHistoryStore.getState();
@@ -122,7 +216,11 @@ export default function ImportExportScreen() {
         let failedCount = 0;
         let processedCount = 0;
         let watchHistoryCount = 0;
-        const searchAndAddAnime = async (malId, title, watchedEpisodes) => {
+        const searchAndAddAnime = async (
+          malId: number | string,
+          title: string,
+          watchedEpisodes?: number
+        ): Promise<boolean> => {
           try {
             const cacheKey = `${malId}:${title}`;
             if (apiCache.has(cacheKey)) {
@@ -159,7 +257,7 @@ export default function ImportExportScreen() {
                   name: matchedAnime.title || title,
                   img: matchedAnime.image || '',
                   addedAt: Date.now(),
-                  malId: malId
+                  mal_id: malId
                 };
                 apiCache.set(cacheKey, animeToAdd);
                 await addAnime(animeToAdd);
@@ -177,7 +275,7 @@ export default function ImportExportScreen() {
                   name: animeData.title || title,
                   img: animeData.image || '',
                   addedAt: Date.now(),
-                  malId: malId
+                  mal_id: malId
                 };
                 apiCache.set(cacheKey, animeToAdd);
                 await addAnime(animeToAdd);
@@ -192,20 +290,25 @@ export default function ImportExportScreen() {
             return false;
           }
         };
-        const addAnimeToWatchHistory = async (animeId, animeName, animeImg, episodeNumber) => {
+        const addAnimeToWatchHistory = async (
+          animeId: string | number,
+          animeName: string,
+          animeImg: string,
+          episodeNumber: number
+        ): Promise<boolean> => {
           try {
             const episodesUrl = `${API_BASE}${ENDPOINTS.INFO}?id=${animeId}`;
             const response = await fetch(episodesUrl);
             if (!response.ok) return false;
             const animeData = await response.json();
             if (!animeData || !animeData.episodes || !animeData.episodes.length) return false;
-            let targetEpisode = animeData.episodes.find(ep => ep.number === episodeNumber);
+            let targetEpisode = animeData.episodes.find((ep: any) => ep.number === episodeNumber);
             if (!targetEpisode) {
-              const sortedEpisodes = [...animeData.episodes].sort((a, b) => b.number - a.number);
-              targetEpisode = sortedEpisodes.find(ep => ep.number <= episodeNumber);
+              const sortedEpisodes = [...animeData.episodes].sort((a: any, b: any) => b.number - a.number);
+              targetEpisode = sortedEpisodes.find((ep: any) => ep.number <= episodeNumber);
             }
             if (!targetEpisode && animeData.episodes.length > 0) {
-              const sortedByNumber = [...animeData.episodes].sort((a, b) => b.number - a.number);
+              const sortedByNumber = [...animeData.episodes].sort((a: any, b: any) => b.number - a.number);
               targetEpisode = sortedByNumber[0];
             }
             if (targetEpisode) {
@@ -219,7 +322,7 @@ export default function ImportExportScreen() {
                 progress: 0,
                 duration: 1440,
                 lastWatched: Date.now(),
-                subOrDub: 'sub'
+                subOrDub: 'sub' as 'sub'
               };
               await addToHistory(watchHistoryItem);
               watchHistoryCount++;
@@ -230,27 +333,12 @@ export default function ImportExportScreen() {
             return false;
           }
         };
-        const animeEntries = [];
-        for (let i = 0; i < animeNodes.length; i++) {
-          const animeNode = animeNodes[i];
-          const idNode = animeNode.getElementsByTagName('series_animedb_id')[0];
-          const titleNode = animeNode.getElementsByTagName('series_title')[0];
-          const watchedEpisodesNode = animeNode.getElementsByTagName('my_watched_episodes')[0];
-          if (idNode && titleNode) {
-            const malId = idNode.textContent || '';
-            const title = titleNode.textContent || '';
-            const watchedEpisodes = watchedEpisodesNode ? parseInt(watchedEpisodesNode.textContent || '0', 10) : undefined;
-            if (malId && title) {
-              animeEntries.push({ malId, title, watchedEpisodes });
-            }
-          }
-        }
         const processBatch = async (startIndex) => {
           const endIndex = Math.min(startIndex + BATCH_SIZE, animeEntries.length);
           const currentBatch = animeEntries.slice(startIndex, endIndex);
           await Promise.all(
-            currentBatch.map(({ malId, title, watchedEpisodes }) => 
-              searchAndAddAnime(malId, title, watchedEpisodes)
+            currentBatch.map(({ mal_id, name, watchedEpisodes }) => 
+              searchAndAddAnime(mal_id, name, watchedEpisodes)
                 .then(success => {
                   processedCount++;
                   if (success) successCount++; else failedCount++;
@@ -312,6 +400,16 @@ export default function ImportExportScreen() {
       Alert.alert('No Storage Folder', 'Please set a storage folder from your Profile page first.');
       return;
     }
+    setShowExportFormatModal(true);
+  };
+
+  // When user selects a format in the modal
+  const onSelectExportFormat = (format: 'xml' | 'json' | 'txt') => {
+    setShowExportFormatModal(false);
+    setTimeout(() => exportWithFormat(format), 200); // slight delay for modal close
+  };
+
+  const exportWithFormat = async (format: 'xml' | 'json' | 'txt') => {
     Alert.alert(
       'Export List',
       'How do you want to export your watchlist?',
@@ -332,44 +430,60 @@ export default function ImportExportScreen() {
                 Alert.alert('Empty List', 'Your watchlist is empty. Nothing to export.');
                 return;
               }
-              const { history } = useWatchHistoryStore.getState();
-              const animeWatchedEpisodes = new Map();
-              history.forEach(item => {
-                const currentEpisode = animeWatchedEpisodes.get(item.id) || 0;
-                if (item.episodeNumber > currentEpisode) {
-                  animeWatchedEpisodes.set(item.id, item.episodeNumber);
+              let content = '';
+              let fileExt = format;
+              if (format === 'xml') {
+                const animeWatchedEpisodes = new Map();
+                history.forEach(item => {
+                  const currentEpisode = animeWatchedEpisodes.get(item.id) || 0;
+                  if (item.episodeNumber > currentEpisode) {
+                    animeWatchedEpisodes.set(item.id, item.episodeNumber);
+                  }
+                });
+                content = '<?xml version="1.0"?>\n<myanimelist>\n';
+                content += '  <myinfo>\n    <user_export_type>1</user_export_type>\n  </myinfo>\n';
+                for (const anime of myList) {
+                  content += '  <anime>\n';
+                  content += `    <series_animedb_id>${anime.mal_id}</series_animedb_id>\n`;
+                  content += `    <series_title>${anime.name}</series_title>\n`;
+                  content += '    <my_status>Watching</my_status>\n';
+                  const watchedEpisodes = animeWatchedEpisodes.get(anime.id);
+                  if (watchedEpisodes) {
+                    content += `    <my_watched_episodes>${watchedEpisodes}</my_watched_episodes>\n`;
+                  }
+                  content += '    <update_on_import>1</update_on_import>\n';
+                  content += '  </anime>\n';
                 }
-              });
-              let xmlContent = '<?xml version="1.0"?>\n<myanimelist>\n';
-              xmlContent += '  <myinfo>\n    <user_export_type>1</user_export_type>\n  </myinfo>\n';
-              for (const anime of myList) {
-                xmlContent += '  <anime>\n';
-                xmlContent += `    <series_animedb_id>${anime.malId || anime.id}</series_animedb_id>\n`;
-                xmlContent += `    <series_title>${anime.name}</series_title>\n`;
-                xmlContent += '    <my_status>Watching</my_status>\n';
-                const watchedEpisodes = animeWatchedEpisodes.get(anime.id);
-                if (watchedEpisodes) {
-                  xmlContent += `    <my_watched_episodes>${watchedEpisodes}</my_watched_episodes>\n`;
-                }
-                xmlContent += '    <update_on_import>1</update_on_import>\n';
-                xmlContent += '  </anime>\n';
+                content += '</myanimelist>';
+                fileExt = 'xml';
+              } else if (format === 'json') {
+                content = exportToJsonFormat(myList);
+                fileExt = 'json';
+              } else if (format === 'txt') {
+                content = exportToTxtFormat(myList);
+                fileExt = 'txt';
               }
-              xmlContent += '</myanimelist>';
               setLoadingModal(prev => ({
                 ...prev,
                 message: 'Saving to export folder...',
                 progress: { ...prev.progress, current: 1 }
               }));
-              const fileName = `anipro_export_${Date.now()}.xml`;
-              const uri = await FileSystem.StorageAccessFramework.createFileAsync(
-                storageFolder,
-                fileName,
-                'text/xml'
-              );
-              await FileSystem.writeAsStringAsync(uri, xmlContent, { encoding: FileSystem.EncodingType.UTF8 });
-              setLoadingModal(prev => ({ ...prev, visible: false }));
-              ToastAndroid.show('Exported successfully!', ToastAndroid.LONG);
-              setLastExportPath(uri);
+              const fileName = `anipro_export_${Date.now()}.${fileExt}`;
+              try {
+                const uri = await FileSystem.StorageAccessFramework.createFileAsync(
+                  storageFolder,
+                  fileName,
+                  format === 'xml' ? 'text/xml' : format === 'json' ? 'application/json' : 'text/plain'
+                );
+                await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
+                setLoadingModal(prev => ({ ...prev, visible: false }));
+                ToastAndroid.show('Exported successfully!', ToastAndroid.LONG);
+                setLastExportPath(uri);
+              } catch (error) {
+                await AsyncStorage.removeItem(APP_STORAGE_FOLDER_KEY);
+                setLoadingModal(prev => ({ ...prev, visible: false }));
+                Alert.alert('Error', 'Failed to export list. Please check your folder permission and try again.');
+              }
             } catch (error) {
               setLoadingModal(prev => ({ ...prev, visible: false }));
               Alert.alert('Error', 'Failed to export list. Please try again.');
@@ -392,45 +506,51 @@ export default function ImportExportScreen() {
                 Alert.alert('Empty List', 'Your watchlist is empty. Nothing to export.');
                 return;
               }
-              const { history } = useWatchHistoryStore.getState();
-              const animeWatchedEpisodes = new Map();
-              history.forEach(item => {
-                const currentEpisode = animeWatchedEpisodes.get(item.id) || 0;
-                if (item.episodeNumber > currentEpisode) {
-                  animeWatchedEpisodes.set(item.id, item.episodeNumber);
+              let content = '';
+              let fileExt = format;
+              if (format === 'xml') {
+                const animeWatchedEpisodes = new Map();
+                const { history } = useWatchHistoryStore.getState();
+                history.forEach(item => {
+                  const currentEpisode = animeWatchedEpisodes.get(item.id) || 0;
+                  if (item.episodeNumber > currentEpisode) {
+                    animeWatchedEpisodes.set(item.id, item.episodeNumber);
+                  }
+                });
+                content = '<?xml version="1.0"?>\n<myanimelist>\n';
+                content += '  <myinfo>\n    <user_export_type>1</user_export_type>\n  </myinfo>\n';
+                for (const anime of myList) {
+                  content += '  <anime>\n';
+                  content += `    <series_animedb_id>${anime.mal_id}</series_animedb_id>\n`;
+                  content += `    <series_title>${anime.name}</series_title>\n`;
+                  content += '    <my_status>Watching</my_status>\n';
+                  const watchedEpisodes = animeWatchedEpisodes.get(anime.id);
+                  if (watchedEpisodes) {
+                    content += `    <my_watched_episodes>${watchedEpisodes}</my_watched_episodes>\n`;
+                  }
+                  content += '    <update_on_import>1</update_on_import>\n';
+                  content += '  </anime>\n';
                 }
-              });
-              let xmlContent = '<?xml version="1.0"?>\n<myanimelist>\n';
-              xmlContent += '  <myinfo>\n    <user_export_type>1</user_export_type>\n  </myinfo>\n';
-              for (const anime of myList) {
-                xmlContent += '  <anime>\n';
-                xmlContent += `    <series_animedb_id>${anime.malId || anime.id}</series_animedb_id>\n`;
-                xmlContent += `    <series_title>${anime.name}</series_title>\n`;
-                xmlContent += '    <my_status>Watching</my_status>\n';
-                const watchedEpisodes = animeWatchedEpisodes.get(anime.id);
-                if (watchedEpisodes) {
-                  xmlContent += `    <my_watched_episodes>${watchedEpisodes}</my_watched_episodes>\n`;
-                }
-                xmlContent += '    <update_on_import>1</update_on_import>\n';
-                xmlContent += '  </anime>\n';
+                content += '</myanimelist>';
+                fileExt = 'xml';
+              } else if (format === 'json') {
+                content = exportToJsonFormat(myList);
+                fileExt = 'json';
+              } else if (format === 'txt') {
+                content = exportToTxtFormat(myList);
+                fileExt = 'txt';
               }
-              xmlContent += '</myanimelist>';
-              setLoadingModal(prev => ({
-                ...prev,
-                message: 'Creating export file...',
-                progress: { ...prev.progress, current: 1 }
-              }));
-              const fileName = `anipro_export_${Date.now()}.xml`;
+              const fileName = `anipro_export_${Date.now()}.${fileExt}`;
               let fileUri = FileSystem.documentDirectory + fileName;
-              await FileSystem.writeAsStringAsync(fileUri, xmlContent);
+              await FileSystem.writeAsStringAsync(fileUri, content);
               setLastExportPath(fileUri);
               const isAvailable = await Sharing.isAvailableAsync();
               setLoadingModal(prev => ({ ...prev, visible: false }));
               if (isAvailable) {
                 await Sharing.shareAsync(fileUri, {
-                  mimeType: 'text/xml',
+                  mimeType: format === 'xml' ? 'text/xml' : format === 'json' ? 'application/json' : 'text/plain',
                   dialogTitle: 'Export Watchlist',
-                  UTI: 'public.xml'
+                  UTI: format === 'xml' ? 'public.xml' : format === 'json' ? 'public.json' : 'public.plain-text'
                 });
               } else {
                 Alert.alert('Exported', `File saved to: ${fileUri}`);
@@ -507,7 +627,7 @@ export default function ImportExportScreen() {
             onPress={handleExportWatchlist}
           >
             <MaterialIcons name="file-download" size={24} color="#fff" />
-            <Text style={styles.buttonText}>Export List</Text>
+            <Text style={styles.buttonText}>Export List (Choose Format)</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -517,6 +637,58 @@ export default function ImportExportScreen() {
         message={loadingModal.message}
         progress={loadingModal.progress}
       />
+      {/* Import Format Modal */}
+      <Modal
+        visible={showImportFormatModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowImportFormatModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Import Format</Text>
+            <Text style={styles.modalDesc}>Choose the format to import your watchlist:</Text>
+            <TouchableOpacity style={styles.modalButton} onPress={() => onSelectImportFormat('xml')}>
+              <Text style={styles.modalButtonText}>XML (MyAnimeList)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalButton} onPress={() => onSelectImportFormat('json')}>
+              <Text style={styles.modalButtonText}>JSON (App Format)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalButton} onPress={() => onSelectImportFormat('txt')}>
+              <Text style={styles.modalButtonText}>TXT (Simple List)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.modalButton, {backgroundColor: '#333', marginTop: 12}]} onPress={() => setShowImportFormatModal(false)}>
+              <Text style={[styles.modalButtonText, {color: '#FFD700'}]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      {/* Export Format Modal */}
+      <Modal
+        visible={showExportFormatModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowExportFormatModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Export Format</Text>
+            <Text style={styles.modalDesc}>Choose the format to export your watchlist:</Text>
+            <TouchableOpacity style={styles.modalButton} onPress={() => onSelectExportFormat('xml')}>
+              <Text style={styles.modalButtonText}>XML (MyAnimeList)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalButton} onPress={() => onSelectExportFormat('json')}>
+              <Text style={styles.modalButtonText}>JSON (App Format)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalButton} onPress={() => onSelectExportFormat('txt')}>
+              <Text style={styles.modalButtonText}>TXT (Simple List)</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.modalButton, {backgroundColor: '#333', marginTop: 12}]} onPress={() => setShowExportFormatModal(false)}>
+              <Text style={[styles.modalButtonText, {color: '#FFD700'}]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -664,5 +836,49 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginLeft: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#181818',
+    borderRadius: 12,
+    padding: 24,
+    width: 300,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    marginBottom: 8,
+  },
+  modalDesc: {
+    color: '#ccc',
+    fontSize: 14,
+    marginBottom: 18,
+    textAlign: 'center',
+  },
+  modalButton: {
+    backgroundColor: '#2196F3',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    marginVertical: 4,
+    width: '100%',
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 }); 
