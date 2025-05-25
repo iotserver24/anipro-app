@@ -15,6 +15,7 @@ import {
   Pressable,
   Modal,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Video, ResizeMode } from 'expo-av';
@@ -579,7 +580,8 @@ const Avatar = memo(({ userAvatar }: { userAvatar: string }) => {
 const renderMessageContent = (
   content: string, 
   mentions?: string[], 
-  onMentionPress?: (username: string) => void
+  onMentionPress?: (username: string) => void,
+  isAdmin?: boolean
 ) => {
   if (!content) return null;
 
@@ -596,21 +598,22 @@ const renderMessageContent = (
         </View>
         {mainContent && (
           <View style={styles.mainContentContainer}>
-            {renderFormattedContent(mainContent, mentions, onMentionPress)}
+            {renderFormattedContent(mainContent, mentions, onMentionPress, isAdmin)}
           </View>
         )}
       </View>
     );
   }
 
-  return renderFormattedContent(content, mentions, onMentionPress);
+  return renderFormattedContent(content, mentions, onMentionPress, isAdmin);
 };
 
 // Helper function to render formatted content with mentions
 const renderFormattedContent = (
   content: string,
   mentions?: string[],
-  onMentionPress?: (username: string) => void
+  onMentionPress?: (username: string) => void,
+  isAdmin?: boolean
 ) => {
   // Split by mentions to preserve them
   const parts = content.split(/(@\w+)/g);
@@ -630,7 +633,72 @@ const renderFormattedContent = (
           );
         }
 
-        // Handle formatting for non-mention parts
+        // Handle URLs in the text
+        const urlRegex = /(anisurge:\/\/[^\s]+|https?:\/\/[^\s]+)/g;
+        if (urlRegex.test(part)) {
+          const urlParts = part.split(urlRegex);
+          const urls = part.match(urlRegex) || [];
+          let urlIndex = 0;
+          
+          return (
+            <Text key={index} style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center'}}>
+              {urlParts.map((text, i) => {
+                // This is regular text between URLs
+                if (i % 2 === 0) {
+                  // Format any regular text (bold/italic)
+                  const formattedText = text.split(/(\*\*.*?\*\*|\*.*?\*)/g).map((segment, j) => {
+                    if (segment.startsWith('**') && segment.endsWith('**')) {
+                      return <Text key={`${index}-${i}-${j}`} style={styles.boldText}>{segment.slice(2, -2)}</Text>;
+                    } else if (segment.startsWith('*') && segment.endsWith('*')) {
+                      return <Text key={`${index}-${i}-${j}`} style={styles.italicText}>{segment.slice(1, -1)}</Text>;
+                    }
+                    return <Text key={`${index}-${i}-${j}`}>{segment}</Text>;
+                  });
+                  
+                  return <Text key={`${index}-${i}`}>{formattedText}</Text>;
+                } else {
+                  // This is a URL
+                  const url = urls[urlIndex++];
+                  
+                  if (url.startsWith('anisurge://')) {
+                    // Deep link to the app (inline)
+                    if (isAdmin) {
+                      return (
+                        <Text key={`${index}-${i}`} style={{flexDirection: 'row', alignItems: 'center'}}>
+                          <Text style={styles.deepLinkText}>{url}</Text>
+                          <TouchableOpacity 
+                            style={styles.deepLinkButtonInlineBlue}
+                            onPress={() => Linking.openURL(url)}
+                          >
+                            <Text style={styles.deepLinkButtonText}>Open in App</Text>
+                          </TouchableOpacity>
+                        </Text>
+                      );
+                    } else {
+                      // Just show the link as text for non-admins
+                      return (
+                        <Text key={`${index}-${i}`} style={styles.deepLinkText}>{url}</Text>
+                      );
+                    }
+                  } else {
+                    // External http/https link
+                    return (
+                      <Text
+                        key={`${index}-${i}`}
+                        style={styles.externalLinkText}
+                        onPress={() => Linking.openURL(url)}
+                      >
+                        {url}
+                      </Text>
+                    );
+                  }
+                }
+              })}
+            </Text>
+          );
+        }
+
+        // Handle formatting for non-mention, non-link parts
         const formattedParts = part.split(/(\*\*.*?\*\*|\*.*?\*)/g).map((text, i) => {
           if (text.startsWith('**') && text.endsWith('**')) {
             // Bold text
@@ -707,7 +775,8 @@ const MessageItem = memo(({
   animeCard,
   onOpenAnime,
   isFromArtGen,
-  onFullscreenImage
+  onFullscreenImage,
+  isAdmin
 }: { 
   item: ChatMessage; 
   onUserPress: (userId: string) => void;
@@ -724,6 +793,7 @@ const MessageItem = memo(({
   onOpenAnime: (animeId: string) => void;
   isFromArtGen?: boolean;
   onFullscreenImage?: (url: string) => void;
+  isAdmin?: boolean;
 }) => {
   const usernameColor = useMemo(() => getUsernameColor(item.userId), [item.userId]);
   
@@ -754,7 +824,7 @@ const MessageItem = memo(({
             <Text style={[styles.userName, { color: usernameColor }]}>{item.userName}</Text>
           </TouchableOpacity>
         )}
-        {item.content.trim() !== '' && renderMessageContent(item.content, item.mentions, onMentionPress)}
+        {item.content.trim() !== '' && renderMessageContent(item.content, item.mentions, onMentionPress, isAdmin)}
         {/* Render AI art image if present */}
         {item.imageUrl && (
           <View style={{ marginTop: 8, alignItems: 'center' }}>
@@ -1149,6 +1219,9 @@ function getPreviousChatMemory(aiType: string, userId: string, messages: ChatMes
 // Add version constant at the top (after imports)
 const CHAT_TUTORIAL_VERSION = '2'; // Increment this when you update the tutorial
 
+// Admin user IDs with @ symbol
+const ADMIN_USER_IDS = ["@R3AP3Redit", /* add more admin users here */];
+
 const PublicChat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState('');
@@ -1188,6 +1261,8 @@ const PublicChat = () => {
   const [isDownloading, setIsDownloading] = useState(false);
   const [isProcessingAnimeRec, setIsProcessingAnimeRec] = useState(false);
   const [animeRecResults, setAnimeRecResults] = useState<AnimeSearchResult[]>([]);
+  // Add isAdmin state
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Initialize Firebase Realtime Database
   const database = getDatabase();
@@ -2079,6 +2154,40 @@ const PublicChat = () => {
     try {
       setIsSending(true);
 
+      // Check if the message contains links
+      const containsLink = /(https?:\/\/|anisurge:\/\/)/i.test(messageText);
+      
+      // Get current user
+      const currentUser = getCurrentUser();
+      if (!currentUser) {
+        throw new Error('User not authenticated');
+      }
+
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (!userDoc.exists()) {
+        throw new Error('User data not found');
+      }
+      const userData = userDoc.data();
+      const username = userData.username || 'user';
+      const userId = '@' + username;
+      
+      // Check if user is admin
+      const isAdminLocal = ADMIN_USER_IDS.includes(userId);
+
+      // Block non-admins from sending links
+      if (containsLink && !isAdminLocal) {
+        Alert.alert('Links are not allowed', 'Only admins can send links in chat.');
+        setIsSending(false);
+        return;
+      }
+
+      // Block non-admins from sending GIFs
+      if (selectedGifUrl && !isAdminLocal) {
+        Alert.alert('GIFs are not allowed', 'Only admins can send GIFs in chat.');
+        setIsSending(false);
+        return;
+      }
+
       // Check for anime recommendation command
       if (messageText.startsWith('/animerec ')) {
         const query = messageText.replace('/animerec ', '').trim();
@@ -2094,10 +2203,10 @@ const PublicChat = () => {
             negativeTimestamp: -timestamp
           };
           await set(ref(database, `public_chat/${reverseKey}`), systemMessageData);
-        setMessageText('');
-        setIsSending(false);
-        return;
-      }
+          setMessageText('');
+          setIsSending(false);
+          return;
+        }
 
         // Process the anime recommendation
         await handleAnimeRecommendation(query);
@@ -2126,15 +2235,7 @@ const PublicChat = () => {
           return;
         }
         // Send user's message first
-        const currentUser = getCurrentUser();
-        if (!currentUser) {
-          throw new Error('User not authenticated');
-        }
-        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-        if (!userDoc.exists()) {
-          throw new Error('User data not found');
-        }
-        const userData = userDoc.data();
+        // We already have the currentUser and userData from above
         let userAvatarUrl = '';
         if (userData.avatarId) {
           try {
@@ -2153,8 +2254,7 @@ const PublicChat = () => {
           }
         }
         
-        // Get username for tagging
-        const username = userData.username || 'user';
+        // We already have username from above
         
         const timestamp = Date.now();
         const reverseKey = generateReverseOrderKey();
@@ -2179,8 +2279,8 @@ const PublicChat = () => {
           id: artgenMessageId,
           userId: 'artgen-ai',
           userName: 'ArtGen',
-            userAvatar: 'https://files.catbox.moe/ulseu7.gif',
-            content: `@${username} Here is your AI-generated art for: "${prompt}"`,
+          userAvatar: 'https://files.catbox.moe/ulseu7.gif',
+          content: `@${username} Here is your AI-generated art for: "${prompt}"`,
           imageUrl,
           timestamp: Date.now(),
           negativeTimestamp: -Date.now(),
@@ -2225,17 +2325,7 @@ const PublicChat = () => {
         }
 
         // Send user's message first
-        const currentUser = getCurrentUser();
-        if (!currentUser) {
-          throw new Error('User not authenticated');
-        }
-
-        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-        if (!userDoc.exists()) {
-          throw new Error('User data not found');
-        }
-        const userData = userDoc.data();
-
+        // We already have the currentUser, userData, username, and other variables from above
         let userAvatarUrl = '';
         if (userData.avatarId) {
           try {
@@ -2259,7 +2349,7 @@ const PublicChat = () => {
         const reverseKey = generateReverseOrderKey();
         await set(ref(database, `public_chat/${reverseKey}`), {
           userId: currentUser.uid,
-          userName: '@' + (userData.username || 'user'),
+          userName: '@' + username,
           userAvatar: userAvatarUrl,
           content: messageText.trim(),
           timestamp,
@@ -2273,17 +2363,8 @@ const PublicChat = () => {
         return;
       }
 
-      const currentUser = getCurrentUser();
-      if (!currentUser) {
-        throw new Error('User not authenticated');
-      }
-
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      if (!userDoc.exists()) {
-        throw new Error('User data not found');
-      }
-      const userData = userDoc.data();
-
+      // Regular message sending
+      // We already have currentUser, userData, username from above
       let userAvatarUrl = '';
       if (userData.avatarId) {
         try {
@@ -2309,7 +2390,7 @@ const PublicChat = () => {
       // Create message object without undefined values
       const messageData = {
         userId: currentUser.uid,
-        userName: '@' + (userData.username || 'user'),
+        userName: '@' + username,
         userAvatar: userAvatarUrl,
         content: messageText.trim(),
         timestamp,
@@ -2452,9 +2533,10 @@ const PublicChat = () => {
         onOpenAnime={handleOpenAnime}
         isFromArtGen={isFromArtGen}
         onFullscreenImage={setFullscreenImageUrl}
+        isAdmin={isAdmin}
       />
     );
-  }, [messages, handleUserPress, handleMentionPress, handleOpenAnime]);
+  }, [messages, handleUserPress, handleMentionPress, handleOpenAnime, isAdmin]);
 
   const keyExtractor = useCallback((item: ChatMessage) => 
     item.id || Math.random().toString()
@@ -2603,6 +2685,27 @@ const PublicChat = () => {
       setIsDownloading(false);
     }
   };
+
+  useEffect(() => {
+    // Check if current user is admin
+    const checkAdmin = async () => {
+      const currentUser = getCurrentUser();
+      if (!currentUser) {
+        setIsAdmin(false);
+        return;
+      }
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (!userDoc.exists()) {
+        setIsAdmin(false);
+        return;
+      }
+      const userData = userDoc.data();
+      const username = userData.username || 'user';
+      const userId = '@' + username;
+      setIsAdmin(ADMIN_USER_IDS.includes(userId));
+    };
+    checkAdmin();
+  }, []);
 
   return (
     <View style={[styles.container, { paddingBottom: 60 }]}> 
@@ -3688,6 +3791,53 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(51, 51, 51, 0.8)',
     zIndex: 100,
+  },
+  deepLinkContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(35, 35, 35, 0.7)',
+    borderRadius: 8,
+    padding: 8,
+    marginVertical: 4,
+  },
+  deepLinkText: {
+    color: '#6366f1',
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+  },
+  deepLinkButton: {
+    backgroundColor: '#f4511e',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  deepLinkButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  externalLinkText: {
+    color: '#6366f1',
+    fontSize: 14,
+    fontWeight: '500',
+    textDecorationLine: 'underline',
+  },
+  deepLinkButtonInline: {
+    backgroundColor: '#f4511e',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginLeft: 4,
+    alignSelf: 'center',
+  },
+  deepLinkButtonInlineBlue: {
+    backgroundColor: '#2196F3', // blue
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginLeft: 4,
+    alignSelf: 'center',
   },
 });
 
