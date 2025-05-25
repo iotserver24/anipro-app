@@ -662,24 +662,17 @@ const renderFormattedContent = (
                   
                   if (url.startsWith('anisurge://')) {
                     // Deep link to the app (inline)
-                    if (isAdmin) {
-                      return (
-                        <Text key={`${index}-${i}`} style={{flexDirection: 'row', alignItems: 'center'}}>
-                          <Text style={styles.deepLinkText}>{url}</Text>
-                          <TouchableOpacity 
-                            style={styles.deepLinkButtonInlineBlue}
-                            onPress={() => Linking.openURL(url)}
-                          >
-                            <Text style={styles.deepLinkButtonText}>Open in App</Text>
-                          </TouchableOpacity>
-                        </Text>
-                      );
-                    } else {
-                      // Just show the link as text for non-admins
-                      return (
-                        <Text key={`${index}-${i}`} style={styles.deepLinkText}>{url}</Text>
-                      );
-                    }
+                    return (
+                      <Text key={`${index}-${i}`} style={{flexDirection: 'row', alignItems: 'center'}}>
+                        <Text style={styles.deepLinkText}>{url}</Text>
+                        <TouchableOpacity 
+                          style={styles.deepLinkButtonInlineBlue}
+                          onPress={() => Linking.openURL(url)}
+                        >
+                          <Text style={styles.deepLinkButtonText}>Open in App</Text>
+                        </TouchableOpacity>
+                      </Text>
+                    );
                   } else {
                     // External http/https link
                     return (
