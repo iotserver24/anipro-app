@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, Dimensions, Animated, ActivityIndicator, AppState, Alert, Linking, Platform, Share } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, Dimensions, Animated, ActivityIndicator, AppState, Alert, Linking, Platform, Share, ToastAndroid, Modal } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -26,6 +26,7 @@ import { checkAndNotifyAiringAnime } from './schedule';
 import * as Notifications from 'expo-notifications';
 import AuthModal from '../components/AuthModal';
 import { auth } from '../services/firebase';
+import * as FileSystem from 'expo-file-system';
 
 const { width } = Dimensions.get('window');
 const ITEM_WIDTH = width * 0.85;
@@ -263,6 +264,9 @@ const compareVersions = (v1: string, v2: string) => {
   return 0;
 };
 
+const APP_STORAGE_FOLDER_KEY = 'APP_STORAGE_FOLDER_URI';
+const APP_STORAGE_FOLDER_SKIP_KEY = 'APP_STORAGE_FOLDER_SKIP';
+
 export default function Home() {
   const [recentAnime, setRecentAnime] = useState<AnimeItem[]>([]);
   const [trendingAnime, setTrendingAnime] = useState<AnimeItem[]>([]);
@@ -288,6 +292,7 @@ export default function Home() {
   const [hasShownAuthPrompt, setHasShownAuthPrompt] = useState(false);
   const [favoriteAnime, setFavoriteAnime] = useState<AnimeItem[]>([]);
   const [latestCompleted, setLatestCompleted] = useState<AnimeItem[]>([]);
+  const [showStorageModal, setShowStorageModal] = useState(false);
 
   const fetchAnime = async (bypassCache: boolean = false) => {
     try {
@@ -753,6 +758,16 @@ export default function Home() {
     checkAndShowAuthPrompt();
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      const folderUri = await AsyncStorage.getItem(APP_STORAGE_FOLDER_KEY);
+      const skip = await AsyncStorage.getItem(APP_STORAGE_FOLDER_SKIP_KEY);
+      if (!folderUri && !skip && Platform.OS === 'android') {
+        setShowStorageModal(true);
+      }
+    })();
+  }, []);
+
   const handleAuthSuccess = () => {
     setShowAuthModal(false);
   };
@@ -957,6 +972,23 @@ export default function Home() {
     </View>
   );
 
+  const handleChooseFolder = async () => {
+    const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+    if (permissions.granted) {
+      await AsyncStorage.setItem(APP_STORAGE_FOLDER_KEY, permissions.directoryUri);
+      await AsyncStorage.removeItem(APP_STORAGE_FOLDER_SKIP_KEY);
+      setShowStorageModal(false);
+      ToastAndroid.show('Storage folder set!', ToastAndroid.SHORT);
+    } else {
+      Alert.alert('Permission Denied', 'Cannot set storage folder without permission.');
+    }
+  };
+
+  const handleCancelStorageModal = async () => {
+    await AsyncStorage.setItem(APP_STORAGE_FOLDER_SKIP_KEY, '1');
+    setShowStorageModal(false);
+  };
+
   return (
     <View style={styles.container}>
       <AuthModal 
@@ -1010,6 +1042,23 @@ export default function Home() {
           onClose={() => setShowWhatsNewModal(false)}
         />
       )}
+      
+      <Modal visible={showStorageModal} transparent animationType="fade">
+        <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.7)',justifyContent:'center',alignItems:'center'}}>
+          <View style={{backgroundColor:'#222',padding:24,borderRadius:12,width:'85%',alignItems:'center'}}>
+            <Text style={{color:'#FFD700',fontWeight:'bold',fontSize:18,marginBottom:12}}>Storage Permission Needed</Text>
+            <Text style={{color:'#fff',fontSize:15,marginBottom:18,textAlign:'center'}}>To save files locally (exports, downloads, etc), please create a folder and grant permission. You can skip for now and set it later from your profile.</Text>
+            <View style={{flexDirection:'row',justifyContent:'space-between',width:'100%'}}>
+              <TouchableOpacity style={{flex:1,backgroundColor:'#2196F3',padding:12,borderRadius:8,marginRight:8,alignItems:'center'}} onPress={handleChooseFolder}>
+                <Text style={{color:'#fff',fontWeight:'bold'}}>Choose Folder</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{flex:1,backgroundColor:'#444',padding:12,borderRadius:8,alignItems:'center'}} onPress={handleCancelStorageModal}>
+                <Text style={{color:'#fff',fontWeight:'bold'}}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       
       <ScrollView
         refreshControl={

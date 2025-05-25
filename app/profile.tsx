@@ -31,6 +31,7 @@ import * as Linking from 'expo-linking';
 import { API_BASE, ENDPOINTS } from '../constants/api';
 import LoadingModal from '../components/LoadingModal';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type UserData = {
   username: string;
@@ -55,6 +56,8 @@ type UserDonation = {
     customThemes: boolean;
   };
 };
+
+const APP_STORAGE_FOLDER_KEY = 'APP_STORAGE_FOLDER_URI';
 
 export default function ProfileScreen() {
   const [loading, setLoading] = useState(false);
@@ -81,6 +84,7 @@ export default function ProfileScreen() {
       failed: 0
     }
   });
+  const [storageFolder, setStorageFolder] = useState<string | null>(null);
 
   useEffect(() => {
     checkAuthStatus();
@@ -164,6 +168,13 @@ export default function ProfileScreen() {
     
     fetchDonationStatus();
   }, [authenticated]);
+
+  useEffect(() => {
+    (async () => {
+      const uri = await AsyncStorage.getItem(APP_STORAGE_FOLDER_KEY);
+      if (uri) setStorageFolder(uri);
+    })();
+  }, []);
 
   const fetchAvatarUrl = async (avatarId: string) => {
     setAvatarLoading(true);
@@ -1097,6 +1108,21 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleChangeStorageFolder = async () => {
+    const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+    if (permissions.granted) {
+      await AsyncStorage.setItem(APP_STORAGE_FOLDER_KEY, permissions.directoryUri);
+      setStorageFolder(permissions.directoryUri);
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Storage folder updated!', ToastAndroid.SHORT);
+      } else {
+        Alert.alert('Storage folder updated!');
+      }
+    } else {
+      Alert.alert('Permission Denied', 'Cannot set storage folder without permission.');
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -1157,6 +1183,18 @@ export default function ProfileScreen() {
 
       {authenticated && userData ? (
         <View style={styles.profileContainer}>
+          <View style={{padding: 16, backgroundColor: '#181818', borderBottomWidth: 1, borderBottomColor: '#222', marginBottom: 18}}>
+            <Text style={{fontSize: 16, fontWeight: 'bold', color: '#FFD700', marginBottom: 8}}>App Storage Folder:</Text>
+            {storageFolder ? (
+              <Text style={{color: '#fff', fontSize: 13, marginBottom: 6}}>{storageFolder}</Text>
+            ) : (
+              <Text style={{color: '#aaa', fontSize: 13, marginBottom: 6}}>No folder set</Text>
+            )}
+            <TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', padding: 8, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.08)'}} onPress={handleChangeStorageFolder}>
+              <MaterialIcons name="folder" size={18} color="#2196F3" />
+              <Text style={{color: '#fff', fontSize: 14, fontWeight: 'bold', marginLeft: 4}}>Change Storage Folder</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.infoSection}>
             <Text style={styles.infoLabel}>Username</Text>
             <Text style={styles.infoValue}>@{userData.username}</Text>

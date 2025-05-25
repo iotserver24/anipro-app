@@ -14,6 +14,7 @@ import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const EXPORT_FOLDER_KEY = 'export_folder_uri';
+const APP_STORAGE_FOLDER_KEY = 'APP_STORAGE_FOLDER_URI';
 
 export default function ImportExportScreen() {
   const [loadingModal, setLoadingModal] = useState({
@@ -29,12 +30,20 @@ export default function ImportExportScreen() {
   });
   const [lastExportPath, setLastExportPath] = useState<string | null>(null);
   const [exportFolder, setExportFolder] = useState<string | null>(null);
+  const [storageFolder, setStorageFolder] = useState<string | null>(null);
 
   // Load export folder from storage on mount
   useEffect(() => {
     (async () => {
       const uri = await AsyncStorage.getItem(EXPORT_FOLDER_KEY);
       if (uri) setExportFolder(uri);
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const uri = await AsyncStorage.getItem(APP_STORAGE_FOLDER_KEY);
+      if (uri) setStorageFolder(uri);
     })();
   }, []);
 
@@ -293,22 +302,14 @@ export default function ImportExportScreen() {
     }
   };
 
-  // Set export folder
-  const handleSetExportFolder = async () => {
-    const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
-    if (permissions.granted) {
-      await AsyncStorage.setItem(EXPORT_FOLDER_KEY, permissions.directoryUri);
-      setExportFolder(permissions.directoryUri);
-      ToastAndroid.show('Export folder set!', ToastAndroid.SHORT);
-    } else {
-      Alert.alert('Permission Denied', 'Cannot set export folder without permission.');
-    }
-  };
-
   // Function to handle exporting watchlist to XML
   const handleExportWatchlist = async () => {
     if (Platform.OS !== 'android') {
       Alert.alert('Not supported', 'Local file save is only supported on Android.');
+      return;
+    }
+    if (!storageFolder) {
+      Alert.alert('No Storage Folder', 'Please set a storage folder from your Profile page first.');
       return;
     }
     Alert.alert(
@@ -319,10 +320,6 @@ export default function ImportExportScreen() {
           text: 'Save Locally',
           onPress: async () => {
             try {
-              if (!exportFolder) {
-                Alert.alert('No Export Folder', 'Please set an export folder first.');
-                return;
-              }
               setLoadingModal({
                 visible: true,
                 title: 'Exporting List',
@@ -365,7 +362,7 @@ export default function ImportExportScreen() {
               }));
               const fileName = `anipro_export_${Date.now()}.xml`;
               const uri = await FileSystem.StorageAccessFramework.createFileAsync(
-                exportFolder,
+                storageFolder,
                 fileName,
                 'text/xml'
               );
@@ -493,18 +490,6 @@ export default function ImportExportScreen() {
             <Text style={styles.exportInfoHint}>Use a file manager app to access this file if needed.</Text>
           </View>
         )}
-      </View>
-      <View style={styles.exportFolderSection}>
-        <Text style={styles.exportFolderLabel}>Export Folder:</Text>
-        {exportFolder ? (
-          <Text style={styles.exportFolderPath}>{exportFolder}</Text>
-        ) : (
-          <Text style={styles.exportFolderHint}>No folder set</Text>
-        )}
-        <TouchableOpacity style={styles.setExportFolderButton} onPress={handleSetExportFolder}>
-          <MaterialIcons name="folder" size={18} color="#2196F3" />
-          <Text style={styles.setExportFolderText}>{exportFolder ? 'Change Export Folder' : 'Set Export Folder'}</Text>
-        </TouchableOpacity>
       </View>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Watchlist Management</Text>
@@ -679,41 +664,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginLeft: 8,
-  },
-  exportFolderSection: {
-    padding: 16,
-    backgroundColor: '#181818',
-    borderBottomWidth: 1,
-    borderBottomColor: '#222',
-    marginBottom: 18,
-  },
-  exportFolderLabel: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFD700',
-    marginBottom: 8,
-  },
-  exportFolderPath: {
-    color: '#fff',
-    fontSize: 14,
-    marginBottom: 6,
-  },
-  exportFolderHint: {
-    color: '#aaa',
-    fontSize: 14,
-    marginBottom: 6,
-  },
-  setExportFolderButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 8,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  setExportFolderText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginLeft: 4,
   },
 }); 
