@@ -15,6 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const EXPORT_FOLDER_KEY = 'export_folder_uri';
 const APP_STORAGE_FOLDER_KEY = 'APP_STORAGE_FOLDER_URI';
+const ANILIST_USERNAME_KEY = 'anilist_username';
 
 export default function ImportExportScreen() {
   const [loadingModal, setLoadingModal] = useState({
@@ -52,6 +53,14 @@ export default function ImportExportScreen() {
       if (uri) setStorageFolder(uri);
     })();
   }, []);
+
+  // Prefill AniList username if saved
+  useEffect(() => {
+    (async () => {
+      const saved = await AsyncStorage.getItem(ANILIST_USERNAME_KEY);
+      if (saved) setAniListUsername(saved);
+    })();
+  }, [showAniListModal]);
 
   // Open MyAnimeList import page
   const openMALImport = () => {
@@ -638,6 +647,8 @@ export default function ImportExportScreen() {
         Alert.alert('Error', 'No anime entries found in your AniList.');
         return;
       }
+      // Save username if import is successful
+      await AsyncStorage.setItem(ANILIST_USERNAME_KEY, aniListUsername.trim());
       setLoadingModal(prev => ({
         ...prev,
         title: 'Importing from AniList',
@@ -945,19 +956,50 @@ export default function ImportExportScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>AniList Import</Text>
             <Text style={styles.modalDesc}>Enter your AniList username to import your anime list.</Text>
-            <TextInput
-              ref={aniListInputRef}
-              style={[styles.searchInput, {marginBottom: 16, backgroundColor: '#222', color: '#fff', width: '100%'}]}
-              placeholder="AniList Username"
-              placeholderTextColor="#aaa"
-              value={aniListUsername}
-              onChangeText={setAniListUsername}
-              autoCapitalize="none"
-              autoCorrect={false}
-              onSubmitEditing={importFromAniList}
-            />
+            <View style={{flexDirection: 'row', alignItems: 'center', width: '100%'}}>
+              <TextInput
+                ref={aniListInputRef}
+                style={[styles.searchInput, {marginBottom: 16, backgroundColor: '#222', color: '#fff', flex: 1}]}
+                placeholder="AniList Username"
+                placeholderTextColor="#aaa"
+                value={aniListUsername}
+                onChangeText={setAniListUsername}
+                autoCapitalize="none"
+                autoCorrect={false}
+                onSubmitEditing={importFromAniList}
+              />
+              {aniListUsername.length > 0 && (
+                <TouchableOpacity
+                  style={{marginLeft: 8, marginBottom: 16, backgroundColor: '#333', borderRadius: 6, padding: 6}}
+                  onPress={async () => {
+                    setAniListUsername('');
+                    await AsyncStorage.removeItem(ANILIST_USERNAME_KEY);
+                  }}
+                >
+                  <MaterialIcons name="edit" size={18} color="#FFD700" />
+                </TouchableOpacity>
+              )}
+            </View>
             <TouchableOpacity style={styles.modalButton} onPress={importFromAniList}>
               <Text style={styles.modalButtonText}>Import</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalButton, {backgroundColor: '#4CAF50', marginTop: 8}]}
+              onPress={async () => {
+                if (!aniListUsername.trim()) {
+                  Alert.alert('Enter Username', 'Please enter your AniList username.');
+                  return;
+                }
+                await AsyncStorage.setItem(ANILIST_USERNAME_KEY, aniListUsername.trim());
+                setShowAniListModal(false);
+                if (Platform.OS === 'android') {
+                  ToastAndroid.show('AniList username saved!', ToastAndroid.SHORT);
+                } else {
+                  Alert.alert('Saved', 'AniList username saved!');
+                }
+              }}
+            >
+              <Text style={styles.modalButtonText}>Save Username</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.modalButton, {backgroundColor: '#333', marginTop: 12}]} onPress={() => setShowAniListModal(false)}>
               <Text style={[styles.modalButtonText, {color: '#FFD700'}]}>Cancel</Text>
