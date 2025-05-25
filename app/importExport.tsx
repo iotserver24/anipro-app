@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, ToastAndroid, Platform, Modal } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, ToastAndroid, Platform, Modal, TextInput } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
@@ -34,6 +34,9 @@ export default function ImportExportScreen() {
   const [showExportFormatModal, setShowExportFormatModal] = useState(false);
   const [pendingExportFormat, setPendingExportFormat] = useState<'xml' | 'json' | 'txt' | null>(null);
   const [showImportFormatModal, setShowImportFormatModal] = useState(false);
+  const [showAniListModal, setShowAniListModal] = useState(false);
+  const [aniListUsername, setAniListUsername] = useState('');
+  const aniListInputRef = useRef(null);
 
   // Load export folder from storage on mount
   useEffect(() => {
@@ -57,6 +60,10 @@ export default function ImportExportScreen() {
   // Open MyAnimeList export page
   const openMALExport = () => {
     Linking.openURL('https://myanimelist.net/panel.php?go=export');
+  };
+  // Open AniList import page
+  const openAniListImport = () => {
+    Linking.openURL('https://anilist.co/settings/import');
   };
   // Open the file directly (Android only)
   const openExportFile = async () => {
@@ -366,8 +373,7 @@ export default function ImportExportScreen() {
                   }));
                   return false;
                 })
-            )
-          );
+          ));
           if (endIndex < animeEntries.length) {
             setTimeout(() => processBatch(endIndex), 100);
           } else {
@@ -408,6 +414,15 @@ export default function ImportExportScreen() {
     setShowExportFormatModal(false);
     setTimeout(() => exportWithFormat(format), 200); // slight delay for modal close
   };
+
+  // Helper to get date string in YYYY-MM-DD
+  function getExportDateString() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
 
   const exportWithFormat = async (format: 'xml' | 'json' | 'txt') => {
     Alert.alert(
@@ -468,7 +483,7 @@ export default function ImportExportScreen() {
                 message: 'Saving to export folder...',
                 progress: { ...prev.progress, current: 1 }
               }));
-              const fileName = `anipro_export_${Date.now()}.${fileExt}`;
+              const fileName = `anisurge-export-${getExportDateString()}.${fileExt}`;
               try {
                 const uri = await FileSystem.StorageAccessFramework.createFileAsync(
                   storageFolder,
@@ -540,7 +555,7 @@ export default function ImportExportScreen() {
                 content = exportToTxtFormat(myList);
                 fileExt = 'txt';
               }
-              const fileName = `anipro_export_${Date.now()}.${fileExt}`;
+              const fileName = `anisurge-export-${getExportDateString()}.${fileExt}`;
               let fileUri = FileSystem.documentDirectory + fileName;
               await FileSystem.writeAsStringAsync(fileUri, content);
               setLastExportPath(fileUri);
@@ -566,6 +581,222 @@ export default function ImportExportScreen() {
     );
   };
 
+  // Add AniList import logic
+  const handleAniListImport = () => {
+    setAniListUsername('');
+    setShowAniListModal(true);
+  };
+
+  const importFromAniList = async () => {
+    if (!aniListUsername.trim()) {
+      Alert.alert('Enter Username', 'Please enter your AniList username.');
+      return;
+    }
+    setShowAniListModal(false);
+    setLoadingModal({
+      visible: true,
+      title: 'Importing from AniList',
+      message: 'Fetching your AniList data...',
+      progress: { current: 0, total: 0, success: 0, failed: 0 }
+    });
+    try {
+      const query = `query ($username: String) {\n  MediaListCollection(userName: $username, type: ANIME) {\n    lists {\n      name\n      entries {\n        media {\n          id\n          idMal\n          title { romaji english native }\n          episodes\n          format\n          status\n          coverImage { large }\n        }\n        status\n        score\n        progress\n        repeat\n        notes\n        updatedAt\n      }\n    }\n  }\n}`;
+      const response = await fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query,
+          variables: { username: aniListUsername.trim() }
+        })
+      });
+      const data = await response.json();
+      if (!data || !data.data || !data.data.MediaListCollection) {
+        setLoadingModal(prev => ({ ...prev, visible: false }));
+        Alert.alert('Error', 'No data found for this AniList user.');
+        return;
+      }
+      const lists = data.data.MediaListCollection.lists || [];
+      let animeEntries = [];
+      lists.forEach((list: any) => {
+        if (Array.isArray(list.entries)) {
+          animeEntries = animeEntries.concat(list.entries.map((entry: any) => ({
+            alId: entry.media.id,
+            malId: entry.media.idMal,
+            name: entry.media.title.romaji || entry.media.title.english || entry.media.title.native,
+            img: entry.media.coverImage?.large || '',
+            episodes: entry.media.episodes,
+            progress: entry.progress,
+            status: entry.status,
+            format: entry.media.format,
+            notes: entry.notes,
+            updatedAt: entry.updatedAt
+          })));
+        }
+      });
+      if (animeEntries.length === 0) {
+        setLoadingModal(prev => ({ ...prev, visible: false }));
+        Alert.alert('Error', 'No anime entries found in your AniList.');
+        return;
+      }
+      setLoadingModal(prev => ({
+        ...prev,
+        title: 'Importing from AniList',
+        message: 'Adding anime to your list...',
+        progress: { ...prev.progress, total: animeEntries.length }
+      }));
+      const { addAnime } = useMyListStore.getState();
+      const { addToHistory } = useWatchHistoryStore.getState();
+      let successCount = 0;
+      let failedCount = 0;
+      let processedCount = 0;
+      let watchHistoryCount = 0;
+      const apiCache = new Map();
+      const searchAndAddAnime = async (
+        alId: number,
+        malId: number | null,
+        title: string,
+        img: string,
+        watchedEpisodes?: number
+      ): Promise<boolean> => {
+        try {
+          const cacheKey = `${alId}:${title}`;
+          if (apiCache.has(cacheKey)) {
+            const cachedData = apiCache.get(cacheKey);
+            await addAnime(cachedData);
+            if (watchedEpisodes && watchedEpisodes > 0) {
+              await addAnimeToWatchHistory(cachedData.id, cachedData.name, cachedData.img, watchedEpisodes);
+            }
+            return true;
+          }
+          // Prefer MAL search if malId exists, else use AniList ID
+          let animeToAdd = null;
+          if (malId) {
+            // Try to fetch by MAL ID
+            const apiUrl = `${API_BASE}${ENDPOINTS.ANIME_INFO}?malId=${malId}`;
+            let response = await fetch(apiUrl);
+            if (response.ok) {
+              const animeData = await response.json();
+              animeToAdd = {
+                id: animeData.id,
+                name: animeData.title || title,
+                img: animeData.image || img,
+                addedAt: Date.now(),
+                malId: malId,
+                alId: alId
+              };
+            }
+          }
+          if (!animeToAdd) {
+            // Fallback: search by AniList ID
+            const apiUrl = `${API_BASE}${ENDPOINTS.ANIME_INFO}?alId=${alId}`;
+            let response = await fetch(apiUrl);
+            if (response.ok) {
+              const animeData = await response.json();
+              animeToAdd = {
+                id: animeData.id,
+                name: animeData.title || title,
+                img: animeData.image || img,
+                addedAt: Date.now(),
+                malId: malId,
+                alId: alId
+              };
+            } else {
+              // Fallback: add with minimal info
+              animeToAdd = {
+                id: `anilist-${alId}`,
+                name: title,
+                img: img,
+                addedAt: Date.now(),
+                malId: malId,
+                alId: alId
+              };
+            }
+          }
+          apiCache.set(cacheKey, animeToAdd);
+          await addAnime(animeToAdd);
+          if (watchedEpisodes && watchedEpisodes > 0) {
+            await addAnimeToWatchHistory(animeToAdd.id, animeToAdd.name, animeToAdd.img, watchedEpisodes);
+          }
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      const addAnimeToWatchHistory = async (
+        animeId: string,
+        animeName: string,
+        animeImg: string,
+        episodeNumber: number
+      ): Promise<boolean> => {
+        try {
+          const episodesUrl = `${API_BASE}${ENDPOINTS.INFO}?id=${animeId}`;
+          const response = await fetch(episodesUrl);
+          if (!response.ok) return false;
+          const animeData = await response.json();
+          if (!animeData || !animeData.episodes || !animeData.episodes.length) return false;
+          let targetEpisode = animeData.episodes.find((ep: any) => ep.number === episodeNumber);
+          if (!targetEpisode) {
+            const sortedEpisodes = [...animeData.episodes].sort((a: any, b: any) => b.number - a.number);
+            targetEpisode = sortedEpisodes.find((ep: any) => ep.number <= episodeNumber);
+          }
+          if (!targetEpisode && animeData.episodes.length > 0) {
+            const sortedByNumber = [...animeData.episodes].sort((a: any, b: any) => b.number - a.number);
+            targetEpisode = sortedByNumber[0];
+          }
+          if (targetEpisode) {
+            const watchHistoryItem = {
+              id: animeId,
+              name: animeName,
+              img: animeImg,
+              episodeId: targetEpisode.id,
+              episodeNumber: targetEpisode.number,
+              timestamp: Date.now(),
+              progress: 0,
+              duration: 1440,
+              lastWatched: Date.now(),
+              subOrDub: 'sub' as 'sub'
+            };
+            await addToHistory(watchHistoryItem);
+            watchHistoryCount++;
+            return true;
+          }
+          return false;
+        } catch {
+          return false;
+        }
+      };
+      // Parallel import (no batching)
+      await Promise.all(
+        animeEntries.map(async ({ alId, malId, name, img, progress }) => {
+          const success = await searchAndAddAnime(alId, malId, name, img, progress);
+          processedCount++;
+          if (success) successCount++; else failedCount++;
+          setLoadingModal(prev => ({
+            ...prev,
+            progress: {
+              ...prev.progress,
+              current: processedCount,
+              success: successCount,
+              failed: failedCount
+            }
+          }));
+        })
+      );
+      setTimeout(() => {
+        setLoadingModal(prev => ({ ...prev, visible: false }));
+        Alert.alert(
+          'AniList Import Complete',
+          `Successfully imported ${successCount} anime.\n` +
+          `Added ${watchHistoryCount} anime to continue watching.\n` +
+          `Failed to import ${failedCount} anime.`
+        );
+      }, 500);
+    } catch (error) {
+      setLoadingModal(prev => ({ ...prev, visible: false }));
+      Alert.alert('Error', 'Failed to import from AniList. Please try again.');
+    }
+  };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
@@ -587,6 +818,20 @@ export default function ImportExportScreen() {
           <TouchableOpacity style={styles.malButton} onPress={openMALExport}>
             <MaterialIcons name="file-download" size={20} color="#fff" />
             <Text style={styles.malButtonText}>MAL Export Page</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.malButton} onPress={openAniListImport}>
+            <MaterialIcons name="file-upload" size={20} color="#fff" />
+            <Text style={styles.malButtonText}>AniList Import Page</Text>
+          </TouchableOpacity>
+        </View>
+        {/* Import from AniList button below AniList Import Page */}
+        <View style={{alignItems: 'center', marginTop: 8, marginBottom: 8}}>
+          <TouchableOpacity
+            style={[styles.watchlistActionButton, {backgroundColor: '#8e44ad', width: 220, flexDirection: 'row', justifyContent: 'center'}]}
+            onPress={handleAniListImport}
+          >
+            <MaterialIcons name="cloud-download" size={24} color="#fff" />
+            <Text style={styles.buttonText}>Import from AniList</Text>
           </TouchableOpacity>
         </View>
         {lastExportPath && (
@@ -627,7 +872,7 @@ export default function ImportExportScreen() {
             onPress={handleExportWatchlist}
           >
             <MaterialIcons name="file-download" size={24} color="#fff" />
-            <Text style={styles.buttonText}>Export List (Choose Format)</Text>
+            <Text style={styles.buttonText}>Export List</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -684,6 +929,37 @@ export default function ImportExportScreen() {
               <Text style={styles.modalButtonText}>TXT (Simple List)</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.modalButton, {backgroundColor: '#333', marginTop: 12}]} onPress={() => setShowExportFormatModal(false)}>
+              <Text style={[styles.modalButtonText, {color: '#FFD700'}]}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      {/* AniList username modal */}
+      <Modal
+        visible={showAniListModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAniListModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>AniList Import</Text>
+            <Text style={styles.modalDesc}>Enter your AniList username to import your anime list.</Text>
+            <TextInput
+              ref={aniListInputRef}
+              style={[styles.searchInput, {marginBottom: 16, backgroundColor: '#222', color: '#fff', width: '100%'}]}
+              placeholder="AniList Username"
+              placeholderTextColor="#aaa"
+              value={aniListUsername}
+              onChangeText={setAniListUsername}
+              autoCapitalize="none"
+              autoCorrect={false}
+              onSubmitEditing={importFromAniList}
+            />
+            <TouchableOpacity style={styles.modalButton} onPress={importFromAniList}>
+              <Text style={styles.modalButtonText}>Import</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.modalButton, {backgroundColor: '#333', marginTop: 12}]} onPress={() => setShowAniListModal(false)}>
               <Text style={[styles.modalButtonText, {color: '#FFD700'}]}>Cancel</Text>
             </TouchableOpacity>
           </View>
@@ -880,5 +1156,11 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  searchInput: {
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#222',
+    borderRadius: 8,
   },
 }); 
