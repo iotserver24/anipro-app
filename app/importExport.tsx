@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, ToastAndroid, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
@@ -10,6 +10,10 @@ import { useMyListStore } from '../store/myListStore';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
 import LoadingModal from '../components/LoadingModal';
 import * as Linking from 'expo-linking';
+import * as Clipboard from 'expo-clipboard';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const EXPORT_FOLDER_KEY = 'export_folder_uri';
 
 export default function ImportExportScreen() {
   const [loadingModal, setLoadingModal] = useState({
@@ -24,6 +28,15 @@ export default function ImportExportScreen() {
     }
   });
   const [lastExportPath, setLastExportPath] = useState<string | null>(null);
+  const [exportFolder, setExportFolder] = useState<string | null>(null);
+
+  // Load export folder from storage on mount
+  useEffect(() => {
+    (async () => {
+      const uri = await AsyncStorage.getItem(EXPORT_FOLDER_KEY);
+      if (uri) setExportFolder(uri);
+    })();
+  }, []);
 
   // Open MyAnimeList import page
   const openMALImport = () => {
@@ -33,10 +46,30 @@ export default function ImportExportScreen() {
   const openMALExport = () => {
     Linking.openURL('https://myanimelist.net/panel.php?go=export');
   };
-  // Open the folder containing the last export (if possible)
-  const openExportFolder = () => {
+  // Open the file directly (Android only)
+  const openExportFile = async () => {
     if (lastExportPath) {
-      Linking.openURL(lastExportPath);
+      try {
+        await Linking.openURL(lastExportPath);
+      } catch (e) {
+        Clipboard.setStringAsync(lastExportPath);
+        if (Platform.OS === 'android') {
+          ToastAndroid.show('Path copied! Use a file manager to access the file.', ToastAndroid.LONG);
+        } else {
+          Alert.alert('Notice', 'Path copied! Use a file manager to access the file.');
+        }
+      }
+    }
+  };
+  // Copy path to clipboard
+  const copyExportPath = () => {
+    if (lastExportPath) {
+      Clipboard.setStringAsync(lastExportPath);
+      if (Platform.OS === 'android') {
+        ToastAndroid.show('Path copied to clipboard!', ToastAndroid.SHORT);
+      } else {
+        Alert.alert('Copied', 'Path copied to clipboard!');
+      }
     }
   };
 
@@ -260,70 +293,160 @@ export default function ImportExportScreen() {
     }
   };
 
+  // Set export folder
+  const handleSetExportFolder = async () => {
+    const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+    if (permissions.granted) {
+      await AsyncStorage.setItem(EXPORT_FOLDER_KEY, permissions.directoryUri);
+      setExportFolder(permissions.directoryUri);
+      ToastAndroid.show('Export folder set!', ToastAndroid.SHORT);
+    } else {
+      Alert.alert('Permission Denied', 'Cannot set export folder without permission.');
+    }
+  };
+
   // Function to handle exporting watchlist to XML
   const handleExportWatchlist = async () => {
-    try {
-      setLoadingModal({
-        visible: true,
-        title: 'Exporting List',
-        message: 'Preparing your anime list for export...',
-        progress: { current: 0, total: 1, success: 0, failed: 0 }
-      });
-      const { myList } = useMyListStore.getState();
-      if (myList.length === 0) {
-        setLoadingModal(prev => ({ ...prev, visible: false }));
-        Alert.alert('Empty List', 'Your watchlist is empty. Nothing to export.');
-        return;
-      }
-      const { history } = useWatchHistoryStore.getState();
-      const animeWatchedEpisodes = new Map();
-      history.forEach(item => {
-        const currentEpisode = animeWatchedEpisodes.get(item.id) || 0;
-        if (item.episodeNumber > currentEpisode) {
-          animeWatchedEpisodes.set(item.id, item.episodeNumber);
-        }
-      });
-      let xmlContent = '<?xml version="1.0"?>\n<myanimelist>\n';
-      xmlContent += '  <myinfo>\n    <user_export_type>1</user_export_type>\n  </myinfo>\n';
-      for (const anime of myList) {
-        xmlContent += '  <anime>\n';
-        xmlContent += `    <series_animedb_id>${anime.malId || anime.id}</series_animedb_id>\n`;
-        xmlContent += `    <series_title>${anime.name}</series_title>\n`;
-        xmlContent += '    <my_status>Watching</my_status>\n';
-        const watchedEpisodes = animeWatchedEpisodes.get(anime.id);
-        if (watchedEpisodes) {
-          xmlContent += `    <my_watched_episodes>${watchedEpisodes}</my_watched_episodes>\n`;
-        }
-        xmlContent += '    <update_on_import>1</update_on_import>\n';
-        xmlContent += '  </anime>\n';
-      }
-      xmlContent += '</myanimelist>';
-      setLoadingModal(prev => ({
-        ...prev,
-        message: 'Creating export file...',
-        progress: { ...prev.progress, current: 1 }
-      }));
-      // Save file in permanent local storage
-      const fileName = `anipro_export_${Date.now()}.xml`;
-      let fileUri = FileSystem.documentDirectory + fileName;
-      await FileSystem.writeAsStringAsync(fileUri, xmlContent);
-      setLastExportPath(fileUri);
-      const isAvailable = await Sharing.isAvailableAsync();
-      if (isAvailable) {
-        setLoadingModal(prev => ({ ...prev, visible: false }));
-        await Sharing.shareAsync(fileUri, {
-          mimeType: 'text/xml',
-          dialogTitle: 'Export Watchlist',
-          UTI: 'public.xml'
-        });
-      } else {
-        setLoadingModal(prev => ({ ...prev, visible: false }));
-        Alert.alert('Exported', `File saved to: ${fileUri}`);
-      }
-    } catch (error) {
-      setLoadingModal(prev => ({ ...prev, visible: false }));
-      Alert.alert('Error', 'Failed to export list. Please try again.');
+    if (Platform.OS !== 'android') {
+      Alert.alert('Not supported', 'Local file save is only supported on Android.');
+      return;
     }
+    Alert.alert(
+      'Export List',
+      'How do you want to export your watchlist?',
+      [
+        {
+          text: 'Save Locally',
+          onPress: async () => {
+            try {
+              if (!exportFolder) {
+                Alert.alert('No Export Folder', 'Please set an export folder first.');
+                return;
+              }
+              setLoadingModal({
+                visible: true,
+                title: 'Exporting List',
+                message: 'Preparing your anime list for export...',
+                progress: { current: 0, total: 1, success: 0, failed: 0 }
+              });
+              const { myList } = useMyListStore.getState();
+              if (myList.length === 0) {
+                setLoadingModal(prev => ({ ...prev, visible: false }));
+                Alert.alert('Empty List', 'Your watchlist is empty. Nothing to export.');
+                return;
+              }
+              const { history } = useWatchHistoryStore.getState();
+              const animeWatchedEpisodes = new Map();
+              history.forEach(item => {
+                const currentEpisode = animeWatchedEpisodes.get(item.id) || 0;
+                if (item.episodeNumber > currentEpisode) {
+                  animeWatchedEpisodes.set(item.id, item.episodeNumber);
+                }
+              });
+              let xmlContent = '<?xml version="1.0"?>\n<myanimelist>\n';
+              xmlContent += '  <myinfo>\n    <user_export_type>1</user_export_type>\n  </myinfo>\n';
+              for (const anime of myList) {
+                xmlContent += '  <anime>\n';
+                xmlContent += `    <series_animedb_id>${anime.malId || anime.id}</series_animedb_id>\n`;
+                xmlContent += `    <series_title>${anime.name}</series_title>\n`;
+                xmlContent += '    <my_status>Watching</my_status>\n';
+                const watchedEpisodes = animeWatchedEpisodes.get(anime.id);
+                if (watchedEpisodes) {
+                  xmlContent += `    <my_watched_episodes>${watchedEpisodes}</my_watched_episodes>\n`;
+                }
+                xmlContent += '    <update_on_import>1</update_on_import>\n';
+                xmlContent += '  </anime>\n';
+              }
+              xmlContent += '</myanimelist>';
+              setLoadingModal(prev => ({
+                ...prev,
+                message: 'Saving to export folder...',
+                progress: { ...prev.progress, current: 1 }
+              }));
+              const fileName = `anipro_export_${Date.now()}.xml`;
+              const uri = await FileSystem.StorageAccessFramework.createFileAsync(
+                exportFolder,
+                fileName,
+                'text/xml'
+              );
+              await FileSystem.writeAsStringAsync(uri, xmlContent, { encoding: FileSystem.EncodingType.UTF8 });
+              setLoadingModal(prev => ({ ...prev, visible: false }));
+              ToastAndroid.show('Exported successfully!', ToastAndroid.LONG);
+              setLastExportPath(uri);
+            } catch (error) {
+              setLoadingModal(prev => ({ ...prev, visible: false }));
+              Alert.alert('Error', 'Failed to export list. Please try again.');
+            }
+          }
+        },
+        {
+          text: 'Share',
+          onPress: async () => {
+            try {
+              setLoadingModal({
+                visible: true,
+                title: 'Exporting List',
+                message: 'Preparing your anime list for sharing...',
+                progress: { current: 0, total: 1, success: 0, failed: 0 }
+              });
+              const { myList } = useMyListStore.getState();
+              if (myList.length === 0) {
+                setLoadingModal(prev => ({ ...prev, visible: false }));
+                Alert.alert('Empty List', 'Your watchlist is empty. Nothing to export.');
+                return;
+              }
+              const { history } = useWatchHistoryStore.getState();
+              const animeWatchedEpisodes = new Map();
+              history.forEach(item => {
+                const currentEpisode = animeWatchedEpisodes.get(item.id) || 0;
+                if (item.episodeNumber > currentEpisode) {
+                  animeWatchedEpisodes.set(item.id, item.episodeNumber);
+                }
+              });
+              let xmlContent = '<?xml version="1.0"?>\n<myanimelist>\n';
+              xmlContent += '  <myinfo>\n    <user_export_type>1</user_export_type>\n  </myinfo>\n';
+              for (const anime of myList) {
+                xmlContent += '  <anime>\n';
+                xmlContent += `    <series_animedb_id>${anime.malId || anime.id}</series_animedb_id>\n`;
+                xmlContent += `    <series_title>${anime.name}</series_title>\n`;
+                xmlContent += '    <my_status>Watching</my_status>\n';
+                const watchedEpisodes = animeWatchedEpisodes.get(anime.id);
+                if (watchedEpisodes) {
+                  xmlContent += `    <my_watched_episodes>${watchedEpisodes}</my_watched_episodes>\n`;
+                }
+                xmlContent += '    <update_on_import>1</update_on_import>\n';
+                xmlContent += '  </anime>\n';
+              }
+              xmlContent += '</myanimelist>';
+              setLoadingModal(prev => ({
+                ...prev,
+                message: 'Creating export file...',
+                progress: { ...prev.progress, current: 1 }
+              }));
+              const fileName = `anipro_export_${Date.now()}.xml`;
+              let fileUri = FileSystem.documentDirectory + fileName;
+              await FileSystem.writeAsStringAsync(fileUri, xmlContent);
+              setLastExportPath(fileUri);
+              const isAvailable = await Sharing.isAvailableAsync();
+              setLoadingModal(prev => ({ ...prev, visible: false }));
+              if (isAvailable) {
+                await Sharing.shareAsync(fileUri, {
+                  mimeType: 'text/xml',
+                  dialogTitle: 'Export Watchlist',
+                  UTI: 'public.xml'
+                });
+              } else {
+                Alert.alert('Exported', `File saved to: ${fileUri}`);
+              }
+            } catch (error) {
+              setLoadingModal(prev => ({ ...prev, visible: false }));
+              Alert.alert('Error', 'Failed to export list. Please try again.');
+            }
+          }
+        },
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
   };
 
   return (
@@ -352,13 +475,36 @@ export default function ImportExportScreen() {
         {lastExportPath && (
           <View style={styles.exportInfoBox}>
             <Text style={styles.exportInfoText}>Last export saved to:</Text>
-            <Text style={styles.exportInfoPath}>{lastExportPath}</Text>
-            <TouchableOpacity style={styles.openFolderButton} onPress={openExportFolder}>
-              <MaterialIcons name="folder-open" size={18} color="#2196F3" />
-              <Text style={styles.openFolderText}>Open Export Location</Text>
-            </TouchableOpacity>
+            <View style={{flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap'}}>
+              <Text style={styles.exportInfoPath}>{lastExportPath.replace(/^file:\/\//, '')}</Text>
+              <TouchableOpacity style={styles.copyPathButton} onPress={() => {
+                const pathToCopy = lastExportPath.replace(/^file:\/\//, '');
+                Clipboard.setStringAsync(pathToCopy);
+                if (Platform.OS === 'android') {
+                  ToastAndroid.show('Path copied to clipboard!', ToastAndroid.SHORT);
+                } else {
+                  Alert.alert('Copied', 'Path copied to clipboard!');
+                }
+              }}>
+                <MaterialIcons name="content-copy" size={16} color="#FFD700" />
+                <Text style={styles.copyPathText}>Copy Path</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.exportInfoHint}>Use a file manager app to access this file if needed.</Text>
           </View>
         )}
+      </View>
+      <View style={styles.exportFolderSection}>
+        <Text style={styles.exportFolderLabel}>Export Folder:</Text>
+        {exportFolder ? (
+          <Text style={styles.exportFolderPath}>{exportFolder}</Text>
+        ) : (
+          <Text style={styles.exportFolderHint}>No folder set</Text>
+        )}
+        <TouchableOpacity style={styles.setExportFolderButton} onPress={handleSetExportFolder}>
+          <MaterialIcons name="folder" size={18} color="#2196F3" />
+          <Text style={styles.setExportFolderText}>{exportFolder ? 'Change Export Folder' : 'Set Export Folder'}</Text>
+        </TouchableOpacity>
       </View>
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Watchlist Management</Text>
@@ -472,17 +618,27 @@ const styles = StyleSheet.create({
     color: '#FFD700',
     fontSize: 13,
     marginBottom: 6,
+    flexShrink: 1,
   },
-  openFolderButton: {
+  copyPathButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 2,
+    marginLeft: 8,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    backgroundColor: 'rgba(255,215,0,0.08)',
+    borderRadius: 6,
   },
-  openFolderText: {
-    color: '#2196F3',
-    fontSize: 13,
+  copyPathText: {
+    color: '#FFD700',
+    fontSize: 12,
     marginLeft: 4,
     fontWeight: 'bold',
+  },
+  exportInfoHint: {
+    color: '#aaa',
+    fontSize: 12,
+    marginTop: 6,
   },
   section: {
     padding: 16,
@@ -523,5 +679,41 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     marginLeft: 8,
+  },
+  exportFolderSection: {
+    padding: 16,
+    backgroundColor: '#181818',
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+    marginBottom: 18,
+  },
+  exportFolderLabel: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    marginBottom: 8,
+  },
+  exportFolderPath: {
+    color: '#fff',
+    fontSize: 14,
+    marginBottom: 6,
+  },
+  exportFolderHint: {
+    color: '#aaa',
+    fontSize: 14,
+    marginBottom: 6,
+  },
+  setExportFolderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 8,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  setExportFolderText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginLeft: 4,
   },
 }); 
