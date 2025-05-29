@@ -789,6 +789,7 @@ export default function WatchEpisode() {
   // Add this state near other state declarations in WatchEpisode component
   const [isAnimeInfoVisible, setIsAnimeInfoVisible] = useState(false);
   const [newServerAnimeId, setNewServerAnimeId] = useState<string | null>(null);
+  const [newServerEpisodeId, setNewServerEpisodeId] = useState<string | null>(null);
 
   useEffect(() => {
     // If resumeTime is provided, use it directly and skip getting from history
@@ -1810,6 +1811,26 @@ export default function WatchEpisode() {
     }
   }, [isFullscreen]);
 
+  // Fetch new server episode ID when newServerAnimeId and episodeNumber are available
+  useEffect(() => {
+    const fetchNewServerEpisodeId = async () => {
+      if (newServerAnimeId && episodeNumber) {
+        try {
+          const response = await fetch(`https://anisurge.me//api/server/${newServerAnimeId}-${episodeNumber}`);
+          const data = await response.json();
+          if (data['epi-id']) {
+            setNewServerEpisodeId(data['epi-id']);
+          } else {
+            setNewServerEpisodeId(null);
+          }
+        } catch (error) {
+          setNewServerEpisodeId(null);
+        }
+      }
+    };
+    fetchNewServerEpisodeId();
+  }, [newServerAnimeId, episodeNumber]);
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -1905,6 +1926,37 @@ export default function WatchEpisode() {
                 onComments={handleShowComments}
                 downloadUrl={videoData?.download || null}
               />
+
+              {/* Server selection row */}
+              <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 8, gap: 8 }}>
+                <View style={{ flexDirection: 'row', backgroundColor: '#1a1a1a', borderRadius: 8, padding: 4 }}>
+                  <TouchableOpacity
+                    style={{
+                      paddingHorizontal: 16,
+                      paddingVertical: 6,
+                      borderRadius: 6,
+                      backgroundColor: '#f4511e',
+                      marginRight: newServerEpisodeId ? 4 : 0,
+                    }}
+                    disabled={true}
+                  >
+                    <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }}>S1</Text>
+                  </TouchableOpacity>
+                  {newServerEpisodeId && (
+                    <TouchableOpacity
+                      style={{
+                        paddingHorizontal: 16,
+                        paddingVertical: 6,
+                        borderRadius: 6,
+                        backgroundColor: '#222',
+                      }}
+                      disabled={false}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 13 }}>S2</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
               
               <Pressable 
                 style={styles.animeInfoToggle}
