@@ -788,6 +788,7 @@ export default function WatchEpisode() {
   const lastProgressValueRef = useRef<number>(0);
   // Add this state near other state declarations in WatchEpisode component
   const [isAnimeInfoVisible, setIsAnimeInfoVisible] = useState(false);
+  const [newServerAnimeId, setNewServerAnimeId] = useState<string | null>(null);
 
   useEffect(() => {
     // If resumeTime is provided, use it directly and skip getting from history
@@ -1087,6 +1088,19 @@ export default function WatchEpisode() {
         genres: data.genres
       };
       setAnimeInfo(processedData);
+      
+      // Fetch new server anime ID using AniList ID
+      if (data.alID) {
+        try {
+          const response = await fetch(`https://www.anisurge.me/api/anime/${data.alID}`);
+          const newServerData = await response.json();
+          if (newServerData && newServerData.id) {
+            setNewServerAnimeId(newServerData.id);
+          }
+        } catch (error) {
+          console.error('Failed to fetch new server anime ID:', error);
+        }
+      }
       
       // Save to history immediately to ensure we have the correct info
       const now = Date.now();
