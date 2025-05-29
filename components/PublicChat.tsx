@@ -1213,7 +1213,7 @@ function getPreviousChatMemory(aiType: string, userId: string, messages: ChatMes
 const CHAT_TUTORIAL_VERSION = '2'; // Increment this when you update the tutorial
 
 // Admin user IDs with @ symbol
-const ADMIN_USER_IDS = ["@R3AP3Redit", /* add more admin users here */];
+const ADMIN_USER_IDS = ["@R3AP3Redit","@merxy7697","@nyt92", /* add more admin users here */];
 
 const PublicChat = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -2712,13 +2712,19 @@ const PublicChat = () => {
           visible={showWelcomeTutorial}
           onClose={handleTutorialComplete}
         />
-        
-        <Image 
-          source={require('../assets/public-chat-bg.jpg')}
-          style={StyleSheet.flatten([styles.backgroundGif])}
-          resizeMode="cover"
+
+        {/* Background Video (MP4) */}
+        <Video
+          source={require('../assets/public-chat-bg.mp4')}
+          style={[StyleSheet.absoluteFill, styles.backgroundVideo]}
+          resizeMode={ResizeMode.COVER}
+          isLooping
+          shouldPlay
+          isMuted
+          ignoreSilentSwitch="obey"
+          pointerEvents="none"
         />
-        
+
         <View style={styles.chatContainer}>
           {loading ? (
             <ActivityIndicator size="large" color="#f4511e" style={styles.loader} />
@@ -3042,7 +3048,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'transparent',
   },
-  backgroundGif: {
+  backgroundVideo: {
     position: 'absolute',
     width: '100%',
     height: '100%',

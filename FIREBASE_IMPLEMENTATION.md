@@ -123,9 +123,19 @@ type Comment = {
    - `removeFromWatchlist`: Remove anime from watchlist
    - `updateWatchHistoryItem`: Update specific watch history item
    - `syncOnLaunch`: Initial sync on app launch
+   - `performInitialSync`: Merge and sync local/cloud data on login
+   - `refreshIfNeeded`: Refreshes data if stale
 
 2. **Data Structure**
 ```typescript
+export type MyListAnime = {
+  id: string;
+  name: string; // Anime name (not 'title')
+  img: string;  // Anime image (not 'image')
+  addedAt: number; // Timestamp when added to watchlist
+  malId?: string; // Optional MAL ID for MyAnimeList integration
+};
+
 interface UserData {
   lastSync: Timestamp;
   watchHistory: WatchHistoryItem[];
@@ -134,9 +144,15 @@ interface UserData {
 ```
 
 3. **Size Management**
-   - Automatic document size limitation
+   - Automatic document size limitation (trims oldest entries)
    - Prioritization of recent items
    - Error handling and logging for size constraints
+   - Backup/restore logic for error recovery
+
+4. **Import/Export**
+   - Users can import/export their watchlist in MyAnimeList XML and other formats
+   - Import supports batch processing, error handling, and watched episode mapping
+   - Export includes watched episodes from watch history
 
 ### Integration with State Management
 1. **WatchHistoryStore**
@@ -147,7 +163,8 @@ interface UserData {
 2. **MyListStore**
    - Sync with Firestore for cross-device access
    - Local first, cloud backup architecture
-   - Error recovery
+   - Error recovery and backup/restore
+   - New methods: `refreshIfNeeded`, batch operations, robust merge logic
 
 ## Firebase Security Rules
 ```javascript
@@ -199,6 +216,7 @@ service cloud.firestore {
    - Used for comment updates
    - Avatar migrations
    - Efficient writes
+   - Watchlist and watch history sync
 
 2. **Caching**
    - Avatar caching
@@ -212,6 +230,7 @@ service cloud.firestore {
    - User feedback
    - Logging system
    - Size limit management
+   - Backup/restore for watchlist and history
 
 4. **Database Size Management**
    - Document size estimation

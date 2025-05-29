@@ -34,12 +34,13 @@ interface WatchHistoryItem {
 
 #### MyListAnime Structure
 ```typescript
-interface MyListAnime {
+export type MyListAnime = {
   id: string;
-  title: string;
-  image: string;
+  name: string; // Anime name (not 'title')
+  img: string;  // Anime image (not 'image')
   addedAt: number; // Timestamp when added to watchlist
-}
+  malId?: string; // Optional MAL ID for MyAnimeList integration
+};
 ```
 
 ## Synchronization Mechanisms
@@ -53,16 +54,24 @@ interface MyListAnime {
 2. Cloud sync happens in background if user is authenticated
 3. Merging strategy prioritizes most recent watch times
 4. Size limits are enforced to stay within Firestore's 1MB document limit
+5. Backup/restore logic ensures data safety in case of sync failure
 
 ### 2. Watchlist Sync
 - Local storage key: `'anipro:watchlist'`
 - Backup storage key: `'anipro:watchlist_backup'`
 
 #### Sync Process:
-1. Local storage is used as primary data source
+1. Local storage is used as primary data source for fast UI
 2. Cloud sync occurs after local save if user is authenticated
-3. Conservative merging strategy to prevent data loss
-4. Size monitoring and trimming if approaching Firestore limits
+3. Conservative merging strategy to prevent data loss (local preferred if cloud is empty)
+4. Size monitoring and trimming if approaching Firestore limits (oldest entries trimmed)
+5. Backup/restore logic for error recovery
+6. New methods: `refreshIfNeeded`, robust batch operations
+
+#### Import/Export
+- Users can import/export their watchlist in MyAnimeList XML and other formats
+- Import supports batch processing, error handling, and watched episode mapping
+- Export includes watched episodes from watch history
 
 ## Security Rules
 
@@ -87,7 +96,7 @@ match /user_data/{userId} {
 ## Data Management Features
 
 ### 1. Size Management
-- Document size limit: 900MB (soft limit)
+- Document size limit: 900KB (soft limit)
 - Hard limit enforcement: 1MB (Firestore requirement)
 - Automatic trimming of older entries if size limits are exceeded
 
