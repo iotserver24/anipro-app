@@ -581,7 +581,8 @@ const renderMessageContent = (
   content: string, 
   mentions?: string[], 
   onMentionPress?: (username: string) => void,
-  isAdmin?: boolean
+  isAdmin?: boolean,
+  onFullscreenImage?: (url: string) => void
 ) => {
   if (!content) return null;
 
@@ -598,14 +599,14 @@ const renderMessageContent = (
         </View>
         {mainContent && (
           <View style={styles.mainContentContainer}>
-            {renderFormattedContent(mainContent, mentions, onMentionPress, isAdmin)}
+            {renderFormattedContent(mainContent, mentions, onMentionPress, isAdmin, onFullscreenImage)}
           </View>
         )}
       </View>
     );
   }
 
-  return renderFormattedContent(content, mentions, onMentionPress, isAdmin);
+  return renderFormattedContent(content, mentions, onMentionPress, isAdmin, onFullscreenImage);
 };
 
 // Helper function to render formatted content with mentions
@@ -613,109 +614,113 @@ const renderFormattedContent = (
   content: string,
   mentions?: string[],
   onMentionPress?: (username: string) => void,
-  isAdmin?: boolean
+  isAdmin?: boolean,
+  onFullscreenImage?: (url: string) => void
 ) => {
-  // Split by mentions to preserve them
-  const parts = content.split(/(@\w+)/g);
-  
-  return (
-    <Text style={styles.messageText}>
-      {parts.map((part, index) => {
-        if (part.startsWith('@')) {
-          // Handle mentions
-          return (
+  // Helper: check if a URL is a direct image
+  const isImageUrl = (url: string) => /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
+  // Helper: check if a URL is a direct video
+  const isVideoUrl = (url: string) => /\.(mp4|webm|mov|m4v)$/i.test(url);
+
+  // Regex to match URLs
+  const urlRegex = /(anisurge:\/\/[^\s]+|https?:\/\/[^\s]+)/g;
+
+  // Split content into an array of text and URLs
+  const splitContent = content.split(urlRegex);
+  const urls = content.match(urlRegex) || [];
+  let urlIndex = 0;
+
+  // Helper to render text with mentions and formatting
+  const renderTextWithMentions = (text: string, keyPrefix: string) => {
+    // Split by mentions
+    const parts = text.split(/(@\w+)/g);
+    return parts.map((part, idx) => {
+      if (part.startsWith('@')) {
+        return (
+          <TouchableOpacity key={`${keyPrefix}-mention-${idx}`} onPress={() => onMentionPress?.(part)}>
+            <Text style={styles.mentionText}>{part}</Text>
+          </TouchableOpacity>
+        );
+      }
+      // Bold/italic formatting
+      return part.split(/(\*\*.*?\*\*|\*.*?\*)/g).map((segment, j) => {
+        if (segment.startsWith('**') && segment.endsWith('**')) {
+          return <Text key={`${keyPrefix}-bold-${idx}-${j}`} style={styles.boldText}>{segment.slice(2, -2)}</Text>;
+        } else if (segment.startsWith('*') && segment.endsWith('*')) {
+          return <Text key={`${keyPrefix}-italic-${idx}-${j}`} style={styles.italicText}>{segment.slice(1, -1)}</Text>;
+        }
+        return <Text key={`${keyPrefix}-plain-${idx}-${j}`}>{segment}</Text>;
+      });
+    });
+  };
+
+  // Build the array of elements (text/media)
+  const elements: React.ReactNode[] = [];
+  splitContent.forEach((part, i) => {
+    // Odd indices are URLs (because split keeps delimiters)
+    if (urlRegex.test(part)) {
+      const url = urls[urlIndex++];
+      if (isImageUrl(url)) {
+        elements.push(
+          <TouchableOpacity
+            key={`img-${i}`}
+            onPress={() => onFullscreenImage && onFullscreenImage(url)}
+            activeOpacity={0.9}
+            style={{ marginVertical: 6, marginRight: 8 }}
+          >
+            <Image
+              source={{ uri: url }}
+              style={{ width: 180, height: 180, borderRadius: 12, backgroundColor: '#222' }}
+              resizeMode="cover"
+            />
+          </TouchableOpacity>
+        );
+      } else if (isVideoUrl(url)) {
+        elements.push(
+          <View key={`vid-${i}`} style={{ marginVertical: 6, marginRight: 8 }}>
+            <Video
+              source={{ uri: url }}
+              style={{ width: 180, height: 180, borderRadius: 12, backgroundColor: '#222' }}
+              resizeMode={ResizeMode.CONTAIN}
+              useNativeControls
+              isLooping
+            />
+          </View>
+        );
+      } else if (url.startsWith('anisurge://')) {
+        elements.push(
+          <View key={`deeplink-${i}`} style={{flexDirection: 'row', alignItems: 'center', marginVertical: 2}}>
+            <Text style={styles.deepLinkText}>{url}</Text>
             <TouchableOpacity 
-              key={index} 
-              onPress={() => onMentionPress?.(part)}
+              style={styles.deepLinkButtonInlineBlue}
+              onPress={() => Linking.openURL(url)}
             >
-              <Text style={styles.mentionText}>{part}</Text>
+              <Text style={styles.deepLinkButtonText}>Open in App</Text>
             </TouchableOpacity>
-          );
-        }
+          </View>
+        );
+      } else {
+        elements.push(
+          <Text
+            key={`link-${i}`}
+            style={styles.externalLinkText}
+            onPress={() => Linking.openURL(url)}
+          >
+            {url}
+          </Text>
+        );
+      }
+    } else if (part) {
+      // Render text (with mentions/formatting)
+      elements.push(
+        <Text key={`txt-${i}`} style={styles.messageText}>
+          {renderTextWithMentions(part, `txt-${i}`)}
+        </Text>
+      );
+    }
+  });
 
-        // Handle URLs in the text
-        const urlRegex = /(anisurge:\/\/[^\s]+|https?:\/\/[^\s]+)/g;
-        if (urlRegex.test(part)) {
-          const urlParts = part.split(urlRegex);
-          const urls = part.match(urlRegex) || [];
-          let urlIndex = 0;
-          
-          return (
-            <Text key={index} style={{flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center'}}>
-              {urlParts.map((text, i) => {
-                // This is regular text between URLs
-                if (i % 2 === 0) {
-                  // Format any regular text (bold/italic)
-                  const formattedText = text.split(/(\*\*.*?\*\*|\*.*?\*)/g).map((segment, j) => {
-                    if (segment.startsWith('**') && segment.endsWith('**')) {
-                      return <Text key={`${index}-${i}-${j}`} style={styles.boldText}>{segment.slice(2, -2)}</Text>;
-                    } else if (segment.startsWith('*') && segment.endsWith('*')) {
-                      return <Text key={`${index}-${i}-${j}`} style={styles.italicText}>{segment.slice(1, -1)}</Text>;
-                    }
-                    return <Text key={`${index}-${i}-${j}`}>{segment}</Text>;
-                  });
-                  
-                  return <Text key={`${index}-${i}`}>{formattedText}</Text>;
-                } else {
-                  // This is a URL
-                  const url = urls[urlIndex++];
-                  
-                  if (url.startsWith('anisurge://')) {
-                    // Deep link to the app (inline)
-                    return (
-                      <Text key={`${index}-${i}`} style={{flexDirection: 'row', alignItems: 'center'}}>
-                        <Text style={styles.deepLinkText}>{url}</Text>
-                        <TouchableOpacity 
-                          style={styles.deepLinkButtonInlineBlue}
-                          onPress={() => Linking.openURL(url)}
-                        >
-                          <Text style={styles.deepLinkButtonText}>Open in App</Text>
-                        </TouchableOpacity>
-                      </Text>
-                    );
-                  } else {
-                    // External http/https link
-                    return (
-                      <Text
-                        key={`${index}-${i}`}
-                        style={styles.externalLinkText}
-                        onPress={() => Linking.openURL(url)}
-                      >
-                        {url}
-                      </Text>
-                    );
-                  }
-                }
-              })}
-            </Text>
-          );
-        }
-
-        // Handle formatting for non-mention, non-link parts
-        const formattedParts = part.split(/(\*\*.*?\*\*|\*.*?\*)/g).map((text, i) => {
-          if (text.startsWith('**') && text.endsWith('**')) {
-            // Bold text
-            return (
-              <Text key={`${index}-${i}`} style={styles.boldText}>
-                {text.slice(2, -2)}
-              </Text>
-            );
-          } else if (text.startsWith('*') && text.endsWith('*')) {
-            // Italic text
-            return (
-              <Text key={`${index}-${i}`} style={styles.italicText}>
-                {text.slice(1, -1)}
-              </Text>
-            );
-          }
-          // Regular text
-          return <Text key={`${index}-${i}`}>{text}</Text>;
-        });
-
-        return <Text key={index}>{formattedParts}</Text>;
-      })}
-    </Text>
-  );
+  return <View style={{ flexDirection: 'column', flexWrap: 'wrap', alignItems: 'flex-start' }}>{elements}</View>;
 };
 
 // Memoized GIF component to handle both video and image GIFs
@@ -817,7 +822,7 @@ const MessageItem = memo(({
             <Text style={[styles.userName, { color: usernameColor }]}>{item.userName}</Text>
           </TouchableOpacity>
         )}
-        {item.content.trim() !== '' && renderMessageContent(item.content, item.mentions, onMentionPress, isAdmin)}
+        {item.content.trim() !== '' && renderMessageContent(item.content, item.mentions, onMentionPress, isAdmin, onFullscreenImage)}
         {/* Render AI art image if present */}
         {item.imageUrl && (
           <View style={{ marginTop: 8, alignItems: 'center' }}>
