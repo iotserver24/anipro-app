@@ -25,7 +25,7 @@ const USER_DATA_KEY = 'user_data';
 const USER_CREDENTIALS_KEY = 'user_credentials';
 
 // Enhanced user session storage
-export const storeUserSession = async (user: User, credentials?: { email: string, password: string }) => {
+export const storeUserSession = async (user: User & { birthdate?: string }, credentials?: { email: string, password: string }) => {
   try {
     // Store basic auth data
     const userData = {
@@ -35,7 +35,8 @@ export const storeUserSession = async (user: User, credentials?: { email: string
       photoURL: user.photoURL,
       emailVerified: user.emailVerified,
       createdAt: user.metadata.creationTime,
-      lastLoginAt: user.metadata.lastSignInTime
+      lastLoginAt: user.metadata.lastSignInTime,
+      birthdate: user.birthdate || undefined // Save birthdate if present
     };
     
     await AsyncStorage.setItem(USER_AUTH_KEY, JSON.stringify(userData));
@@ -133,7 +134,7 @@ const isUsernameTaken = async (username: string): Promise<boolean> => {
 };
 
 // Register new user with email and password
-export const registerUser = async (email: string, password: string, username: string): Promise<User> => {
+export const registerUser = async (email: string, password: string, username: string, birthdate: string): Promise<User> => {
   try {
     // First check if username is taken
     const taken = await isUsernameTaken(username);
@@ -152,7 +153,8 @@ export const registerUser = async (email: string, password: string, username: st
         username: username.toLowerCase(),
         createdAt: Timestamp.now(),
         avatarId: 'default', // Set default avatar
-        emailVerified: false // Track email verification status
+        emailVerified: false, // Track email verification status
+        birthdate: birthdate // Save birthdate
       });
       
       // Send verification email
@@ -164,8 +166,8 @@ export const registerUser = async (email: string, password: string, username: st
       throw error;
     }
     
-    // Store session with credentials for auto-login
-    await storeUserSession(user, { email, password });
+    // Store session with credentials for auto-login, include birthdate
+    await storeUserSession({...user, birthdate}, { email, password });
     
     return user;
   } catch (error: any) {

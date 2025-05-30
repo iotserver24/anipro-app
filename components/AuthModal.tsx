@@ -31,6 +31,7 @@ const AuthModal = ({ isVisible, onClose, onAuthSuccess }: AuthModalProps) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [username, setUsername] = useState('');
+  const [birthdate, setBirthdate] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showVerificationBanner, setShowVerificationBanner] = useState(false);
@@ -59,6 +60,7 @@ const AuthModal = ({ isVisible, onClose, onAuthSuccess }: AuthModalProps) => {
     setPassword('');
     setConfirmPassword('');
     setUsername('');
+    setBirthdate('');
     setErrors({});
     setResetSent(false);
   };
@@ -121,6 +123,10 @@ const AuthModal = ({ isVisible, onClose, onAuthSuccess }: AuthModalProps) => {
       if (password !== confirmPassword) {
         newErrors.confirmPassword = 'Passwords do not match';
       }
+      
+      if (!birthdate) {
+        newErrors.birthdate = 'Birthdate is required';
+      }
     }
     
     setErrors(newErrors);
@@ -165,7 +171,7 @@ const AuthModal = ({ isVisible, onClose, onAuthSuccess }: AuthModalProps) => {
       setLoading(true);
       
       // First try to register the user
-      await registerUser(email.trim(), password, username.trim());
+      await registerUser(email.trim(), password, username.trim(), birthdate);
       setAuthenticated(true);
       
       // Show verification banner since new users need to verify email
@@ -328,6 +334,25 @@ const AuthModal = ({ isVisible, onClose, onAuthSuccess }: AuthModalProps) => {
                     />
                     {errors.confirmPassword && (
                       <Text style={styles.errorText}>{errors.confirmPassword}</Text>
+                    )}
+                  </View>
+                )}
+                
+                {/* Birthdate */}
+                {mode === 'register' && (
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Birthdate</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor="#666"
+                      value={birthdate}
+                      onChangeText={setBirthdate}
+                      keyboardType="numeric"
+                      maxLength={10}
+                    />
+                    {errors.birthdate && (
+                      <Text style={styles.errorText}>{errors.birthdate}</Text>
                     )}
                   </View>
                 )}

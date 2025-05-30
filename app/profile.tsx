@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView, ImageSourcePropType, ToastAndroid, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView, ImageSourcePropType, ToastAndroid, Platform, TextInput } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
@@ -42,6 +42,7 @@ type UserData = {
   donationAmount?: number;
   premiumAmount?: number;
   isPremium?: boolean;
+  birthdate?: string;
 };
 
 // Define UserDonation type here since we're not importing it anymore
@@ -87,6 +88,8 @@ export default function ProfileScreen() {
   const [storageFolder, setStorageFolder] = useState<string | null>(null);
   const [betaUpdatesEnabled, setBetaUpdatesEnabled] = useState(false);
   const [betaLoading, setBetaLoading] = useState(true);
+  const [editingBirthdate, setEditingBirthdate] = useState(false);
+  const [birthdateInput, setBirthdateInput] = useState('');
 
   useEffect(() => {
     checkAuthStatus();
@@ -224,6 +227,8 @@ export default function ProfileScreen() {
                 emailVerified: currentUser.emailVerified
               });
             }
+            
+            if (data.birthdate) setBirthdateInput(data.birthdate);
           }
         } catch (error) {
           console.error('Error fetching user data:', error);
@@ -1139,6 +1144,27 @@ export default function ProfileScreen() {
     await AsyncStorage.setItem('beta_updates_enabled', newValue ? 'true' : 'false');
   };
 
+  const handleUpdateBirthdate = async () => {
+    if (!birthdateInput) {
+      Alert.alert('Error', 'Birthdate cannot be empty');
+      return;
+    }
+    try {
+      setLoading(true);
+      const user = getCurrentUser();
+      if (!user) throw new Error('Not authenticated');
+      await updateDoc(doc(db, 'users', user.uid), { birthdate: birthdateInput });
+      setUserData(prev => prev ? { ...prev, birthdate: birthdateInput } : prev);
+      await AsyncStorage.mergeItem('user_auth', JSON.stringify({ birthdate: birthdateInput }));
+      setEditingBirthdate(false);
+      Alert.alert('Success', 'Birthdate updated!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update birthdate');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -1249,6 +1275,36 @@ export default function ProfileScreen() {
               <Text style={styles.infoValue}>
                 {commentCount !== null ? commentCount : 'Loading...'}
               </Text>
+            )}
+          </View>
+
+          <View style={styles.infoSection}>
+            <Text style={styles.infoLabel}>Birthdate</Text>
+            {editingBirthdate ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TextInput
+                  style={[styles.input, { flex: 1, marginRight: 8 }]}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor="#666"
+                  value={birthdateInput}
+                  onChangeText={setBirthdateInput}
+                  keyboardType="numeric"
+                  maxLength={10}
+                />
+                <TouchableOpacity onPress={handleUpdateBirthdate} style={{ marginRight: 8 }}>
+                  <MaterialIcons name="check" size={24} color="#4CAF50" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setEditingBirthdate(false); setBirthdateInput(userData?.birthdate || ''); }}>
+                  <MaterialIcons name="close" size={24} color="#f4511e" />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text style={styles.infoValue}>{userData?.birthdate || 'Not set'}</Text>
+                <TouchableOpacity onPress={() => setEditingBirthdate(true)} style={{ marginLeft: 8 }}>
+                  <MaterialIcons name="edit" size={20} color="#2196F3" />
+                </TouchableOpacity>
+              </View>
             )}
           </View>
 
@@ -2030,5 +2086,12 @@ const styles = StyleSheet.create({
   betaToggleCircleOff: {
     left: 2,
     backgroundColor: '#fff',
+  },
+  input: {
+    height: 40,
+    borderColor: 'gray',
+    borderWidth: 1,
+    marginBottom: 12,
+    padding: 10,
   },
 }); 
