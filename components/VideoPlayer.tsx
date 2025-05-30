@@ -27,6 +27,7 @@ import { debounce } from "lodash";
 import Video, { ResizeMode, type VideoRef, TextTrackType, SelectedTrackType, ISO639_1 } from "react-native-video";
 import FullScreenChz from "react-native-fullscreen-chz";
 import ControlsOverlay from './ControlsOverlay';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface VideoPlayerProps {
   source: {
@@ -761,6 +762,26 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, [subtitles]);
 
+  // Subtitle settings state
+  const [subtitleSettings, setSubtitleSettings] = useState({
+    fontSize: 16,
+    paddingBottom: 60,
+  });
+  const [showSubtitleSettings, setShowSubtitleSettings] = useState(false);
+
+  // Load subtitle settings from AsyncStorage on mount
+  useEffect(() => {
+    AsyncStorage.getItem('subtitleSettings').then((json) => {
+      if (json) setSubtitleSettings(JSON.parse(json));
+    });
+  }, []);
+
+  // Save subtitle settings to AsyncStorage
+  const saveSubtitleSettings = async (settings: typeof subtitleSettings) => {
+    setSubtitleSettings(settings);
+    await AsyncStorage.setItem('subtitleSettings', JSON.stringify(settings));
+  };
+
   return (
     <Animated.View
       style={[
@@ -809,8 +830,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             value: selectedSubtitleTrack.language
           } : undefined}
           subtitleStyle={{
-            paddingBottom: 60,
-            fontSize: 16,
+            fontSize: subtitleSettings.fontSize,
+            paddingBottom: subtitleSettings.paddingBottom,
+            opacity: 0.7,
           }}
         />
         {isBuffering && (
@@ -819,6 +841,55 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           </View>
         )}
       </Pressable>
+
+      {/* Subtitle Settings Modal */}
+      {showSubtitleSettings && (
+        <View style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 9999,
+        }}>
+          <View style={{ backgroundColor: '#222', borderRadius: 16, padding: 24, width: 320 }}>
+            <Text style={{ color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 16 }}>Subtitle Settings</Text>
+            <Text style={{ color: '#fff', marginBottom: 8 }}>Font Size: {subtitleSettings.fontSize}</Text>
+            <Slider
+              minimumValue={10}
+              maximumValue={32}
+              step={1}
+              value={subtitleSettings.fontSize}
+              onValueChange={v => setSubtitleSettings(s => ({ ...s, fontSize: v }))}
+              minimumTrackTintColor="#f4511e"
+              maximumTrackTintColor="#888"
+              thumbTintColor="#f4511e"
+            />
+            <Text style={{ color: '#fff', marginTop: 16, marginBottom: 8 }}>Padding Bottom: {subtitleSettings.paddingBottom}</Text>
+            <Slider
+              minimumValue={0}
+              maximumValue={120}
+              step={1}
+              value={subtitleSettings.paddingBottom}
+              onValueChange={v => setSubtitleSettings(s => ({ ...s, paddingBottom: v }))}
+              minimumTrackTintColor="#f4511e"
+              maximumTrackTintColor="#888"
+              thumbTintColor="#f4511e"
+            />
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 24 }}>
+              <TouchableOpacity onPress={() => setShowSubtitleSettings(false)} style={{ marginRight: 16 }}>
+                <Text style={{ color: '#f4511e', fontWeight: 'bold', fontSize: 16 }}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => { saveSubtitleSettings(subtitleSettings); setShowSubtitleSettings(false); }}>
+                <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 16 }}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* Move SkipButtons outside of Pressable but inside the main container */}
       <SkipButtons
@@ -856,6 +927,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           subtitles={subtitles}
           selectedSubtitle={selectedSubtitle}
           onSubtitleChange={handleSubtitleChange}
+          onSubtitleSettingsPress={() => setShowSubtitleSettings(true)}
         />
       </View>
 

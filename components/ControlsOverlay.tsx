@@ -23,6 +23,7 @@ interface ControlsOverlayProps {
   subtitles?: Subtitle[];
   selectedSubtitle?: string;
   onSubtitleChange: (subtitle: string | null) => void;
+  onSubtitleSettingsPress?: () => void;
 }
 
 // Format time helper function
@@ -64,6 +65,7 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
   subtitles = [],
   selectedSubtitle,
   onSubtitleChange,
+  onSubtitleSettingsPress,
 }) => {
   const [showSpeedOptions, setShowSpeedOptions] = useState(false);
   const [showQualityOptions, setShowQualityOptions] = useState(false);
@@ -162,6 +164,17 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
                 {selectedSubtitle || 'CC'}
               </Text>
             </TouchableOpacity>
+            {/* Subtitle Settings Button */}
+            {onSubtitleSettingsPress && (
+              <TouchableOpacity
+                style={[styles.topControlButton, { marginLeft: 4 }]}
+                onPress={onSubtitleSettingsPress}
+                activeOpacity={0.5}
+                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+              >
+                <MaterialIcons name="tune" size={20} color="white" />
+              </TouchableOpacity>
+            )}
           </View>
           
           {/* Moved controls to top right */}
