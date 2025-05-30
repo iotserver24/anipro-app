@@ -303,6 +303,15 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
               </Text>
             </View>
           )}
+          
+          {currentTab === 'info' && updateInfo.showUpdate && !updateInfo.isForced && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+              <View style={{ backgroundColor: '#FFD700', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2, marginRight: 8 }}>
+                <Text style={{ color: '#222', fontWeight: 'bold', fontSize: 12 }}>BETA</Text>
+              </View>
+              <Text style={{ color: '#FFD700', fontWeight: 'bold', fontSize: 14 }}>This is a beta update for early access and feedback.</Text>
+            </View>
+          )}
         </ScrollView>
       );
     }
@@ -330,7 +339,10 @@ const UpdateModal: React.FC<UpdateModalProps> = ({
               <MaterialIcons name="system-update" size={24} color="#f4511e" />
               <View style={styles.headerTextContainer}>
                 <Text style={styles.title}>Update Available</Text>
-                <Text style={styles.version}>Version {updateInfo.latestVersion}</Text>
+                <Text style={styles.version}>
+                  Version {updateInfo.latestVersion}
+                  {updateInfo.showUpdate && !updateInfo.isForced && ' (beta)'}
+                </Text>
               </View>
             </View>
             

@@ -163,9 +163,9 @@ const countUser = async () => {
       })
     });
     const data = await response.json();
-    logger.info('User counted:', data);
+    logger.info('User counted:', JSON.stringify(data));
   } catch (error) {
-    logger.error('Error counting user:', error);
+    logger.error('Error counting user:', String(error));
   }
 };
 
@@ -229,7 +229,7 @@ TaskManager.defineTask(AIRING_NOTIFICATION_TASK, async () => {
 
     return BackgroundFetch.BackgroundFetchResult.NewData;
   } catch (error) {
-    logger.error('Background task error:', error);
+    logger.error('Background task error:', String(error));
     return BackgroundFetch.BackgroundFetchResult.Failed;
   }
 });
@@ -293,6 +293,8 @@ export default function Home() {
   const [favoriteAnime, setFavoriteAnime] = useState<AnimeItem[]>([]);
   const [latestCompleted, setLatestCompleted] = useState<AnimeItem[]>([]);
   const [showStorageModal, setShowStorageModal] = useState(false);
+  const [betaUpdatesEnabled, setBetaUpdatesEnabled] = useState(false);
+  const [betaChecked, setBetaChecked] = useState(false);
 
   const fetchAnime = async (bypassCache: boolean = false) => {
     try {
@@ -387,7 +389,7 @@ export default function Home() {
       ]);
 
     } catch (error) {
-      logger.error('Error fetching anime:', error);
+      logger.error('Error fetching anime:', String(error));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -422,7 +424,7 @@ export default function Home() {
       await AsyncStorage.setItem(CACHE_KEYS.TRENDING_RECENT, JSON.stringify(cacheData));
 
     } catch (error) {
-      logger.error('Error fetching trending and recent:', error);
+      logger.error('Error fetching trending and recent:', String(error));
     }
   };
 
@@ -443,7 +445,7 @@ export default function Home() {
       await AsyncStorage.setItem(CACHE_KEYS.NEW_EPISODES, JSON.stringify(cacheData));
 
     } catch (error) {
-      logger.error('Error fetching new episodes:', error);
+      logger.error('Error fetching new episodes:', String(error));
     }
   };
 
@@ -460,7 +462,7 @@ export default function Home() {
       };
       await AsyncStorage.setItem(CACHE_KEYS.POPULAR, JSON.stringify(cacheData));
     } catch (error) {
-      logger.error('Error fetching popular anime:', error);
+      logger.error('Error fetching popular anime:', String(error));
     }
   };
 
@@ -477,7 +479,7 @@ export default function Home() {
       };
       await AsyncStorage.setItem(CACHE_KEYS.FAVORITE, JSON.stringify(cacheData));
     } catch (error) {
-      logger.error('Error fetching favorite anime:', error);
+      logger.error('Error fetching favorite anime:', String(error));
     }
   };
 
@@ -494,7 +496,7 @@ export default function Home() {
       };
       await AsyncStorage.setItem(CACHE_KEYS.LATEST_COMPLETED, JSON.stringify(cacheData));
     } catch (error) {
-      logger.error('Error fetching latest completed anime:', error);
+      logger.error('Error fetching latest completed anime:', String(error));
     }
   };
 
@@ -511,7 +513,7 @@ export default function Home() {
       
       // Validate the required fields
       if (!updateData || !updateData.latestVersion || !updateData.downloadUrls || !updateData.downloadUrls.universal) {
-        logger.error('Invalid update data received:', updateData);
+        logger.error('Invalid update data received:', JSON.stringify(updateData));
         return;
       }
       
@@ -545,21 +547,18 @@ export default function Home() {
       // Compare our actual app version with the server's latest version
       const versionComparison = compareVersions(currentVersion, updateData.latestVersion);
       if (versionComparison < 0 || (versionComparison === 0 && currentVersionCode < updateData.versionCode)) {
-        setUpdateInfo(updateData);
-        
-        // Only show update notifications if showUpdate flag is true
-        if (updateData.showUpdate === undefined || updateData.showUpdate) {
-          // If it's a forced update, show the modal immediately
+        // Only show if forced, or (showUpdate and beta enabled)
+        if (updateData.isForced || (updateData.showUpdate && betaUpdatesEnabled)) {
+          setUpdateInfo(updateData);
           if (updateData.isForced) {
             setShowUpdateModal(true);
           } else {
-            // For non-forced updates, show the banner
             setShowUpdateBanner(true);
           }
         }
       }
     } catch (error) {
-      logger.error('Error checking for updates:', error);
+      logger.error('Error checking for updates:', String(error));
     }
   };
 
@@ -586,7 +585,7 @@ export default function Home() {
         }
       }
     } catch (error) {
-      logger.error('Error checking "What\'s New":', error);
+      logger.error('Error checking "What\'s New":', String(error));
     }
   };
 
@@ -617,7 +616,7 @@ export default function Home() {
       setNotificationCount(unreadCount);
       setHasUnreadNotifications(unreadCount > 0);
     } catch (error) {
-      logger.error('Error checking for unread notifications:', error);
+      logger.error('Error checking for unread notifications:', String(error));
     }
   };
 
@@ -696,13 +695,13 @@ export default function Home() {
         }
 
         if (finalStatus !== 'granted') {
-          logger.warn('Notification permissions not granted');
+          logger.warn('Notification permissions not granted', '');
           return;
         }
 
-        logger.info('Notification permissions granted');
+        logger.info('Notification permissions granted', '');
       } catch (error) {
-        logger.error('Error requesting notification permissions:', error);
+        logger.error('Error requesting notification permissions:', String(error));
       }
     };
 
@@ -725,9 +724,9 @@ export default function Home() {
           stopOnTerminate: false,
         });
 
-        logger.info(`Background task registered. Next check at: ${next1AM.toLocaleString()}`);
+        logger.info(`Background task registered. Next check at: ${next1AM.toLocaleString()}`, '');
       } catch (error) {
-        logger.error('Failed to register background task:', error);
+        logger.error('Failed to register background task:', String(error));
       }
     };
 
@@ -751,7 +750,7 @@ export default function Home() {
         // Mark that we've shown the prompt
         await AsyncStorage.setItem('has_shown_auth_prompt', 'true');
       } catch (error) {
-        logger.error('Error checking auth prompt:', error);
+        logger.error('Error checking auth prompt:', String(error));
       }
     };
 
@@ -765,6 +764,14 @@ export default function Home() {
       if (!folderUri && !skip && Platform.OS === 'android') {
         setShowStorageModal(true);
       }
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const value = await AsyncStorage.getItem('beta_updates_enabled');
+      setBetaUpdatesEnabled(value === 'true');
+      setBetaChecked(true);
     })();
   }, []);
 
@@ -786,7 +793,7 @@ export default function Home() {
       // Fetch fresh data
       await fetchAnime(true);
     } catch (error) {
-      logger.error('Error refreshing:', error);
+      logger.error('Error refreshing:', String(error));
       setRefreshing(false);
     }
   };
@@ -996,7 +1003,7 @@ export default function Home() {
         onClose={() => setShowAuthModal(false)}
         onAuthSuccess={handleAuthSuccess}
       />
-      {showUpdateBanner && updateInfo && (
+      {betaChecked && showUpdateBanner && updateInfo && (
         <TouchableOpacity 
           style={styles.updateBanner}
           onPress={() => setShowUpdateModal(true)}
@@ -1004,7 +1011,15 @@ export default function Home() {
           <MaterialIcons name="system-update" size={24} color="#fff" />
           <Text style={styles.updateText}>
             Update Available: Version {updateInfo.latestVersion}
+            {updateInfo.showUpdate && !updateInfo.isForced && (
+              <Text style={{ color: '#FFD700', fontWeight: 'bold' }}> (beta)</Text>
+            )}
           </Text>
+          {updateInfo.showUpdate && !updateInfo.isForced && (
+            <View style={{ backgroundColor: '#FFD700', borderRadius: 6, paddingHorizontal: 6, marginLeft: 8 }}>
+              <Text style={{ color: '#222', fontWeight: 'bold', fontSize: 12 }}>BETA</Text>
+            </View>
+          )}
           <MaterialIcons name="arrow-forward" size={24} color="#fff" />
         </TouchableOpacity>
       )}
@@ -1024,7 +1039,7 @@ export default function Home() {
       )}
       
       {/* Update Modal */}
-      {updateInfo && (
+      {betaChecked && updateInfo && (
         <UpdateModal 
           visible={showUpdateModal}
           updateInfo={updateInfo}

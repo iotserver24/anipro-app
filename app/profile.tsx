@@ -85,6 +85,8 @@ export default function ProfileScreen() {
     }
   });
   const [storageFolder, setStorageFolder] = useState<string | null>(null);
+  const [betaUpdatesEnabled, setBetaUpdatesEnabled] = useState(false);
+  const [betaLoading, setBetaLoading] = useState(true);
 
   useEffect(() => {
     checkAuthStatus();
@@ -173,6 +175,14 @@ export default function ProfileScreen() {
     (async () => {
       const uri = await AsyncStorage.getItem(APP_STORAGE_FOLDER_KEY);
       if (uri) setStorageFolder(uri);
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      const value = await AsyncStorage.getItem('beta_updates_enabled');
+      setBetaUpdatesEnabled(value === 'true');
+      setBetaLoading(false);
     })();
   }, []);
 
@@ -1123,6 +1133,12 @@ export default function ProfileScreen() {
     }
   };
 
+  const handleToggleBetaUpdates = async () => {
+    const newValue = !betaUpdatesEnabled;
+    setBetaUpdatesEnabled(newValue);
+    await AsyncStorage.setItem('beta_updates_enabled', newValue ? 'true' : 'false');
+  };
+
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -1183,6 +1199,19 @@ export default function ProfileScreen() {
 
       {authenticated && userData ? (
         <View style={styles.profileContainer}>
+          {/* Beta Updates Toggle */}
+          <View style={styles.betaToggleContainer}>
+            <Text style={styles.betaToggleLabel}>Get Beta Updates</Text>
+            <TouchableOpacity
+              style={[styles.betaToggle, betaUpdatesEnabled ? styles.betaToggleOn : styles.betaToggleOff]}
+              onPress={handleToggleBetaUpdates}
+              activeOpacity={0.8}
+              disabled={betaLoading}
+            >
+              <View style={[styles.betaToggleCircle, betaUpdatesEnabled ? styles.betaToggleCircleOn : styles.betaToggleCircleOff]} />
+            </TouchableOpacity>
+          </View>
+          {/* End Beta Updates Toggle */}
           <View style={{padding: 16, backgroundColor: '#181818', borderBottomWidth: 1, borderBottomColor: '#222', marginBottom: 18}}>
             <Text style={{fontSize: 16, fontWeight: 'bold', color: '#FFD700', marginBottom: 8}}>App Storage Folder:</Text>
             {storageFolder ? (
@@ -1944,5 +1973,62 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.25,
     shadowRadius: 2,
+  },
+  betaToggleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 8,
+  },
+  betaToggleLabel: {
+    color: '#FFD700',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  betaToggle: {
+    width: 48,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#444',
+    justifyContent: 'center',
+    padding: 3,
+    borderWidth: 2,
+    borderColor: '#FFD700',
+  },
+  betaToggleOn: {
+    backgroundColor: '#FFD700',
+    borderColor: '#FFD700',
+  },
+  betaToggleOff: {
+    backgroundColor: '#444',
+    borderColor: '#FFD700',
+  },
+  betaToggleCircle: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#fff',
+    position: 'absolute',
+    top: 2,
+    left: 2,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1,
+    transitionProperty: 'left',
+    transitionDuration: '0.2s',
+  },
+  betaToggleCircleOn: {
+    left: 24,
+    backgroundColor: '#fff8e1',
+  },
+  betaToggleCircleOff: {
+    left: 2,
+    backgroundColor: '#fff',
   },
 }); 
