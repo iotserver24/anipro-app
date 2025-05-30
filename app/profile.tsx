@@ -90,6 +90,9 @@ export default function ProfileScreen() {
   const [betaLoading, setBetaLoading] = useState(true);
   const [editingBirthdate, setEditingBirthdate] = useState(false);
   const [birthdateInput, setBirthdateInput] = useState('');
+  const [birthDay, setBirthDay] = useState('');
+  const [birthMonth, setBirthMonth] = useState('');
+  const [birthYear, setBirthYear] = useState('');
 
   useEffect(() => {
     checkAuthStatus();
@@ -188,6 +191,16 @@ export default function ProfileScreen() {
       setBetaLoading(false);
     })();
   }, []);
+
+  useEffect(() => {
+    if (userData?.birthdate) {
+      const parts = userData.birthdate.split('/');
+      setBirthDay(parts[0] || '');
+      setBirthMonth(parts[1] || '');
+      setBirthYear(parts[2] || '');
+      setBirthdateInput(userData.birthdate);
+    }
+  }, [userData?.birthdate]);
 
   const fetchAvatarUrl = async (avatarId: string) => {
     setAvatarLoading(true);
@@ -1145,17 +1158,22 @@ export default function ProfileScreen() {
   };
 
   const handleUpdateBirthdate = async () => {
-    if (!birthdateInput) {
-      Alert.alert('Error', 'Birthdate cannot be empty');
+    const day = birthDay.padStart(2, '0');
+    const month = birthMonth.padStart(2, '0');
+    const year = birthYear;
+    const formatted = `${day}/${month}/${year}`;
+    if (!day || !month || !year) {
+      Alert.alert('Error', 'Please enter a valid birthdate');
       return;
     }
+    setBirthdateInput(formatted);
     try {
       setLoading(true);
       const user = getCurrentUser();
       if (!user) throw new Error('Not authenticated');
-      await updateDoc(doc(db, 'users', user.uid), { birthdate: birthdateInput });
-      setUserData(prev => prev ? { ...prev, birthdate: birthdateInput } : prev);
-      await AsyncStorage.mergeItem('user_auth', JSON.stringify({ birthdate: birthdateInput }));
+      await updateDoc(doc(db, 'users', user.uid), { birthdate: formatted });
+      setUserData(prev => prev ? { ...prev, birthdate: formatted } : prev);
+      await AsyncStorage.mergeItem('user_auth', JSON.stringify({ birthdate: formatted }));
       setEditingBirthdate(false);
       Alert.alert('Success', 'Birthdate updated!');
     } catch (error) {
@@ -1283,18 +1301,42 @@ export default function ProfileScreen() {
             {editingBirthdate ? (
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 <TextInput
-                  style={[styles.input, { flex: 1, marginRight: 8 }]}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor="#666"
-                  value={birthdateInput}
-                  onChangeText={setBirthdateInput}
+                  style={[styles.birthdateInput, { width: 40, marginRight: 4 }]}
+                  placeholder="DD"
+                  placeholderTextColor="#888"
+                  value={birthDay}
+                  onChangeText={text => setBirthDay(text.replace(/[^0-9]/g, '').slice(0,2))}
                   keyboardType="numeric"
-                  maxLength={10}
+                  maxLength={2}
+                  selectionColor="#fff"
+                  autoFocus
+                />
+                <Text style={{ color: '#fff', fontSize: 18, marginHorizontal: 2 }}>/</Text>
+                <TextInput
+                  style={[styles.birthdateInput, { width: 40, marginRight: 4 }]}
+                  placeholder="MM"
+                  placeholderTextColor="#888"
+                  value={birthMonth}
+                  onChangeText={text => setBirthMonth(text.replace(/[^0-9]/g, '').slice(0,2))}
+                  keyboardType="numeric"
+                  maxLength={2}
+                  selectionColor="#fff"
+                />
+                <Text style={{ color: '#fff', fontSize: 18, marginHorizontal: 2 }}>/</Text>
+                <TextInput
+                  style={[styles.birthdateInput, { width: 60, marginRight: 8 }]}
+                  placeholder="YYYY"
+                  placeholderTextColor="#888"
+                  value={birthYear}
+                  onChangeText={text => setBirthYear(text.replace(/[^0-9]/g, '').slice(0,4))}
+                  keyboardType="numeric"
+                  maxLength={4}
+                  selectionColor="#fff"
                 />
                 <TouchableOpacity onPress={handleUpdateBirthdate} style={{ marginRight: 8 }}>
                   <MaterialIcons name="check" size={24} color="#4CAF50" />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => { setEditingBirthdate(false); setBirthdateInput(userData?.birthdate || ''); }}>
+                <TouchableOpacity onPress={() => { setEditingBirthdate(false); setBirthDay(''); setBirthMonth(''); setBirthYear(''); }}>
                   <MaterialIcons name="close" size={24} color="#f4511e" />
                 </TouchableOpacity>
               </View>
@@ -2087,11 +2129,15 @@ const styles = StyleSheet.create({
     left: 2,
     backgroundColor: '#fff',
   },
-  input: {
+  birthdateInput: {
     height: 40,
-    borderColor: 'gray',
-    borderWidth: 1,
-    marginBottom: 12,
-    padding: 10,
+    borderColor: '#FFD700',
+    borderWidth: 1.5,
+    backgroundColor: '#232323',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    color: '#fff',
+    fontSize: 16,
+    marginBottom: 0,
   },
 }); 
