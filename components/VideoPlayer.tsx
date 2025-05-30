@@ -809,9 +809,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             value: selectedSubtitleTrack.language
           } : undefined}
           subtitleStyle={{
-            paddingBottom: 47,
+            paddingBottom: 60,
             fontSize: 16,
-            backgroundColor: 'rgba(0,0,0,0.4)',
           }}
         />
         {isBuffering && (
