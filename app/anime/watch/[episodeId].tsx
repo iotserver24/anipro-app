@@ -795,6 +795,8 @@ export default function WatchEpisode() {
   const [newServerAnimeId, setNewServerAnimeId] = useState<string | null>(null);
   const [newServerDownloadUrl, setNewServerDownloadUrl] = useState<string | null>(null);
   const [checkingNewServerDownload, setCheckingNewServerDownload] = useState(false);
+  // Add this state after other state declarations
+  const [lastServerPosition, setLastServerPosition] = useState<number>(0);
 
   useEffect(() => {
     // If resumeTime is provided, use it directly and skip getting from history
@@ -1003,19 +1005,145 @@ export default function WatchEpisode() {
           currentCategory === 'dub'
         );
       } else if (selectedServer === 'hardSub') {
-        // HardSub server
-        // For now, we'll use the same API but in the future this will be changed
-        // to use a different API endpoint for hardSub
-        
-        // TODO: Replace with actual hardSub API call
-        // This is just a placeholder that uses the same API for now
-        sources = await animeAPI.getEpisodeSources(
-          cleanEpisodeId,
-          currentCategory === 'dub'
-        );
-        
-        // In future, this would be something like:
-        // sources = await animeAPI.getHardSubSources(cleanEpisodeId, currentCategory === 'dub');
+        // HardSub server implementation
+        try {
+          // First we need the anime's MAL ID or AniList ID
+          let malId = null;
+          let anilistId = null;
+          
+          // Check if we already have anime info with the IDs
+          if (animeInfo) {
+            // Try to get MAL ID - may be in different properties depending on API response structure
+            if (animeInfo.malID) malId = animeInfo.malID;
+            else if (animeInfo.mal_id) malId = animeInfo.mal_id;
+            else if (animeInfo.mappings && animeInfo.mappings.mal) malId = animeInfo.mappings.mal;
+            
+            // Try to get AniList ID - may be in different properties
+            if (animeInfo.alID) anilistId = animeInfo.alID;
+            else if (animeInfo.al_id) anilistId = animeInfo.al_id;
+            else if (animeInfo.anilist_id) anilistId = animeInfo.anilist_id;
+            else if (animeInfo.mappings && animeInfo.mappings.al) anilistId = animeInfo.mappings.al;
+          }
+          
+          // If we don't have the IDs yet, fetch the anime details
+          if ((!malId && !anilistId) && animeId) {
+            console.log("Fetching anime details to get MAL/AniList ID");
+            const animeDetails = await animeAPI.getAnimeDetails(animeId as string);
+            
+            // Try to get MAL ID from different possible property names
+            if (animeDetails.malID) malId = animeDetails.malID;
+            else if (animeDetails.mal_id) malId = animeDetails.mal_id;
+            else if (animeDetails.mappings && animeDetails.mappings.mal) malId = animeDetails.mappings.mal;
+            
+            // Try to get AniList ID from different possible property names
+            if (animeDetails.alID) anilistId = animeDetails.alID;
+            else if (animeDetails.al_id) anilistId = animeDetails.al_id;
+            else if (animeDetails.anilist_id) anilistId = animeDetails.anilist_id;
+            else if (animeDetails.mappings && animeDetails.mappings.al) anilistId = animeDetails.mappings.al;
+          }
+          
+          if (!malId && !anilistId) {
+            throw new Error("Neither MAL ID nor AniList ID available for this anime");
+          }
+          
+          // Log the IDs we found
+          console.log(`Using MAL ID: ${malId}, AniList ID: ${anilistId}`);
+          
+          // Step 1: Get the episode list from animepahe - try MAL ID first, then fall back to AniList ID
+          let response;
+          let episodes;
+          
+          try {
+            if (malId) {
+              response = await fetch(
+                `https://alt.anisurge.me/anime/episodes/mal/${malId}?provider=animepahe`
+              );
+              
+              if (response.ok) {
+                episodes = await response.json();
+                console.log(`Found ${episodes.length} episodes using MAL ID ${malId}`);
+              }
+            }
+          } catch (error) {
+            console.error("Error fetching with MAL ID:", error);
+          }
+          
+          // If MAL ID failed or wasn't available, try AniList ID
+          if (!episodes && anilistId) {
+            try {
+              response = await fetch(
+                `https://alt.anisurge.me/anime/episodes/anilist/${anilistId}?provider=animepahe`
+              );
+              
+              if (response.ok) {
+                episodes = await response.json();
+                console.log(`Found ${episodes.length} episodes using AniList ID ${anilistId}`);
+              }
+            } catch (error) {
+              console.error("Error fetching with AniList ID:", error);
+            }
+          }
+          
+          if (!episodes || episodes.length === 0) {
+            throw new Error("No episodes found for this anime in animepahe");
+          }
+          
+          // Convert episode number to numeric value for comparison
+          const numericEpisodeNumber = Number(episodeNumber);
+          console.log(`Looking for episode number: ${numericEpisodeNumber}`);
+          
+          // Log the available episode numbers for debugging
+          console.log("Available episode numbers:", episodes.map((ep: any) => ep.number));
+          
+          // Find the matching episode by number
+          const targetEpisode = episodes.find(
+            (ep: any) => Number(ep.number) === numericEpisodeNumber
+          );
+          
+          if (!targetEpisode) {
+            throw new Error(`Episode ${episodeNumber} not found in animepahe (out of ${episodes.length} episodes)`);
+          }
+          
+          console.log(`Found target episode:`, targetEpisode);
+          
+          // Step 2: Get the streaming sources for this episode
+          const sourcesResponse = await fetch(
+            `https://con.anisurge.me/anime/animepahe/watch?episodeId=${targetEpisode.id}`
+          );
+          
+          if (!sourcesResponse.ok) {
+            throw new Error(`Failed to fetch sources: ${sourcesResponse.status}`);
+          }
+          
+          sources = await sourcesResponse.json();
+          console.log("Sources response:", JSON.stringify(sources).substring(0, 200) + "...");
+          
+          // Filter sources based on dub preference if needed
+          if (currentCategory === 'dub') {
+            if (sources.sources) {
+              sources.sources = sources.sources.filter((source: any) => 
+                source.isDub === true || 
+                (source.quality && source.quality.toLowerCase().includes('eng'))
+              );
+            }
+          } else {
+            if (sources.sources) {
+              sources.sources = sources.sources.filter((source: any) => 
+                source.isDub !== true && 
+                (!source.quality || !source.quality.toLowerCase().includes('eng'))
+              );
+            }
+          }
+          
+          if (!sources.sources || sources.sources.length === 0) {
+            throw new Error(`No ${currentCategory} sources found for episode ${episodeNumber}`);
+          }
+          
+          console.log(`Found ${sources.sources.length} sources for ${currentCategory}`);
+        } catch (error) {
+          console.error('Error fetching hardSub sources:', error);
+          throw new Error(`Failed to load HardSub server: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
       
       if (!sources || !sources.sources || sources.sources.length === 0) {
@@ -1027,8 +1155,9 @@ export default function WatchEpisode() {
       // Process subtitles from the API response
       if (sources.subtitles && Array.isArray(sources.subtitles)) {
         const processedSubtitles = sources.subtitles.map(sub => ({
-          url: sub.url,
-          lang: sub.lang
+          title: sub.kind || 'Unknown',
+          language: sub.kind || 'Unknown',
+          url: sub.url
         }));
         console.log('Setting subtitles:', processedSubtitles);
         setSubtitles(processedSubtitles);
@@ -1052,7 +1181,12 @@ export default function WatchEpisode() {
       
       // Set download URL if available
       if (sources.download) {
-        setDownloadUrl(sources.download);
+        // If download is an array (from hardSub), use the first item's URL
+        if (Array.isArray(sources.download) && sources.download.length > 0) {
+          setDownloadUrl(sources.download[0].url);
+        } else {
+          setDownloadUrl(sources.download);
+        }
       }
 
       // Get the m3u8 URL
@@ -1089,6 +1223,11 @@ export default function WatchEpisode() {
   // Add a useEffect to refetch when server changes
   useEffect(() => {
     if (!loading) {
+      // Save current position before switching servers
+      if (currentTime > 0) {
+        setLastServerPosition(currentTime);
+        console.log(`Saving position ${currentTime} before switching servers`);
+      }
       fetchEpisodeData();
     }
   }, [selectedServer]);
@@ -1166,10 +1305,28 @@ export default function WatchEpisode() {
     }
   };
 
+  // Add this function near other event handlers
+  const handleServerChange = (newServer: 'softSub' | 'hardSub') => {
+    if (newServer === selectedServer) return;
+    
+    // Save current position before switching
+    if (currentTime > 0) {
+      setLastServerPosition(currentTime);
+      console.log(`Saving position ${currentTime} before switching to ${newServer}`);
+    }
+    
+    // Change server
+    setSelectedServer(newServer);
+  };
+
+  // Add this check in handleVideoLoad to use lastServerPosition
   const handleVideoLoad = async () => {
-    if (videoRef.current && resumePosition > 0 && !isVideoReady) {
+    // Determine which position to use
+    const positionToUse = lastServerPosition > 0 ? lastServerPosition : resumePosition;
+    
+    if (videoRef.current && positionToUse > 0 && !isVideoReady) {
       try {
-        //console.log(`handleVideoLoad: seeking to ${resumePosition} seconds`);
+        console.log(`handleVideoLoad: seeking to ${positionToUse} seconds`);
         // Add a delay to ensure the video is ready
         await new Promise(resolve => setTimeout(resolve, 500));
         
@@ -1177,13 +1334,18 @@ export default function WatchEpisode() {
         await videoRef.current.pauseAsync();
         
         // Then seek to the position
-        await videoRef.current.setPositionAsync(resumePosition * 1000);
+        await videoRef.current.setPositionAsync(positionToUse * 1000);
         
         // Finally play
         await videoRef.current.playAsync();
         
         setIsVideoReady(true);
-        //console.log('Video successfully seeked to resume position');
+        console.log('Video successfully seeked to resume position');
+        
+        // Reset lastServerPosition after using it
+        if (lastServerPosition > 0) {
+          setLastServerPosition(0);
+        }
       } catch (err) {
         logger.error('Error seeking to position:', err as string);
         // Try again with a longer delay if it failed
@@ -1191,9 +1353,14 @@ export default function WatchEpisode() {
           setTimeout(async () => {
             try {
               if (videoRef.current) {
-                await videoRef.current.setPositionAsync(resumePosition * 1000);
+                await videoRef.current.setPositionAsync(positionToUse * 1000);
                 await videoRef.current.playAsync();
                 setIsVideoReady(true);
+                
+                // Reset lastServerPosition after using it
+                if (lastServerPosition > 0) {
+                  setLastServerPosition(0);
+                }
               }
             } catch (retryErr) {
               logger.error('Error on retry seeking:', retryErr as string);
@@ -1904,7 +2071,7 @@ export default function WatchEpisode() {
               selectedServer === 'softSub' && styles.selectedServerButton,
               isChangingServer && selectedServer === 'softSub' && styles.loadingServerButton
             ]}
-            onPress={() => setSelectedServer('softSub')}
+            onPress={() => handleServerChange('softSub')}
             disabled={isChangingServer || selectedServer === 'softSub'}
           >
             <Text style={[
@@ -1924,7 +2091,7 @@ export default function WatchEpisode() {
               selectedServer === 'hardSub' && styles.selectedServerButton,
               isChangingServer && selectedServer === 'hardSub' && styles.loadingServerButton
             ]}
-            onPress={() => setSelectedServer('hardSub')}
+            onPress={() => handleServerChange('hardSub')}
             disabled={isChangingServer || selectedServer === 'hardSub'}
           >
             <Text style={[
