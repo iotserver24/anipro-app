@@ -727,7 +727,11 @@ export default function WatchEpisode() {
   const [selectedQuality, setSelectedQuality] = useState<string>('auto');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [videoError, setVideoError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
+  // Add server selection state
+  const [selectedServer, setSelectedServer] = useState<'softSub' | 'hardSub'>('softSub');
+  const [isChangingServer, setIsChangingServer] = useState(false);
   const [progress, setProgress] = useState<Progress>({
     currentTime: 0,
     playableDuration: 0,
@@ -920,11 +924,13 @@ export default function WatchEpisode() {
     return true;
   };
 
-  // Modify the fetchEpisodeData function to reset resume position when needed
+  // Modify the fetchEpisodeData function to handle server selection
   const fetchEpisodeData = async () => {
     setLoading(true);
     setError(null);
+    setVideoError(null);
     setRetryCount(0);
+    setIsChangingServer(selectedServer === 'hardSub');
     
     try {
       // Reset video state
@@ -987,13 +993,35 @@ export default function WatchEpisode() {
       
       // Get episode sources with the correct category
       const cleanEpisodeId = (episodeId as string).split('$category=')[0];
-      const sources = await animeAPI.getEpisodeSources(
-        cleanEpisodeId,
-        currentCategory === 'dub'
-      );
+
+      // Handle different servers
+      let sources;
+      if (selectedServer === 'softSub') {
+        // Original API source (Zoro/SoftSub)
+        sources = await animeAPI.getEpisodeSources(
+          cleanEpisodeId,
+          currentCategory === 'dub'
+        );
+      } else if (selectedServer === 'hardSub') {
+        // HardSub server
+        // For now, we'll use the same API but in the future this will be changed
+        // to use a different API endpoint for hardSub
+        
+        // TODO: Replace with actual hardSub API call
+        // This is just a placeholder that uses the same API for now
+        sources = await animeAPI.getEpisodeSources(
+          cleanEpisodeId,
+          currentCategory === 'dub'
+        );
+        
+        // In future, this would be something like:
+        // sources = await animeAPI.getHardSubSources(cleanEpisodeId, currentCategory === 'dub');
+      }
       
       if (!sources || !sources.sources || sources.sources.length === 0) {
-        throw new Error('No streaming sources available');
+        setVideoError(`No streaming sources available from ${selectedServer === 'softSub' ? 'SoftSub' : 'HardSub'} server. Please try another server.`);
+        setLoading(false);
+        return; // Continue loading the page but with video error
       }
 
       // Process subtitles from the API response
@@ -1051,11 +1079,19 @@ export default function WatchEpisode() {
 
     } catch (error) {
       logger.error('Error fetching episode:', error as string);
-      setError('Failed to load episode. Please try again.');
+      setVideoError(`Failed to load episode from ${selectedServer === 'softSub' ? 'SoftSub' : 'HardSub'} server. Please try another server or try again later.`);
     } finally {
       setLoading(false);
+      setIsChangingServer(false);
     }
   };
+
+  // Add a useEffect to refetch when server changes
+  useEffect(() => {
+    if (!loading) {
+      fetchEpisodeData();
+    }
+  }, [selectedServer]);
 
   const fetchAnimeInfo = async () => {
     try {
@@ -1841,6 +1877,71 @@ export default function WatchEpisode() {
     }
   }, [isFullscreen]);
 
+  // Define a VideoErrorDisplay component
+  const VideoErrorDisplay = React.memo(({ error, onRetry }: { error: string, onRetry: () => void }) => {
+    return (
+      <View style={styles.videoErrorContainer}>
+        <View style={styles.videoErrorContent}>
+          <MaterialIcons name="error-outline" size={48} color="#f4511e" />
+          <Text style={styles.videoErrorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  });
+
+  // Create a new component for server selection
+  const ServerSelector = React.memo(() => {
+    return (
+      <View style={styles.serverSelectorContainer}>
+        <Text style={styles.serverSelectorTitle}>Server:</Text>
+        <View style={styles.serverButtonsContainer}>
+          <TouchableOpacity
+            style={[
+              styles.serverButton,
+              selectedServer === 'softSub' && styles.selectedServerButton,
+              isChangingServer && selectedServer === 'softSub' && styles.loadingServerButton
+            ]}
+            onPress={() => setSelectedServer('softSub')}
+            disabled={isChangingServer || selectedServer === 'softSub'}
+          >
+            <Text style={[
+              styles.serverButtonText,
+              selectedServer === 'softSub' && styles.selectedServerButtonText
+            ]}>
+              SoftSub
+            </Text>
+            {isChangingServer && selectedServer === 'softSub' && (
+              <ActivityIndicator size="small" color="#fff" style={styles.serverButtonLoader} />
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[
+              styles.serverButton,
+              selectedServer === 'hardSub' && styles.selectedServerButton,
+              isChangingServer && selectedServer === 'hardSub' && styles.loadingServerButton
+            ]}
+            onPress={() => setSelectedServer('hardSub')}
+            disabled={isChangingServer || selectedServer === 'hardSub'}
+          >
+            <Text style={[
+              styles.serverButtonText,
+              selectedServer === 'hardSub' && styles.selectedServerButtonText
+            ]}>
+              HardSub
+            </Text>
+            {isChangingServer && selectedServer === 'hardSub' && (
+              <ActivityIndicator size="small" color="#fff" style={styles.serverButtonLoader} />
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  });
+
   if (loading) {
     return (
       <View style={styles.container}>
@@ -1861,25 +1962,8 @@ export default function WatchEpisode() {
     );
   }
 
-  if (error) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity 
-            style={styles.retryButton}
-            onPress={() => {
-              setRetryCount(0);
-              setError(null);
-              fetchEpisodeData();
-            }}
-          >
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
+  // We're no longer showing error screen for the whole page, so remove this check
+  // and continue with the normal page render
 
   return (
     <>
@@ -1923,7 +2007,21 @@ export default function WatchEpisode() {
             zIndex: 9999,
           }
         ]}>
-          <VideoPlayer {...videoPlayerProps} />
+          {/* Show video player or error based on videoError state */}
+          {videoError ? (
+            <View style={[styles.video, { backgroundColor: '#111' }]}>
+              <VideoErrorDisplay 
+                error={videoError} 
+                onRetry={() => {
+                  setRetryCount(0);
+                  setVideoError(null);
+                  fetchEpisodeData();
+                }} 
+              />
+            </View>
+          ) : (
+            <VideoPlayer {...videoPlayerProps} />
+          )}
           
           {!isFullscreen && (
             <>
@@ -1936,6 +2034,9 @@ export default function WatchEpisode() {
                 onComments={handleShowComments}
                 downloadUrl={newServerDownloadUrl}
               />
+              
+              {/* Add Server Selector above anime info */}
+              <ServerSelector />
               
               <Pressable 
                 style={styles.animeInfoToggle}
@@ -2698,5 +2799,74 @@ const styles = StyleSheet.create({
     height: 64,
     backgroundColor: '#222',
     borderRadius: 8,
+  },
+  // Add new styles for video error display
+  videoErrorContainer: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#111',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  videoErrorContent: {
+    alignItems: 'center',
+    padding: 20,
+    width: '80%',
+    maxWidth: 320,
+  },
+  videoErrorText: {
+    color: '#fff',
+    textAlign: 'center',
+    marginVertical: 16,
+    fontSize: 16,
+  },
+  retryButton: {
+    backgroundColor: '#f4511e',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  // Add styles for server selector
+  serverSelectorContainer: {
+    backgroundColor: '#1a1a1a',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  serverSelectorTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+    marginRight: 12,
+  },
+  serverButtonsContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 12,
+  },
+  selectedServerButton: {
+    backgroundColor: '#f4511e',
+  },
+  loadingServerButton: {
+    opacity: 0.7,
+  },
+  serverButtonText: {
+    color: '#999',
+    fontWeight: '600',
+  },
+  selectedServerButtonText: {
+    color: '#fff',
+  },
+  serverButtonLoader: {
+    marginLeft: 8,
   },
 });
