@@ -716,6 +716,70 @@ const SkeletonLoader = React.memo(() => {
   );
 });
 
+// Add this new component for download quality options
+const DownloadQualityModal = React.memo(({ visible, onClose, downloadOptions }: { 
+  visible: boolean; 
+  onClose: () => void; 
+  downloadOptions: { url: string; quality: string }[] | null;
+}) => {
+  const openInBrowser = async (url: string) => {
+    try {
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+      } else {
+        Alert.alert("Cannot open URL", "Your device cannot open this download link.");
+      }
+    } catch (error) {
+      console.error("Error opening URL:", error);
+      Alert.alert("Error", "Failed to open download link.");
+    }
+  };
+
+  if (!downloadOptions || downloadOptions.length === 0) return null;
+  
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Select Download Quality</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <MaterialIcons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          
+          <ScrollView style={styles.qualityOptionsContainer}>
+            {downloadOptions.map((option, index) => (
+              <TouchableOpacity 
+                key={index}
+                style={styles.qualityOptionButton}
+                onPress={() => {
+                  openInBrowser(option.url);
+                  // Optional: Close modal after selecting
+                  // onClose();
+                }}
+              >
+                <MaterialIcons name="file-download" size={24} color="#f4511e" />
+                <Text style={styles.qualityOptionText}>{option.quality}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          
+          <View style={styles.modalFooter}>
+            <Text style={styles.modalFooterText}>Downloads will open in your browser</Text>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+});
+
 // Optimize the main WatchEpisode component
 export default function WatchEpisode() {
   const { episodeId, animeId, episodeNumber, title, episodeTitle, category, resumeTime } = useLocalSearchParams();
@@ -797,6 +861,8 @@ export default function WatchEpisode() {
   const [checkingNewServerDownload, setCheckingNewServerDownload] = useState(false);
   // Add this state after other state declarations
   const [lastServerPosition, setLastServerPosition] = useState<number>(0);
+  const [downloadOptions, setDownloadOptions] = useState<{ url: string; quality: string }[] | null>(null);
+  const [showDownloadOptions, setShowDownloadOptions] = useState(false);
 
   useEffect(() => {
     // If resumeTime is provided, use it directly and skip getting from history
@@ -1181,12 +1247,19 @@ export default function WatchEpisode() {
       
       // Set download URL if available
       if (sources.download) {
-        // If download is an array (from hardSub), use the first item's URL
+        // If download is an array (from hardSub), store all options
         if (Array.isArray(sources.download) && sources.download.length > 0) {
+          setDownloadOptions(sources.download);
+          // Still set a default URL for compatibility
           setDownloadUrl(sources.download[0].url);
         } else {
+          // For softSub (single URL)
           setDownloadUrl(sources.download);
+          setDownloadOptions(null);
         }
+      } else {
+        setDownloadUrl(null);
+        setDownloadOptions(null);
       }
 
       // Get the m3u8 URL
@@ -2009,19 +2082,27 @@ export default function WatchEpisode() {
     fetchNewServerDownloadUrl();
   }, [newServerAnimeId, episodeNumber]);
 
-  // Handle download button press
+  // Update the handleDownload function
   const handleDownload = useCallback(() => {
+    // For HardSub server with multiple download options
+    if (selectedServer === 'hardSub' && downloadOptions && downloadOptions.length > 0) {
+      setShowDownloadOptions(true);
+      return;
+    }
+    
+    // For SoftSub server or fallback to old behavior
     if (newServerDownloadUrl) {
       setDownloadUrl(newServerDownloadUrl);
       setShowDownloadPopup(true);
       return;
     }
-    // fallback to old logic if needed
+    
+    // Legacy fallback
     if (videoData?.download) {
       setDownloadUrl(videoData.download);
       setShowDownloadPopup(true);
     }
-  }, [videoData, newServerDownloadUrl]);
+  }, [videoData, newServerDownloadUrl, selectedServer, downloadOptions]);
 
   // Handle comment button press
   const handleShowComments = useCallback(() => {
@@ -2296,12 +2377,21 @@ export default function WatchEpisode() {
           )}
         </View>
       </VideoPlayerContext.Provider>
+      
+      {/* Keep the original WebView download popup for SoftSub */}
       <DownloadPopup
         visible={showDownloadPopup}
         onClose={() => setShowDownloadPopup(false)}
         downloadUrl={downloadUrl}
       />
-
+      
+      {/* Add the new download quality options modal */}
+      <DownloadQualityModal
+        visible={showDownloadOptions}
+        onClose={() => setShowDownloadOptions(false)}
+        downloadOptions={downloadOptions}
+      />
+      
       {/* Comments Modal - using the same modal as in [id].tsx */}
       <CommentModal
         visible={showCommentsModal}
@@ -3035,5 +3125,33 @@ const styles = StyleSheet.create({
   },
   serverButtonLoader: {
     marginLeft: 8,
+  },
+  qualityOptionsContainer: {
+    padding: 16,
+    maxHeight: 400,
+  },
+  qualityOptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2a2a2a',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  qualityOptionText: {
+    color: '#fff',
+    fontSize: 16,
+    marginLeft: 16,
+    flex: 1,
+  },
+  modalFooter: {
+    padding: 16,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  modalFooterText: {
+    color: '#999',
+    fontSize: 14,
   },
 });
