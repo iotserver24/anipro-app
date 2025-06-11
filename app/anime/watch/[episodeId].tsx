@@ -729,8 +729,8 @@ export default function WatchEpisode() {
   const [error, setError] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
-  // Add server selection state
-  const [selectedServer, setSelectedServer] = useState<'softSub' | 'hardSub'>('softSub');
+  // Change default server to hardSub
+  const [selectedServer, setSelectedServer] = useState<'softSub' | 'hardSub'>('hardSub');
   const [isChangingServer, setIsChangingServer] = useState(false);
   const [progress, setProgress] = useState<Progress>({
     currentTime: 0,
