@@ -41,7 +41,7 @@ npx react-native bundle --platform android `
 
 
 node scripts/check-version.js
- node scripts/update-version.js 2.23.6 4
+ node scripts/update-version.js 2.24.5 6
 
 cd android
 ./gradlew assembleRelease
