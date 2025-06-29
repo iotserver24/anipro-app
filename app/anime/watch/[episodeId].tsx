@@ -1162,12 +1162,36 @@ export default function WatchEpisode() {
           console.log("Available episode numbers:", episodes.map((ep: any) => ep.number));
           
           // Find the matching episode by number
-          const targetEpisode = episodes.find(
+          // For multi-season anime, we need to handle the case where animepahe treats episodes as continuous
+          // but our app expects episode numbers to start from 1 for each season
+          let targetEpisode;
+          
+          // First, try to find exact match (for single season anime)
+          targetEpisode = episodes.find(
             (ep: any) => Number(ep.number) === numericEpisodeNumber
           );
           
+          // If no exact match found, try to find by relative position (for multi-season anime)
+          if (!targetEpisode && episodes.length > 0) {
+            // Get the minimum episode number from animepahe
+            const minEpisodeNumber = Math.min(...episodes.map((ep: any) => Number(ep.number)));
+            console.log(`Minimum episode number in animepahe: ${minEpisodeNumber}`);
+            
+            // Calculate the relative episode number (1-based index within this season)
+            const relativeEpisodeNumber = numericEpisodeNumber;
+            console.log(`Looking for relative episode number: ${relativeEpisodeNumber}`);
+            
+            // Find episode by relative position (1-based index)
+            if (relativeEpisodeNumber > 0 && relativeEpisodeNumber <= episodes.length) {
+              // Sort episodes by number to ensure correct order
+              const sortedEpisodes = episodes.sort((a: any, b: any) => Number(a.number) - Number(b.number));
+              targetEpisode = sortedEpisodes[relativeEpisodeNumber - 1];
+              console.log(`Found episode by relative position: ${targetEpisode.number} (relative: ${relativeEpisodeNumber})`);
+            }
+          }
+          
           if (!targetEpisode) {
-            throw new Error(`Episode ${episodeNumber} not found in animepahe (out of ${episodes.length} episodes)`);
+            throw new Error(`Episode ${episodeNumber} not found in animepahe (out of ${episodes.length} episodes). Available episodes: ${episodes.map((ep: any) => ep.number).join(', ')}`);
           }
           
           console.log(`Found target episode:`, targetEpisode);
