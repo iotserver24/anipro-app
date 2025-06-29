@@ -571,12 +571,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Initial position seeking
   useEffect(() => {
     const seekToInitialPosition = () => {
-      console.log(`[DEBUG] VideoPlayer: seekToInitialPosition called with initialPosition: ${initialPosition}, isReady: ${isReady}`);
       if (videoRef.current && initialPosition > 0 && !isReady) {
-        console.log(`[DEBUG] VideoPlayer: Seeking to initial position: ${initialPosition}`);
         videoRef.current.seek(initialPosition);
         setIsReady(true);
-        console.log(`[DEBUG] VideoPlayer: Successfully seeked to initial position`);
       }
     };
 
@@ -603,18 +600,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     const videoDuration = data.duration;
     setDuration(videoDuration);
 
-    console.log(`[DEBUG] VideoPlayer: handleLoad called with duration: ${videoDuration}, initialPosition: ${initialPosition}, isReady: ${isReady}`);
-
     // Reset end of video flag on new load
     didCompletePlaybackRef.current = false;
 
     // Initial seek if needed
     if (isQualityChanging && savedQualityPosition > 0) {
-      console.log(`[DEBUG] VideoPlayer: Seeking to saved quality position: ${savedQualityPosition}`);
       videoRef.current?.seek(savedQualityPosition);
       setCurrentTime(savedQualityPosition);
     } else if (initialPosition > 0 && !isReady) {
-      console.log(`[DEBUG] VideoPlayer: Seeking to initial position in handleLoad: ${initialPosition}`);
       videoRef.current?.seek(initialPosition);
       setCurrentTime(initialPosition);
       setIsReady(true);
