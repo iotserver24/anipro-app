@@ -780,6 +780,82 @@ const DownloadQualityModal = React.memo(({ visible, onClose, downloadOptions }: 
   );
 });
 
+// Add this new component for HardSub quality selection
+const HardSubQualityModal = React.memo(({ 
+  visible, 
+  onClose, 
+  qualities, 
+  onSelectQuality,
+  category 
+}: { 
+  visible: boolean; 
+  onClose: () => void; 
+  qualities: { url: string; quality: string; isDub: boolean }[];
+  onSelectQuality: (quality: string) => void;
+  category: 'sub' | 'dub';
+}) => {
+  if (!qualities || qualities.length === 0) return null;
+  
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Select Streaming Quality</Text>
+            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+              <MaterialIcons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          
+          <View style={styles.modalSubHeader}>
+            <Text style={styles.modalSubTitle}>
+              {category === 'dub' ? 'Dubbed' : 'Subbed'} Episodes Available
+            </Text>
+          </View>
+          
+          <ScrollView style={styles.qualityOptionsContainer}>
+            {qualities.map((quality, index) => (
+              <TouchableOpacity 
+                key={index}
+                style={styles.qualityOptionButton}
+                onPress={() => {
+                  onSelectQuality(quality.quality);
+                }}
+              >
+                <MaterialIcons 
+                  name="play-circle-outline" 
+                  size={24} 
+                  color="#f4511e" 
+                />
+                <View style={styles.qualityInfo}>
+                  <Text style={styles.qualityOptionText}>{quality.quality}</Text>
+                  {quality.isDub && (
+                    <View style={styles.dubIndicator}>
+                      <MaterialIcons name="record-voice-over" size={12} color="#4CAF50" />
+                      <Text style={styles.dubIndicatorText}>DUB</Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          
+          <View style={styles.modalFooter}>
+            <Text style={styles.modalFooterText}>
+              Select a quality to start streaming
+            </Text>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+});
+
 // Optimize the main WatchEpisode component
 export default function WatchEpisode() {
   const { episodeId, animeId, episodeNumber, title, episodeTitle, category, resumeTime } = useLocalSearchParams();
@@ -863,12 +939,16 @@ export default function WatchEpisode() {
   const [lastServerPosition, setLastServerPosition] = useState<number>(0);
   const [downloadOptions, setDownloadOptions] = useState<{ url: string; quality: string }[] | null>(null);
   const [showDownloadOptions, setShowDownloadOptions] = useState(false);
+  // Add state for HardSub quality selection
+  const [showQualitySelection, setShowQualitySelection] = useState(false);
+  const [availableQualities, setAvailableQualities] = useState<{ url: string; quality: string; isDub: boolean }[]>([]);
+  const [selectedHardSubQuality, setSelectedHardSubQuality] = useState<string>('');
 
   useEffect(() => {
     // If resumeTime is provided, use it directly and skip getting from history
     if (resumeTime) {
       const parsedTime = parseFloat(resumeTime as string);
-      //console.log(`[DEBUG] Setting resume position from resumeTime param: ${parsedTime}`);
+      console.log(`[DEBUG] Setting resume position from resumeTime param: ${parsedTime}`);
       setResumePosition(parsedTime);
       return;
     }
@@ -878,8 +958,10 @@ export default function WatchEpisode() {
         const history = await useWatchHistoryStore.getState().getHistory();
         const lastWatch = history.find(item => item.episodeId === episodeId);
         if (lastWatch?.progress && lastWatch.progress > 0) {
-          //console.log(`[DEBUG] Setting resume position from history: ${lastWatch.progress}`);
+          console.log(`[DEBUG] Setting resume position from history: ${lastWatch.progress}`);
           setResumePosition(lastWatch.progress);
+        } else {
+          console.log(`[DEBUG] No resume position found in history for episodeId: ${episodeId}`);
         }
       } catch (err) {
         console.error('Error getting resume position:', err);
@@ -891,7 +973,7 @@ export default function WatchEpisode() {
   useEffect(() => {
     // Only use savedProgress if resumeTime wasn't provided
     if (!resumeTime && savedProgress > 0) {
-      //console.log(`[DEBUG] Setting resume position from savedProgress: ${savedProgress}`);
+      console.log(`[DEBUG] Setting resume position from savedProgress: ${savedProgress}`);
       setResumePosition(savedProgress); // Keep in seconds
     }
   }, [savedProgress, resumeTime]);
@@ -974,26 +1056,32 @@ export default function WatchEpisode() {
 
   // Add a function to determine if we should use the resume position
   const shouldUseResumePosition = (resumePos: number, duration: number): boolean => {
+    console.log(`[DEBUG] shouldUseResumePosition: resumePos=${resumePos}, duration=${duration}, isNavigating=${isNavigating.current}`);
+    
     // If resume position is very close to the end (within 10 seconds of the end), don't use it
     if (duration > 0 && resumePos > 0 && duration - resumePos < 10) {
-      //console.log(`[DEBUG] Ignoring resume position ${resumePos} because it's too close to the end of ${duration}`);
+      console.log(`[DEBUG] Ignoring resume position ${resumePos} because it's too close to the end of ${duration}`);
       return false;
     }
     // If resume position is greater than duration, don't use it
     if (duration > 0 && resumePos > duration) {
-      //console.log(`[DEBUG] Ignoring resume position ${resumePos} because it's greater than duration ${duration}`);
+      console.log(`[DEBUG] Ignoring resume position ${resumePos} because it's greater than duration ${duration}`);
       return false;
     }
-    // If resume position is very small (less than 10 seconds), don't use it for auto-navigation
-    if (resumePos < 10 && isNavigating.current) {
-      //console.log(`[DEBUG] Ignoring small resume position ${resumePos} after navigation`);
+    // If resume position is very small (less than 5 seconds), don't use it for auto-navigation
+    // But allow it for normal resume (when not navigating)
+    if (resumePos < 5 && isNavigating.current) {
+      console.log(`[DEBUG] Ignoring small resume position ${resumePos} after navigation`);
       return false;
     }
+    
+    console.log(`[DEBUG] Using resume position: ${resumePos}`);
     return true;
   };
 
   // Modify the fetchEpisodeData function to handle server selection
   const fetchEpisodeData = async () => {
+    console.log(`[DEBUG] fetchEpisodeData: Starting with resumePosition: ${resumePosition}`);
     setLoading(true);
     setError(null);
     setVideoError(null);
@@ -1010,6 +1098,7 @@ export default function WatchEpisode() {
       
       // Reset resume position if we just navigated
       if (isNavigating.current) {
+        console.log(`[DEBUG] fetchEpisodeData: Resetting resume position due to navigation`);
         setResumePosition(0);
         isNavigating.current = false;
       }
@@ -1230,6 +1319,39 @@ export default function WatchEpisode() {
           }
           
           console.log(`Found ${sources.sources.length} sources for ${currentCategory}`);
+          
+          // For HardSub, show quality selection modal instead of auto-selecting
+          if (selectedServer === 'hardSub') {
+            // Filter sources based on dub preference
+            const filteredSources = sources.sources.filter((source: any) => {
+              if (currentCategory === 'dub') {
+                return source.isDub === true || 
+                  (source.quality && source.quality.toLowerCase().includes('eng'));
+              } else {
+                return source.isDub !== true && 
+                  (!source.quality || !source.quality.toLowerCase().includes('eng'));
+              }
+            });
+            
+            if (filteredSources.length === 0) {
+              throw new Error(`No ${currentCategory} sources found for episode ${episodeNumber}`);
+            }
+            
+            // Set available qualities for selection
+            const qualitiesForSelection = filteredSources.map((source: any) => ({
+              url: source.url,
+              quality: source.quality || 'Unknown Quality',
+              isDub: source.isDub || false
+            }));
+            
+            setAvailableQualities(qualitiesForSelection);
+            setShowQualitySelection(true);
+            
+            // Don't set video URL yet - wait for user selection
+            setLoading(false);
+            setIsChangingServer(false);
+            return; // Exit early, don't continue with video setup
+          }
         } catch (error) {
           console.error('Error fetching hardSub sources:', error);
           throw new Error(`Failed to load HardSub server: ${error instanceof Error ? error.message : String(error)}`);
@@ -1575,20 +1697,29 @@ export default function WatchEpisode() {
 
   // Define handleSeek before it's used in useEffect
   const handleSeek = async (value: number) => {
+    console.log(`[DEBUG] handleSeek: Attempting to seek to ${value} seconds`);
+    console.log(`[DEBUG] handleSeek: videoRef.current exists: ${!!videoRef.current}`);
+    
     if (videoRef.current) {
       const wasPlaying = isPlaying;
       try {
+        console.log(`[DEBUG] handleSeek: Calling setPositionAsync with ${value * 1000} milliseconds`);
         await videoRef.current.setPositionAsync(value * 1000);
         setCurrentTime(value);
+        console.log(`[DEBUG] handleSeek: Successfully seeked to ${value} seconds`);
         
         if (wasPlaying) {
           await new Promise(resolve => setTimeout(resolve, 50));
           await videoRef.current.playAsync();
           setIsPlaying(true);
+          console.log(`[DEBUG] handleSeek: Resumed playback after seek`);
         }
       } catch (error) {
+        console.error('[DEBUG] handleSeek: Error seeking:', error);
         logger.error('Error seeking:', error as string);
       }
+    } else {
+      console.log(`[DEBUG] handleSeek: videoRef.current is null, cannot seek`);
     }
   };
 
@@ -2060,20 +2191,24 @@ export default function WatchEpisode() {
     const videoDuration = status.seekableDuration;
     setDuration(videoDuration);
     
-    //console.log(`[DEBUG] VideoPlayer: Video loaded, duration: ${videoDuration}`);
+    console.log(`[DEBUG] VideoPlayer: Video loaded, duration: ${videoDuration}`);
+    console.log(`[DEBUG] VideoPlayer: Resume position: ${resumePosition}`);
+    console.log(`[DEBUG] VideoPlayer: Is video ready: ${isVideoReady}`);
+    console.log(`[DEBUG] VideoPlayer: Should use resume position: ${shouldUseResumePosition(resumePosition, videoDuration)}`);
     
     // Only use resume position if it makes sense
     if (resumePosition > 0 && !isVideoReady && shouldUseResumePosition(resumePosition, videoDuration)) {
-      //console.log(`[DEBUG] VideoPlayer: Seeking to resumePosition: ${resumePosition}`);
+      console.log(`[DEBUG] VideoPlayer: Seeking to resumePosition: ${resumePosition}`);
       // Use a timeout to ensure the video is ready
       setTimeout(() => {
         handleSeek(resumePosition);
         setIsVideoReady(true);
+        console.log(`[DEBUG] VideoPlayer: Successfully seeked to resume position`);
       }, 300);
     } else if (isPlaying) {
       // Start from beginning
       if (resumePosition > 0 && !shouldUseResumePosition(resumePosition, videoDuration)) {
-        //console.log(`[DEBUG] VideoPlayer: Starting from beginning instead of resume position`);
+        console.log(`[DEBUG] VideoPlayer: Starting from beginning instead of resume position`);
         handleSeek(0);
       }
       // Ensure we're playing if we should be
@@ -2136,6 +2271,39 @@ export default function WatchEpisode() {
     }
     setShowCommentsModal(true);
   }, [isPlaying]);
+
+  // Handle HardSub quality selection
+  const handleHardSubQualitySelection = useCallback((selectedQuality: string) => {
+    const selectedSource = availableQualities.find(q => q.quality === selectedQuality);
+    if (selectedSource) {
+      setSelectedHardSubQuality(selectedQuality);
+      setShowQualitySelection(false);
+      
+      // Set the video URL and start streaming
+      setVideoUrl(selectedSource.url);
+      setStreamingUrl(selectedSource.url);
+      setVideoHeaders(videoData?.headers || {});
+      
+      // Set qualities for the video player (single quality for HardSub)
+      setQualities([{ url: selectedSource.url, quality: selectedQuality }]);
+      setSelectedQuality(selectedQuality);
+      
+      // Reset video ready state to ensure resume position is applied
+      setIsVideoReady(false);
+      
+      console.log(`HardSub: Selected quality ${selectedQuality}, URL: ${selectedSource.url}`);
+      console.log(`HardSub: Resume position will be ${resumePosition} seconds`);
+      
+      // Force seek to resume position after a delay to ensure video is loaded
+      if (resumePosition > 0) {
+        setTimeout(() => {
+          console.log(`HardSub: Forcing seek to resume position: ${resumePosition}`);
+          handleSeek(resumePosition);
+          setIsVideoReady(true);
+        }, 1000); // Wait 1 second for video to start loading
+      }
+    }
+  }, [availableQualities, videoData, resumePosition, handleSeek]);
 
   // Add this to hide header in fullscreen mode - optimize for responsiveness
   useEffect(() => {
@@ -2414,6 +2582,15 @@ export default function WatchEpisode() {
         visible={showDownloadOptions}
         onClose={() => setShowDownloadOptions(false)}
         downloadOptions={downloadOptions}
+      />
+      
+      {/* Add the new HardSub quality selection modal */}
+      <HardSubQualityModal
+        visible={showQualitySelection}
+        onClose={() => setShowQualitySelection(false)}
+        qualities={availableQualities}
+        onSelectQuality={handleHardSubQualitySelection}
+        category={categoryAsSubOrDub}
       />
       
       {/* Comments Modal - using the same modal as in [id].tsx */}
@@ -3177,5 +3354,30 @@ const styles = StyleSheet.create({
   modalFooterText: {
     color: '#999',
     fontSize: 14,
+  },
+  modalSubHeader: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  modalSubTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  qualityInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dubIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  dubIndicatorText: {
+    color: '#4CAF50',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
