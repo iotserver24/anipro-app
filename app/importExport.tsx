@@ -458,6 +458,7 @@ export default function ImportExportScreen() {
               let fileExt = format;
               if (format === 'xml') {
                 const animeWatchedEpisodes = new Map();
+                const { history } = useWatchHistoryStore.getState();
                 history.forEach(item => {
                   const currentEpisode = animeWatchedEpisodes.get(item.id) || 0;
                   if (item.episodeNumber > currentEpisode) {
@@ -494,23 +495,52 @@ export default function ImportExportScreen() {
               }));
               const fileName = `anisurge-export-${getExportDateString()}.${fileExt}`;
               try {
+                let folderUri = storageFolder;
+                
+                // If no storage folder is set, prompt user to select one
+                if (!folderUri) {
+                  setLoadingModal(prev => ({
+                    ...prev,
+                    message: 'Please select a folder to save the export...',
+                  }));
+                  
+                  const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+                  if (!permissions.granted) {
+                    setLoadingModal(prev => ({ ...prev, visible: false }));
+                    Alert.alert('Permission Required', 'Storage permission is required to save the export file.');
+                    return;
+                  }
+                  
+                  folderUri = permissions.directoryUri;
+                  await AsyncStorage.setItem(APP_STORAGE_FOLDER_KEY, folderUri);
+                  setStorageFolder(folderUri);
+                }
+
                 const uri = await FileSystem.StorageAccessFramework.createFileAsync(
-                  storageFolder,
+                  folderUri,
                   fileName,
                   format === 'xml' ? 'text/xml' : format === 'json' ? 'application/json' : 'text/plain'
                 );
                 await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
                 setLoadingModal(prev => ({ ...prev, visible: false }));
-                ToastAndroid.show('Exported successfully!', ToastAndroid.LONG);
+                
+                if (Platform.OS === 'android') {
+                  ToastAndroid.show('Exported successfully!', ToastAndroid.LONG);
+                } else {
+                  Alert.alert('Success', 'Export completed successfully!');
+                }
                 setLastExportPath(uri);
               } catch (error) {
+                console.error('Export error:', error);
                 await AsyncStorage.removeItem(APP_STORAGE_FOLDER_KEY);
+                setStorageFolder(null);
                 setLoadingModal(prev => ({ ...prev, visible: false }));
-                Alert.alert('Error', 'Failed to export list. Please check your folder permission and try again.');
+                Alert.alert('Error', 'Failed to export list. Please try selecting a different folder and try again.');
               }
             } catch (error) {
+              console.error('General export error:', error);
               setLoadingModal(prev => ({ ...prev, visible: false }));
-              Alert.alert('Error', 'Failed to export list. Please try again.');
+              Alert.alert('Error', `Failed to export list: ${error.message || 'Unknown error'}. Please try again.`);
             }
           }
         },
