@@ -847,6 +847,48 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     await AsyncStorage.setItem('subtitleSettings', JSON.stringify(settings));
   };
 
+  // Handle fullscreen change from Zen embedded player
+  const handleZenFullscreenChange = useCallback(async (isFullscreen: boolean) => {
+    console.log('Zen player fullscreen changed:', isFullscreen);
+    try {
+      if (isFullscreen) {
+        // Enter fullscreen: rotate to landscape
+        console.log('Zen player entering fullscreen - rotating to landscape');
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+        
+        // Hide status bar and navigation bar
+        StatusBar.setHidden(true, 'fade');
+        if (Platform.OS === 'android') {
+          await NavigationBar.setVisibilityAsync('hidden');
+        }
+        
+        // Update internal state
+        setIsFullscreen(true);
+        if (onFullscreenChange) {
+          onFullscreenChange(true);
+        }
+      } else {
+        // Exit fullscreen: rotate back to portrait
+        console.log('Zen player exiting fullscreen - rotating to portrait');
+        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        
+        // Show status bar and navigation bar
+        StatusBar.setHidden(false, 'fade');
+        if (Platform.OS === 'android') {
+          await NavigationBar.setVisibilityAsync('visible');
+        }
+        
+        // Update internal state
+        setIsFullscreen(false);
+        if (onFullscreenChange) {
+          onFullscreenChange(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error handling Zen fullscreen change:', error);
+    }
+  }, [onFullscreenChange]);
+
   return (
     <Animated.View
       style={[
@@ -905,6 +947,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   handleEnd();
                 } else if (data.type === 'load') {
                   handleLoad({ duration: data.duration, currentTime: data.currentTime });
+                } else if (data.type === 'fullscreen') {
+                  // Handle fullscreen events from Zen embedded player
+                  console.log('Zen player fullscreen changed:', data.isFullscreen);
+                  handleZenFullscreenChange(data.isFullscreen);
                 } else if (data.playerStatus) {
                   // Handle status responses
                   console.log('Player status:', data.playerStatus);
@@ -979,6 +1025,35 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   console.log('Video paused');
                   window.ReactNativeWebView.postMessage(JSON.stringify({
                     type: 'paused'
+                  }));
+                });
+                
+                // Listen for fullscreen events from ArtPlayer
+                window.art.on('fullscreen', (isFullscreen) => {
+                  console.log('Fullscreen changed:', isFullscreen);
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'fullscreen',
+                    isFullscreen: isFullscreen
+                  }));
+                });
+                
+                // Also listen for fullscreenchange events on the document
+                document.addEventListener('fullscreenchange', () => {
+                  const isFullscreen = !!document.fullscreenElement;
+                  console.log('Document fullscreen changed:', isFullscreen);
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'fullscreen',
+                    isFullscreen: isFullscreen
+                  }));
+                });
+                
+                // Listen for webkitfullscreenchange (for Safari/iOS)
+                document.addEventListener('webkitfullscreenchange', () => {
+                  const isFullscreen = !!document.webkitFullscreenElement;
+                  console.log('Webkit fullscreen changed:', isFullscreen);
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'fullscreen',
+                    isFullscreen: isFullscreen
                   }));
                 });
                 
