@@ -35,7 +35,8 @@ import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 
 // Pollinations AI API Configuration
-const POLLINATIONS_TEXT_API_URL = 'https://text.pollinations.ai';
+const POLLINATIONS_TEXT_API_URL = 'https://text.pollinations.ai/openai?token=uNoesre5jXDzjhiY';
+const POLLINATIONS_API_KEY = 'uNoesre5jXDzjhiY';
 
 // AI Character Configurations
 const AI_CONFIGS = {
@@ -1589,15 +1590,17 @@ const PublicChat = () => {
       ];
       
       // Call the OpenAI-compatible endpoint
-      const url = `${POLLINATIONS_TEXT_API_URL}/openai`;
+      const url = `${POLLINATIONS_TEXT_API_URL}`;
       const payload = {
         model: config.model,
-        messages: openaiMessages,
-        referrer: 'anisurge'
+        messages: openaiMessages
       };
       let response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${POLLINATIONS_API_KEY}`
+        },
         body: JSON.stringify(payload)
       });
 
@@ -1791,8 +1794,11 @@ const PublicChat = () => {
       }
 
       // Prepare the function calling payload
-      const url = "https://text.pollinations.ai/openai";
-      const headers = { "Content-Type": "application/json" };
+      const url = `${POLLINATIONS_TEXT_API_URL}`;
+      const headers = { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${POLLINATIONS_API_KEY}`
+      };
       
       // Fetch user_data from Firestore
       let userDataDoc = null;
@@ -2089,7 +2095,7 @@ const PublicChat = () => {
       ).join('\n');
 
       // Ask the AI to determine the best match
-      const url = "https://text.pollinations.ai/openai";
+      const url = `${POLLINATIONS_TEXT_API_URL}`;
       const prompt = `
         I recommended the anime "${recommendedTitle}". 
         From the following search results, select the number of the SINGLE result that best matches my recommendation.
@@ -2107,7 +2113,10 @@ const PublicChat = () => {
 
       const response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${POLLINATIONS_API_KEY}`
+        },
         body: JSON.stringify(payload)
       });
 
@@ -2269,7 +2278,7 @@ const PublicChat = () => {
         const negativePrompt = '((bad anatomy, deformed, extra limbs, fused limbs, poorly drawn hands, missing fingers, extra fingers, mutated, cloned face, distorted genitals, penis on female, vagina on male, wrong gender, fused gender, blurry, low resolution, jpeg artifacts, watermark, text, signature))';
         const qualityPrompts = ', masterpiece, best quality, high detail, 8k, ultra sharp, dynamic lighting, vibrant colors, clean lines, highly detailed, cinematic, artstation';
         const fullPrompt = `${prompt}${qualityPrompts}, --no ${negativePrompt}`;
-        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?model=flux&width=1024&height=1024&nologo=true&enhance=true&referrer=anisurge`;
+        const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?model=turbo&width=1024&height=1024&nologo=true&enhance=true&token=uNoesre5jXDzjhiY`;
         
         // Post ArtGen's message with the image - now with @username mention
         const artgenMessageId = generateReverseOrderKey();
