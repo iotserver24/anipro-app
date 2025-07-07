@@ -1286,60 +1286,26 @@ export default function WatchEpisode() {
         setDownloadOptions(null);
       }
 
-      // Set video headers
+      // Get the m3u8 URL
+      const videoSource = sources.sources[0];
       setVideoHeaders(sources.headers || {});
 
-      // Handle quality selection differently for HardSub vs SoftSub
-      if (selectedServer === 'hardSub') {
-        // For HardSub: Use the multiple quality sources directly from API
-        const availableQualities = sources.sources.map(source => ({
-          url: source.url,
-          quality: source.quality || 'Unknown'
-        }));
-        
+      // Extract qualities from m3u8
+      if (videoSource.url.includes('.m3u8')) {
+        const availableQualities = await extractQualities(videoSource.url);
         setQualities(availableQualities);
         
-        // Choose 720p by default, fallback to first available
-        let defaultQuality = availableQualities.find(q => 
-          q.quality.toLowerCase().includes('720p')
-        );
-        
-        if (!defaultQuality) {
-          // If no 720p, try 1080p
-          defaultQuality = availableQualities.find(q => 
-            q.quality.toLowerCase().includes('1080p')
-          );
-        }
-        
-        if (!defaultQuality) {
-          // If neither 720p nor 1080p, use first available
-          defaultQuality = availableQualities[0];
-        }
-        
-        console.log(`HardSub: Selected default quality: ${defaultQuality.quality}`);
+        // Set default quality (auto)
+        const defaultQuality = availableQualities[0]; // 'auto' quality
         setSelectedQuality(defaultQuality.quality);
         setVideoUrl(defaultQuality.url);
         setStreamingUrl(defaultQuality.url);
       } else {
-        // For SoftSub: Extract qualities from m3u8 (existing logic)
-        const videoSource = sources.sources[0];
-        
-        if (videoSource.url.includes('.m3u8')) {
-          const availableQualities = await extractQualities(videoSource.url);
-          setQualities(availableQualities);
-          
-          // Set default quality (auto)
-          const defaultQuality = availableQualities[0]; // 'auto' quality
-          setSelectedQuality(defaultQuality.quality);
-          setVideoUrl(defaultQuality.url);
-          setStreamingUrl(defaultQuality.url);
-        } else {
-          // Fallback for non-m3u8 sources
-          setQualities([{ url: videoSource.url, quality: 'auto' }]);
-          setSelectedQuality('auto');
-          setVideoUrl(videoSource.url);
-          setStreamingUrl(videoSource.url);
-        }
+        // Fallback for non-m3u8 sources
+        setQualities([{ url: videoSource.url, quality: 'auto' }]);
+        setSelectedQuality('auto');
+        setVideoUrl(videoSource.url);
+        setStreamingUrl(videoSource.url);
       }
 
     } catch (error) {
