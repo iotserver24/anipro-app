@@ -1867,17 +1867,31 @@ export default function WatchEpisode() {
         
         // Always reset quality changing state after 2.9 seconds to ensure button becomes clickable again
         // regardless of whether the quality change was successful or not
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
           //console.log('[DEBUG] Quality change: 2.9 second timeout reached, making button clickable again');
           setIsQualityChanging(false);
         }, 2900);
+        
+        // Clean up timeout if component unmounts
+        return () => {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+        };
       } catch (error) {
         console.error('[DEBUG] Error during quality change:', error);
         // Even on error, wait a moment before making the button clickable again
         // to prevent rapid clicking causing multiple errors
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
           setIsQualityChanging(false);
         }, 1000);
+        
+        // Clean up timeout if component unmounts
+        return () => {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+          }
+        };
       }
     }
   };
@@ -1913,15 +1927,23 @@ export default function WatchEpisode() {
 
   // Add this useEffect to scroll to current episode when list changes
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
     if (episodeListRef.current && filteredEpisodes.length > 0) {
       // Small delay to ensure the list has rendered
-      setTimeout(() => {
+      timeoutId = setTimeout(() => {
         episodeListRef.current?.scrollTo({ y: 0, animated: true });
       }, 100);
     }
+    
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, [filteredEpisodes]);
 
-  // Add cleanup effect
+  // Consolidated cleanup effect
   useEffect(() => {
     return () => {
       // Cleanup function
@@ -1941,7 +1963,7 @@ export default function WatchEpisode() {
         headerShown: true
       });
     };
-  }, []);
+  }, [navigation]);
 
   // Add back handler effect
   useEffect(() => {
@@ -2066,10 +2088,17 @@ export default function WatchEpisode() {
     if (resumePosition > 0 && !isVideoReady && shouldUseResumePosition(resumePosition, videoDuration)) {
       //console.log(`[DEBUG] VideoPlayer: Seeking to resumePosition: ${resumePosition}`);
       // Use a timeout to ensure the video is ready
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         handleSeek(resumePosition);
         setIsVideoReady(true);
       }, 300);
+      
+      // Clean up timeout if component unmounts
+      return () => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+      };
     } else if (isPlaying) {
       // Start from beginning
       if (resumePosition > 0 && !shouldUseResumePosition(resumePosition, videoDuration)) {
@@ -2085,6 +2114,8 @@ export default function WatchEpisode() {
 
   // Fetch new server download URL for the current episode
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchNewServerDownloadUrl = async () => {
       setNewServerDownloadUrl(null);
       if (!newServerAnimeId || !episodeNumber) return;
@@ -2092,18 +2123,27 @@ export default function WatchEpisode() {
       try {
         const response = await fetch(`https://anisurge.me/api/server/${newServerAnimeId}-${episodeNumber}`);
         const data = await response.json();
-        if (data.download_url) {
+        if (isMounted && data.download_url) {
           setNewServerDownloadUrl(data.download_url);
-        } else {
+        } else if (isMounted) {
           setNewServerDownloadUrl(null);
         }
       } catch (err) {
-        setNewServerDownloadUrl(null);
+        if (isMounted) {
+          setNewServerDownloadUrl(null);
+        }
       } finally {
-        setCheckingNewServerDownload(false);
+        if (isMounted) {
+          setCheckingNewServerDownload(false);
+        }
       }
     };
+    
     fetchNewServerDownloadUrl();
+    
+    return () => {
+      isMounted = false;
+    };
   }, [newServerAnimeId, episodeNumber]);
 
   // Update the handleDownload function

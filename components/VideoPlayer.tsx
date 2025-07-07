@@ -470,10 +470,20 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     });
     
     return () => {
-      subscription?.remove();
+      // Clean up all timeouts
       if (controlsTimeoutRef.current) {
         clearTimeout(controlsTimeoutRef.current);
+        controlsTimeoutRef.current = null;
       }
+
+      // Clean up event listeners
+      subscription?.remove();
+
+      // Clean up animated values
+      controlsOpacity.stopAnimation();
+      tapFeedbackOpacity.stopAnimation();
+      containerWidthAnim.stopAnimation();
+      containerHeightAnim.stopAnimation();
 
       // Reset orientation when component unmounts - ensure this happens even if errors occur
       try {
@@ -487,7 +497,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         console.error("Error cleaning up VideoPlayer:", error);
       }
     };
-  }, []);
+  }, [controlsOpacity, tapFeedbackOpacity, containerWidthAnim, containerHeightAnim]);
 
   // Notify of fullscreen changes
   useEffect(() => {
@@ -512,7 +522,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, [onPlaybackRateChange]);
 
-  // Handle screen dimension changes
+  // Handle screen dimension changes - consolidated and optimized
   useEffect(() => {
     const dimensionsChangeHandler = ({
       screen,
@@ -568,8 +578,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [isFullscreen, containerWidthAnim, containerHeightAnim]);
 
-  // Initial position seeking
+  // Initial position seeking - with proper cleanup
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
     const seekToInitialPosition = () => {
       if (videoRef.current && initialPosition > 0 && !isReady) {
         videoRef.current.seek(initialPosition);
@@ -578,21 +590,32 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
 
     // Slight delay to ensure video is loaded
-    const timeout = setTimeout(seekToInitialPosition, 300);
-    return () => clearTimeout(timeout);
-  }, [initialPosition]);
+    timeoutId = setTimeout(seekToInitialPosition, 300);
+    
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [initialPosition, isReady]);
 
-  // Save position during quality changes
+  // Save position during quality changes - with proper cleanup
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
     if (isQualityChanging && videoRef.current && savedQualityPosition > 0) {
-      const timeout = setTimeout(() => {
+      timeoutId = setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.seek(savedQualityPosition);
         }
       }, 300);
-
-      return () => clearTimeout(timeout);
     }
+
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, [isQualityChanging, savedQualityPosition]);
 
   // Handle video load
@@ -704,11 +727,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     setSelectedSubtitle(lang || undefined);
     
     // Small delay to let subtitle change process before seeking
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       if (videoRef.current && currentPositionRef.current > 0) {
         videoRef.current.seek(currentPositionRef.current);
       }
     }, 100);
+    
+    // Clean up timeout if component unmounts
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, []);
 
   // Update selected subtitle track with logging
@@ -738,17 +768,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
 
-  // Cleanup on component unmount
-  useEffect(() => {
-    return () => {
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-      }
+  // Consolidated cleanup on component unmount - REMOVE DUPLICATE
+  // useEffect(() => {
+  //   return () => {
+  //     if (controlsTimeoutRef.current) {
+  //       clearTimeout(controlsTimeoutRef.current);
+  //     }
 
-      // Normalize orientation when component unmounts
-      normalizeOrientation();
-    };
-  }, []);
+  //     // Normalize orientation when component unmounts
+  //     normalizeOrientation();
+  //   };
+  // }, []);
 
   // Update useEffect for subtitle initialization
   useEffect(() => {
@@ -760,7 +790,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         handleSubtitleChange(englishSub.lang);
       }
     }
-  }, [subtitles]);
+  }, [subtitles, selectedSubtitle, handleSubtitleChange]);
 
   // Subtitle settings state
   const [subtitleSettings, setSubtitleSettings] = useState({
@@ -771,9 +801,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Load subtitle settings from AsyncStorage on mount
   useEffect(() => {
+    let isMounted = true;
+    
     AsyncStorage.getItem('subtitleSettings').then((json) => {
-      if (json) setSubtitleSettings(JSON.parse(json));
+      if (isMounted && json) {
+        setSubtitleSettings(JSON.parse(json));
+      }
     });
+    
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Save subtitle settings to AsyncStorage
