@@ -794,7 +794,7 @@ export default function WatchEpisode() {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   // Change default server to hardSub
-  const [selectedServer, setSelectedServer] = useState<'softSub' | 'hardSub' | 'zen'>('hardSub');
+  const [selectedServer, setSelectedServer] = useState<'softSub' | 'hardSub' | 'zen'>('zen');
   const [isChangingServer, setIsChangingServer] = useState(false);
   const [progress, setProgress] = useState<Progress>({
     currentTime: 0,
@@ -1292,8 +1292,9 @@ export default function WatchEpisode() {
           
           console.log(`Found access ID: ${accessId}`);
           
-          // Use the embedded player URL instead of fetching direct links
-          const embeddedPlayerUrl = `https://zencloud.cc/e/${accessId}`;
+          // Use the embedded player URL with parameters
+          const audioParam = categoryAsSubOrDub === 'dub' ? '1' : '0'; // a=1 for dub, a=0 for sub
+          const embeddedPlayerUrl = `https://zencloud.cc/e/${accessId}?a=${audioParam}&autoPlay=true`;
           console.log('Zen server embedded player URL:', embeddedPlayerUrl);
           
           // Set the video sources using the embedded player URL
@@ -1304,7 +1305,8 @@ export default function WatchEpisode() {
               isM3U8: false, // This is an embedded player, not direct stream
               isZenEmbedded: true // Flag to indicate this is Zen's embedded player
             }],
-            subtitles: [] // Subtitles are handled by the embedded player
+            subtitles: [], // Subtitles are handled by the embedded player
+            download: `https://zencloud.cc/d/${accessId}` // Add Zen server download URL
           };
           
           console.log(`Using Zen server embedded player with access ID: ${accessId}`);
@@ -1806,6 +1808,10 @@ export default function WatchEpisode() {
           
           // Save progress to history
           addToHistory(historyItem);
+          
+          // Update last progress values
+          lastProgressUpdateRef.current = now;
+          lastProgressValueRef.current = currentTime;
         }
       }
     },
@@ -2294,7 +2300,7 @@ export default function WatchEpisode() {
   const ServerSelector = React.memo(() => {
     return (
       <View style={styles.serverSelectorContainer}>
-        <Text style={styles.serverSelectorTitle}>Server:</Text>
+        <Text style={styles.serverSelectorTitle}>Server</Text>
         <View style={styles.serverButtonsContainer}>
           <TouchableOpacity
             style={[
@@ -2319,26 +2325,6 @@ export default function WatchEpisode() {
           <TouchableOpacity
             style={[
               styles.serverButton,
-              selectedServer === 'hardSub' && styles.selectedServerButton,
-              isChangingServer && selectedServer === 'hardSub' && styles.loadingServerButton
-            ]}
-            onPress={() => handleServerChange('hardSub')}
-            disabled={isChangingServer || selectedServer === 'hardSub'}
-          >
-            <Text style={[
-              styles.serverButtonText,
-              selectedServer === 'hardSub' && styles.selectedServerButtonText
-            ]}>
-              HardSub
-            </Text>
-            {isChangingServer && selectedServer === 'hardSub' && (
-              <ActivityIndicator size="small" color="#fff" style={styles.serverButtonLoader} />
-            )}
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[
-              styles.serverButton,
               selectedServer === 'zen' && styles.selectedServerButton,
               isChangingServer && selectedServer === 'zen' && styles.loadingServerButton
             ]}
@@ -2352,6 +2338,26 @@ export default function WatchEpisode() {
               Zen
             </Text>
             {isChangingServer && selectedServer === 'zen' && (
+              <ActivityIndicator size="small" color="#fff" style={styles.serverButtonLoader} />
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[
+              styles.serverButton,
+              selectedServer === 'hardSub' && styles.selectedServerButton,
+              isChangingServer && selectedServer === 'hardSub' && styles.loadingServerButton
+            ]}
+            onPress={() => handleServerChange('hardSub')}
+            disabled={isChangingServer || selectedServer === 'hardSub'}
+          >
+            <Text style={[
+              styles.serverButtonText,
+              selectedServer === 'hardSub' && styles.selectedServerButtonText
+            ]}>
+              HardSub
+            </Text>
+            {isChangingServer && selectedServer === 'hardSub' && (
               <ActivityIndicator size="small" color="#fff" style={styles.serverButtonLoader} />
             )}
           </TouchableOpacity>
@@ -3266,19 +3272,21 @@ const styles = StyleSheet.create({
     marginVertical: 8,
     borderRadius: 12,
     padding: 12,
-    flexDirection: 'row',
     alignItems: 'center',
   },
   serverSelectorTitle: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
-    marginRight: 12,
+    marginBottom: 12,
+    textAlign: 'center',
   },
   serverButtonsContainer: {
-    flex: 1,
     flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
     gap: 12,
+    flexWrap: 'wrap',
   },
   selectedServerButton: {
     backgroundColor: '#f4511e',

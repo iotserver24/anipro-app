@@ -868,21 +868,26 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           onFullscreenChange(true);
         }
       } else {
-        // Exit fullscreen: rotate back to portrait
+        // Exit fullscreen: do everything quickly and in parallel
         console.log('Zen player exiting fullscreen - rotating to portrait');
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
         
-        // Show status bar and navigation bar
-        StatusBar.setHidden(false, 'fade');
-        if (Platform.OS === 'android') {
-          await NavigationBar.setVisibilityAsync('visible');
-        }
-        
-        // Update internal state
+        // Update state immediately
         setIsFullscreen(false);
         if (onFullscreenChange) {
           onFullscreenChange(false);
         }
+        
+        // Run orientation and UI changes in parallel for speed
+        const orientationPromise = ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        const statusBarPromise = Promise.resolve(StatusBar.setHidden(false, 'none')); // Use 'none' for instant transition
+        const navBarPromise = Platform.OS === 'android' 
+          ? NavigationBar.setVisibilityAsync('visible')
+          : Promise.resolve();
+        
+        // Don't await - let them run in background for faster response
+        Promise.all([orientationPromise, statusBarPromise, navBarPromise]).catch(error => {
+          console.warn('Error in parallel fullscreen exit:', error);
+        });
       }
     } catch (error) {
       console.error('Error handling Zen fullscreen change:', error);
@@ -915,7 +920,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             ref={webViewRef}
             source={{ 
               uri: (() => {
-                const finalUrl = source.uri + (initialPosition > 0 ? `?start_at=${Math.floor(initialPosition)}` : '');
+                if (!source.uri) return '';
+                let finalUrl = source.uri;
+                // If there are already parameters in the URL, add start_at with &, otherwise use ?
+                if (initialPosition > 0) {
+                  const separator = source.uri.includes('?') ? '&' : '?';
+                  finalUrl = source.uri + separator + `start_at=${Math.floor(initialPosition)}`;
+                }
                 console.log('WebView URL with start_at:', finalUrl, 'initialPosition:', initialPosition);
                 return finalUrl;
               })()
