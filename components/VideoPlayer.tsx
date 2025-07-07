@@ -28,6 +28,7 @@ import Video, { ResizeMode, type VideoRef, TextTrackType, SelectedTrackType, ISO
 import FullScreenChz from "react-native-fullscreen-chz";
 import ControlsOverlay from './ControlsOverlay';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { logger } from '../utils/logger';
 
 interface VideoPlayerProps {
   source: {
@@ -153,9 +154,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onQualityChange,
   subtitles = [],
 }) => {
-  // Add console log to debug subtitles
+  // Debug subtitles - only log count to avoid leaking data
   useEffect(() => {
-    console.log('Received subtitles:', subtitles);
+    logger.debug('VideoPlayer', 'Received subtitles count:', subtitles.length);
   }, [subtitles]);
 
   // Refs
@@ -198,7 +199,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Add position tracking for subtitle changes
   const currentPositionRef = useRef<number>(0);
 
-  // Optimize playback status updates with debounce
+  // Optimize playback status updates with debounce and proper cleanup
   const debouncedOnProgress = useMemo(
     () =>
       debounce((position: number, duration: number) => {
@@ -218,6 +219,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }, 250),
     [onPositionChange]
   );
+
+  // Cleanup debounced functions on unmount
+  useEffect(() => {
+    return () => {
+      debouncedOnProgress.cancel();
+      debouncedOnPositionChange.cancel();
+    };
+  }, [debouncedOnProgress, debouncedOnPositionChange]);
 
   // Update progress handler to track position
   const handleProgress = useCallback(
@@ -282,11 +291,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, [showControls, isPlaying, currentTime, duration, dimensions.width]);
 
-  // Optimize controls visibility effect
+  // Optimize controls visibility effect - consolidated to prevent duplicate logic
   useEffect(() => {
     let timeout: NodeJS.Timeout;
     
-    if (showControls && isPlaying && !isFullscreen) {
+    // Auto-hide controls after 3 seconds if playing, regardless of fullscreen state
+    if (showControls && isPlaying) {
       timeout = setTimeout(() => {
         setShowControls(false);
       }, 3000);
@@ -297,24 +307,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         clearTimeout(timeout);
       }
     };
-  }, [showControls, isPlaying, isFullscreen]);
-
-  // Add separate effect for fullscreen controls
-  useEffect(() => {
-    let timeout: NodeJS.Timeout;
-    
-    if (showControls && isPlaying && isFullscreen) {
-      timeout = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-    }
-
-    return () => {
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    };
-  }, [showControls, isPlaying, isFullscreen]);
+  }, [showControls, isPlaying]);
 
   // Optimize seek handler
   const handleSeek = useCallback(async (value: number) => {
@@ -700,7 +693,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Handle subtitle selection with position maintenance
   const handleSubtitleChange = useCallback((lang: string | null) => {
-    console.log('Changing subtitle to:', lang);
+    logger.debug('VideoPlayer', 'Changing subtitle to:', lang || 'none');
     setSelectedSubtitle(lang || undefined);
     
     // Small delay to let subtitle change process before seeking
@@ -711,11 +704,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }, 100);
   }, []);
 
-  // Update selected subtitle track with logging
+  // Update selected subtitle track
   const selectedSubtitleTrack = useMemo(() => {
     if (!selectedSubtitle) return undefined;
     const subtitle = subtitles.find(s => s.lang === selectedSubtitle);
-    console.log('Selected subtitle track:', subtitle);
+    logger.debug('VideoPlayer', 'Selected subtitle track language:', subtitle?.lang || 'none');
     return subtitle ? {
       title: subtitle.lang,
       language: subtitle.lang.toLowerCase(),
@@ -752,7 +745,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Update useEffect for subtitle initialization
   useEffect(() => {
-    console.log('Received subtitles:', subtitles);
+    logger.debug('VideoPlayer', 'Initializing subtitles, count:', subtitles.length);
     // Set English as default if available and no subtitle is selected
     if (!selectedSubtitle && subtitles.length > 0) {
       const englishSub = subtitles.find(sub => sub.lang === 'English');

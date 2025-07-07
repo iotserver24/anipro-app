@@ -4,7 +4,9 @@ import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Firebase configuration
+// WARNING: SECURITY ISSUE - Firebase credentials should not be hardcoded in client code
+// TODO: Move these to environment variables in app.config.js/ts and use Constants.expoConfig.extra
+// For production apps, consider using Firebase App Check or other security measures
 const firebaseConfig = {
   apiKey: "AIzaSyDwnApvEV4stf1L5etAaGZG9cOkAAo__7M",
   authDomain: "anisurge-11808.firebaseapp.com",
@@ -15,6 +17,15 @@ const firebaseConfig = {
   measurementId: "G-V9SPTVJS18",
   databaseURL: "https://anisurge-11808-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
+
+// Validate that all required configuration is present
+const requiredKeys = ['apiKey', 'authDomain', 'projectId', 'messagingSenderId', 'appId'] as const;
+const missingKeys = requiredKeys.filter(key => !firebaseConfig[key]);
+
+if (missingKeys.length > 0) {
+  console.error(`Missing Firebase configuration: ${missingKeys.join(', ')}.`);
+  throw new Error(`Missing Firebase configuration: ${missingKeys.join(', ')}. Please check your configuration.`);
+}
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);

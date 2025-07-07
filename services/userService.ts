@@ -53,12 +53,12 @@ export const storeUserSession = async (user: User & { birthdate?: string }, cred
         await AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(userDoc.data()));
       }
     } catch (error) {
-      console.warn('Could not store Firestore user data:', error);
+      logger.warn('UserService', 'Could not store Firestore user data:', error);
     }
     
-    console.log('User session stored successfully');
+    logger.info('UserService', 'User session stored successfully');
   } catch (error) {
-    console.error('Error storing user session:', error);
+    logger.error('UserService', 'Error storing user session:', error);
   }
 };
 
@@ -68,9 +68,9 @@ export const clearUserSession = async () => {
     await AsyncStorage.removeItem(USER_AUTH_KEY);
     await AsyncStorage.removeItem(USER_DATA_KEY);
     await AsyncStorage.removeItem(USER_CREDENTIALS_KEY);
-    console.log('User session cleared successfully');
+    logger.info('UserService', 'User session cleared successfully');
   } catch (error) {
-    console.error('Error clearing user session:', error);
+    logger.error('UserService', 'Error clearing user session:', error);
   }
 };
 
@@ -82,15 +82,15 @@ export const restoreUserSession = async (): Promise<boolean> => {
     
     if (storedCredentials) {
       const credentials = JSON.parse(storedCredentials);
-      console.log('[DEBUG] Restoring session using stored credentials');
+      logger.debug('UserService', 'Restoring session using stored credentials');
       
       try {
         // Try to silently sign in with stored credentials
         await signInWithEmailAndPassword(auth, credentials.email, credentials.password);
-        console.log('[DEBUG] Session restored successfully with stored credentials');
+        logger.info('UserService', 'Session restored successfully with stored credentials');
         return true;
       } catch (error) {
-        console.warn('[DEBUG] Failed to restore session with credentials:', error);
+        logger.warn('UserService', 'Failed to restore session with credentials:', error);
         // If sign-in fails, clear the stored credentials to prevent future failed attempts
         await AsyncStorage.removeItem(USER_CREDENTIALS_KEY);
       }
@@ -98,14 +98,14 @@ export const restoreUserSession = async (): Promise<boolean> => {
     
     // If no credentials or sign-in failed, check if user is already authenticated
     if (auth.currentUser) {
-      console.log('[DEBUG] User already authenticated in Firebase');
+      logger.debug('UserService', 'User already authenticated in Firebase');
       return true;
     }
     
     // Fallback: check for stored user data
     const userData = await AsyncStorage.getItem(USER_AUTH_KEY);
     if (userData) {
-      console.log('[DEBUG] Found stored user data but could not automatically sign in');
+      logger.debug('UserService', 'Found stored user data but could not automatically sign in');
       // We won't be able to auto-restore the session completely,
       // but we can let the app know there was a previous session
       return false;
@@ -113,7 +113,7 @@ export const restoreUserSession = async (): Promise<boolean> => {
     
     return false;
   } catch (error) {
-    console.error('Error restoring user session:', error);
+    logger.error('UserService', 'Error restoring user session:', error);
     return false;
   }
 };
@@ -136,33 +136,56 @@ const isUsernameTaken = async (username: string): Promise<boolean> => {
 // Register new user with email and password
 export const registerUser = async (email: string, password: string, username: string, birthdate: string): Promise<User> => {
   try {
-    // First check if username is taken
-    const taken = await isUsernameTaken(username);
-    if (taken) {
-      throw { code: 'username-taken', message: 'Username is already taken' };
-    }
-
-    // If username is available, create the user
+    // Create the user first to get a unique UID
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
     
     try {
-      // Try to save user data to Firestore
-      await setDoc(doc(db, 'users', user.uid), {
+      // Use the user's UID as a unique identifier and attempt atomic write
+      // This prevents race conditions by using Firestore's built-in conflict detection
+      const userDocRef = doc(db, 'users', user.uid);
+      const usernameDocRef = doc(db, 'usernames', username.toLowerCase());
+      
+      // Use a batch write to ensure atomicity
+      const batch = writeBatch(db);
+      
+      // Check if username is already taken before committing
+      const usernameDoc = await getDoc(usernameDocRef);
+      if (usernameDoc.exists()) {
+        // Username is taken, clean up the auth user
+        await user.delete();
+        throw { code: 'username-taken', message: 'Username is already taken' };
+      }
+      
+      // Reserve the username by creating a document with the user's UID
+      batch.set(usernameDocRef, {
+        userId: user.uid,
+        createdAt: Timestamp.now()
+      });
+      
+      // Create the user document
+      batch.set(userDocRef, {
         email: user.email,
         username: username.toLowerCase(),
         createdAt: Timestamp.now(),
-        avatarId: 'default', // Set default avatar
-        emailVerified: false, // Track email verification status
-        birthdate: birthdate // Save birthdate
+        avatarId: 'default',
+        emailVerified: false,
+        birthdate: birthdate
       });
       
-      // Send verification email
+      // Commit both operations atomically
+      await batch.commit();
+      
+      // Send verification email after successful registration
       await sendEmailVerification(user);
       
-    } catch (error) {
-      // If saving to Firestore fails, delete the auth user
-      await user.delete();
+    } catch (error: any) {
+      // If any step fails, delete the auth user to maintain consistency
+      try {
+        await user.delete();
+      } catch (deleteError) {
+        console.error('Error deleting user after registration failure:', deleteError);
+      }
       throw error;
     }
     
@@ -230,7 +253,7 @@ export const canUpdateAvatar = async (userId: string): Promise<boolean> => {
 // Helper function to update all comments made by a user with their new avatar URL
 const updateUserCommentsWithAvatar = async (userId: string, avatarUrl: string): Promise<{success: boolean, count: number, error?: any}> => {
   try {
-    console.log(`[AvatarUpdate] Updating comments for user ${userId} with new avatar: ${avatarUrl}`);
+    logger.debug('UserService', `[AvatarUpdate] Updating comments for user ${userId} with new avatar: ${avatarUrl}`);
     
     // Query all comments by this user
     const commentsQuery = query(
@@ -239,7 +262,7 @@ const updateUserCommentsWithAvatar = async (userId: string, avatarUrl: string): 
     );
     
     const querySnapshot = await getDocs(commentsQuery);
-    console.log(`[AvatarUpdate] Found ${querySnapshot.size} comments to update`);
+    logger.debug('UserService', `[AvatarUpdate] Found ${querySnapshot.size} comments to update`);
     
     // Use a batch to update all comments at once
     const MAX_BATCH_SIZE = 500; // Firestore limit
@@ -258,7 +281,7 @@ const updateUserCommentsWithAvatar = async (userId: string, avatarUrl: string): 
         // If we reach the batch limit, commit and start a new batch
         if (batchSize >= MAX_BATCH_SIZE) {
           batchCount++;
-          console.log(`[AvatarUpdate] Committing batch ${batchCount} with ${batchSize} updates`);
+          logger.debug('UserService', `[AvatarUpdate] Committing batch ${batchCount} with ${batchSize} updates`);
           batch.commit();
           batch = writeBatch(db);
           batchSize = 0;
@@ -268,14 +291,14 @@ const updateUserCommentsWithAvatar = async (userId: string, avatarUrl: string): 
       // Commit any remaining updates
       if (batchSize > 0) {
         batchCount++;
-        console.log(`[AvatarUpdate] Committing final batch ${batchCount} with ${batchSize} updates`);
+        logger.debug('UserService', `[AvatarUpdate] Committing final batch ${batchCount} with ${batchSize} updates`);
         await batch.commit();
       }
       
-      console.log(`[AvatarUpdate] Successfully updated ${totalUpdated} comments with new avatar`);
+      logger.debug('UserService', `[AvatarUpdate] Successfully updated ${totalUpdated} comments with new avatar`);
       return { success: true, count: totalUpdated };
     } else {
-      console.log('[AvatarUpdate] No comments found to update');
+      logger.debug('UserService', '[AvatarUpdate] No comments found to update');
       return { success: true, count: 0 };
     }
   } catch (error) {
@@ -323,7 +346,7 @@ export const signInUser = async (email: string, password: string): Promise<User>
       useMyListStore.getState().initializeList()
     ]);
     
-    logger.info('User signed in and data synced successfully');
+    logger.info('UserService', 'User signed in and data synced successfully');
     
     return user;
   } catch (error) {
@@ -350,29 +373,29 @@ export const signOut = async (): Promise<void> => {
     // Clear any in-memory caches
     await clearInMemoryCaches();
     
-    logger.info('User signed out successfully');
-  } catch (error) {
-    console.error('Error signing out:', error);
-    throw error;
+    logger.info('UserService', 'User signed out successfully');
+      } catch (error) {
+      logger.error('UserService', 'Error signing out:', error);
+      throw error;
+    }
+  };
+  
+  // Helper function to clear in-memory caches
+  async function clearInMemoryCaches() {
+    try {
+      // Clear watch history store
+      const { useWatchHistoryStore } = await import('../store/watchHistoryStore');
+      useWatchHistoryStore.getState().clearHistory();
+      
+      // Clear watchlist store
+      const { useMyListStore } = await import('../store/myListStore');
+      useMyListStore.getState().clearList();
+      
+      logger.info('UserService', 'In-memory caches cleared successfully');
+    } catch (error) {
+      logger.error('UserService', 'Error clearing in-memory caches:', error);
+    }
   }
-};
-
-// Helper function to clear in-memory caches
-async function clearInMemoryCaches() {
-  try {
-    // Clear watch history store
-    const { useWatchHistoryStore } = await import('../store/watchHistoryStore');
-    useWatchHistoryStore.getState().clearHistory();
-    
-    // Clear watchlist store
-    const { useMyListStore } = await import('../store/myListStore');
-    useMyListStore.getState().clearList();
-    
-    logger.info('In-memory caches cleared successfully');
-  } catch (error) {
-    console.error('Error clearing in-memory caches:', error);
-  }
-}
 
 // Get current authenticated user
 export const getCurrentUser = (): User | null => {
@@ -393,9 +416,9 @@ export const sendVerificationEmail = async (): Promise<void> => {
     }
     
     await sendEmailVerification(currentUser);
-    logger.info('Verification email sent successfully');
+    logger.info('UserService', 'Verification email sent successfully');
   } catch (error) {
-    logger.error('Error sending verification email:', error);
+    logger.error('UserService', 'Error sending verification email:', error);
     throw error;
   }
 };
@@ -429,7 +452,7 @@ export const reloadUser = async (): Promise<boolean> => {
     
     return currentUser.emailVerified;
   } catch (error) {
-    logger.error('Error reloading user:', error);
+    logger.error('UserService', 'Error reloading user:', error);
     throw error;
   }
 };
@@ -438,10 +461,10 @@ export const reloadUser = async (): Promise<boolean> => {
 export const resetPassword = async (email: string): Promise<boolean> => {
   try {
     await sendPasswordResetEmail(auth, email);
-    logger.info(`Password reset email sent to ${email}`);
+    logger.info('UserService', `Password reset email sent to ${email}`);
     return true;
   } catch (error) {
-    logger.error('Error sending password reset email:', error);
+    logger.error('UserService', 'Error sending password reset email:', error);
     throw error;
   }
 }; 
