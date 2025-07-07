@@ -335,23 +335,23 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }
     } else if (!source.isZenEmbedded && videoRef.current) {
       // Handle seek for native Video component
-      try {
-        isSeekingRef.current = true;
+    try {
+      isSeekingRef.current = true;
 
-        // Update UI immediately
-        setCurrentTime(value);
+      // Update UI immediately
+      setCurrentTime(value);
 
-        // Perform the seek operation
-        videoRef.current.seek(value);
+      // Perform the seek operation
+      videoRef.current.seek(value);
 
-        // Release the seeking lock more quickly
-        setTimeout(() => {
-          isSeekingRef.current = false;
-        }, 10); // Much shorter delay
-      } catch (error) {
-        console.error("Error seeking:", error);
+      // Release the seeking lock more quickly
+      setTimeout(() => {
         isSeekingRef.current = false;
-      }
+      }, 10); // Much shorter delay
+    } catch (error) {
+      console.error("Error seeking:", error);
+      isSeekingRef.current = false;
+    }
     }
   }, [source.isZenEmbedded]);
 
@@ -367,8 +367,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       setIsPlaying(!isPlaying);
     } else {
       // Handle play/pause for native Video component
-      // IMPORTANT: Just update the state directly - no async operations!
-      setIsPlaying(prev => !prev);
+    // IMPORTANT: Just update the state directly - no async operations!
+    setIsPlaying(prev => !prev);
     }
   }, [isPlaying, source.isZenEmbedded]);
 
@@ -641,7 +641,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     return () => {
       if (timeoutId) {
         clearTimeout(timeoutId);
-      }
+    }
     };
   }, [isQualityChanging, savedQualityPosition]);
 
@@ -1135,39 +1135,39 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             `}
           />
         ) : (
-          <Video
-            ref={videoRef}
-            source={source.uri ? source : undefined}
-            style={videoStyle}
-            resizeMode={ResizeMode.CONTAIN}
-            paused={!isPlaying}
-            onProgress={handleProgress}
-            onLoad={handleLoad}
-            onEnd={handleEnd}
-            onBuffer={handleBuffer}
-            rate={playbackSpeed}
-            repeat={false}
-            muted={false}
-            controls={false}
-            progressUpdateInterval={250}
-            maxBitRate={2000000}
-            bufferConfig={{
-              minBufferMs: 15000,
-              maxBufferMs: 30000,
-              bufferForPlaybackMs: 2500,
-              bufferForPlaybackAfterRebufferMs: 5000
-            }}
-            textTracks={selectedSubtitleTrack ? [selectedSubtitleTrack] : undefined}
-            selectedTextTrack={selectedSubtitleTrack ? {
-              type: SelectedTrackType.LANGUAGE,
-              value: selectedSubtitleTrack.language
-            } : undefined}
-            subtitleStyle={{
-              fontSize: subtitleSettings.fontSize,
-              paddingBottom: subtitleSettings.paddingBottom,
-              opacity: 0.7,
-            }}
-          />
+        <Video
+          ref={videoRef}
+          source={source.uri ? source : undefined}
+          style={videoStyle}
+          resizeMode={ResizeMode.CONTAIN}
+          paused={!isPlaying}
+          onProgress={handleProgress}
+          onLoad={handleLoad}
+          onEnd={handleEnd}
+          onBuffer={handleBuffer}
+          rate={playbackSpeed}
+          repeat={false}
+          muted={false}
+          controls={false}
+          progressUpdateInterval={250}
+          maxBitRate={2000000}
+          bufferConfig={{
+            minBufferMs: 15000,
+            maxBufferMs: 30000,
+            bufferForPlaybackMs: 2500,
+            bufferForPlaybackAfterRebufferMs: 5000
+          }}
+          textTracks={selectedSubtitleTrack ? [selectedSubtitleTrack] : undefined}
+          selectedTextTrack={selectedSubtitleTrack ? {
+            type: SelectedTrackType.LANGUAGE,
+            value: selectedSubtitleTrack.language
+          } : undefined}
+          subtitleStyle={{
+            fontSize: subtitleSettings.fontSize,
+            paddingBottom: subtitleSettings.paddingBottom,
+            opacity: 0.7,
+          }}
+        />
         )}
         {isBuffering && !source.isZenEmbedded && (
           <View style={styles.bufferingContainer}>
@@ -1227,46 +1227,46 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
       {/* Move SkipButtons outside of Pressable but inside the main container */}
       {!source.isZenEmbedded && (
-        <SkipButtons
-          position={currentTime}
-          intro={intro}
-          outro={outro}
-          onSkipIntro={handleSkipIntro}
-          onSkipOutro={handleSkipOutro}
-        />
+      <SkipButtons
+        position={currentTime}
+        intro={intro}
+        outro={outro}
+        onSkipIntro={handleSkipIntro}
+        onSkipOutro={handleSkipOutro}
+      />
       )}
         
       {/* Only show custom controls for native video player, not for Zen embedded player */}
       {!source.isZenEmbedded && (
-        <View 
-          style={[
-            styles.controlsContainer,
-            { opacity: showControls ? 1 : 0 },
-            { pointerEvents: showControls ? 'auto' : 'none' }
-          ]}
-        >
-          <ControlsOverlay
-            showControls={showControls}
-            isPlaying={isPlaying}
-            isFullscreen={isFullscreen}
-            currentTime={currentTime}
-            duration={duration}
-            title={title || ""}
-            onPlayPress={togglePlayPause}
-            onFullscreenPress={toggleFullscreen}
-            onSeek={handleSeek}
-            playbackSpeed={playbackSpeed}
-            onPlaybackSpeedChange={handlePlaybackSpeedChange}
-            qualities={availableQualities}
-            selectedQuality={currentQuality}
-            onQualityChange={handleQualityChange}
-            isQualityChanging={isQualityChanging}
-            subtitles={subtitles}
-            selectedSubtitle={selectedSubtitle}
-            onSubtitleChange={handleSubtitleChange}
-            onSubtitleSettingsPress={() => setShowSubtitleSettings(true)}
-          />
-        </View>
+      <View 
+        style={[
+          styles.controlsContainer,
+          { opacity: showControls ? 1 : 0 },
+          { pointerEvents: showControls ? 'auto' : 'none' }
+        ]}
+      >
+        <ControlsOverlay
+          showControls={showControls}
+          isPlaying={isPlaying}
+          isFullscreen={isFullscreen}
+          currentTime={currentTime}
+          duration={duration}
+          title={title || ""}
+          onPlayPress={togglePlayPause}
+          onFullscreenPress={toggleFullscreen}
+          onSeek={handleSeek}
+          playbackSpeed={playbackSpeed}
+          onPlaybackSpeedChange={handlePlaybackSpeedChange}
+          qualities={availableQualities}
+          selectedQuality={currentQuality}
+          onQualityChange={handleQualityChange}
+          isQualityChanging={isQualityChanging}
+          subtitles={subtitles}
+          selectedSubtitle={selectedSubtitle}
+          onSubtitleChange={handleSubtitleChange}
+          onSubtitleSettingsPress={() => setShowSubtitleSettings(true)}
+        />
+      </View>
       )}
 
       {tapFeedbackVisible && (
