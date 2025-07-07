@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zen Player</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+            background: #000;
+            font-family: Arial, sans-serif;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 18px;
+        }
+        .error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff6b6b;
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading">Loading Zen Player...</div>
+    <div id="error" class="error" style="display: none;">
+        <h3>Error Loading Player</h3>
+        <p>Please try refreshing or switch to another server.</p>
+    </div>
+    <iframe id="zenPlayer" allowfullscreen style="display: none;"></iframe>
+    
+    <script>
+        // Get parameters from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const accessId = urlParams.get('accessId');
+        const audioParam = urlParams.get('a') || '0';
+        const autoPlay = urlParams.get('autoPlay') || 'true';
+        
+        const loading = document.getElementById('loading');
+        const error = document.getElementById('error');
+        const iframe = document.getElementById('zenPlayer');
+        
+        if (!accessId) {
+            loading.style.display = 'none';
+            error.style.display = 'block';
+            error.innerHTML = '<h3>Missing Parameters</h3><p>Access ID is required.</p>';
+        } else {
+            try {
+                // Build zen player URL
+                const zenUrl = `https://zencloud.cc/e/${accessId}?a=${audioParam}&autoPlay=${autoPlay}`;
+                console.log('Loading Zen Player:', zenUrl);
+                
+                iframe.src = zenUrl;
+                
+                // Handle iframe load
+                iframe.onload = function() {
+                    loading.style.display = 'none';
+                    iframe.style.display = 'block';
+                    
+                    // Set up message passing for React Native WebView communication
+                    if (window.ReactNativeWebView) {
+                        // Listen for messages from React Native
+                        window.addEventListener('message', function(event) {
+                            try {
+                                const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+                                
+                                // Forward commands to zen iframe
+                                if (data.command && iframe.contentWindow) {
+                                    iframe.contentWindow.postMessage(data, '*');
+                                }
+                            } catch (e) {
+                                console.error('Error processing message from React Native:', e);
+                            }
+                        });
+                        
+                        // Listen for messages from zen iframe and forward to React Native
+                        window.addEventListener('message', function(event) {
+                            // Only forward messages from the zen iframe
+                            if (event.source === iframe.contentWindow) {
+                                try {
+                                    window.ReactNativeWebView.postMessage(JSON.stringify(event.data));
+                                } catch (e) {
+                                    console.error('Error forwarding message to React Native:', e);
+                                }
+                            }
+                        });
+                        
+                        // Notify React Native that player is ready
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                            type: 'player_ready',
+                            accessId: accessId
+                        }));
+                    }
+                };
+                
+                // Handle iframe error
+                iframe.onerror = function() {
+                    loading.style.display = 'none';
+                    error.style.display = 'block';
+                    error.innerHTML = '<h3>Failed to Load Player</h3><p>There was an error loading the zen player.</p>';
+                };
+                
+                // Timeout fallback
+                setTimeout(function() {
+                    if (loading.style.display !== 'none') {
+                        loading.style.display = 'none';
+                        error.style.display = 'block';
+                        error.innerHTML = '<h3>Loading Timeout</h3><p>The player took too long to load.</p>';
+                    }
+                }, 15000); // 15 second timeout
+                
+            } catch (e) {
+                console.error('Error setting up zen player:', e);
+                loading.style.display = 'none';
+                error.style.display = 'block';
+                error.innerHTML = '<h3>Setup Error</h3><p>Failed to initialize the player.</p>';
+            }
+        }
+        
+        // Handle orientation changes for mobile
+        window.addEventListener('orientationchange', function() {
+            setTimeout(function() {
+                if (iframe.style.display !== 'none') {
+                    // Force iframe refresh on orientation change
+                    iframe.style.height = window.innerHeight + 'px';
+                }
+            }, 100);
+        });
+        
+        // Prevent right-click context menu
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+        });
+        
+        // Console log for debugging
+        console.log('Zen Wrapper loaded with params:', {
+            accessId: accessId,
+            audioParam: audioParam,
+            autoPlay: autoPlay
+        });
+    </script>
+</body>
+</html>

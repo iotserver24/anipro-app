@@ -150,3 +150,31 @@ The video player handles zen embedded players specially:
 - Comprehensive error handling and logging
 - User experience prioritization with smooth fallbacks
 - Type safety with TypeScript interfaces
+
+## Premium Fix Implementation
+
+**IMPLEMENTED**: HTML Wrapper solution has been applied to fix the premium detection issue:
+
+### Changes Made:
+1. **Modified zen server URL generation** (`app/anime/watch/[episodeId].tsx`):
+   - Changed from direct zen player URL to wrapper URL
+   - Now uses: `https://anisurge.me/zen-wrapper.html?accessId=${accessId}&a=${audioParam}&autoPlay=true`
+
+2. **Created HTML wrapper page** (`zen-wrapper.html`):
+   - Provides proper domain context for premium detection
+   - Maintains message passing between React Native and zen iframe
+   - Includes error handling and loading states
+   - Optimized for mobile viewing
+
+### How It Works:
+1. App requests zen episode data and gets `access_id`
+2. Instead of loading zen player directly, loads wrapper page from anisurge.me domain
+3. Wrapper page embeds zen iframe with proper domain context
+4. Zen server can now detect premium status from the anisurge.me domain
+5. All controls and communication still work through message passing
+
+### Next Steps:
+1. Upload `zen-wrapper.html` to `https://anisurge.me/zen-wrapper.html`
+2. Test premium functionality with ads removal
+3. Monitor for any issues with message passing or controls
+4. Consider adding premium status indicator in the app UI

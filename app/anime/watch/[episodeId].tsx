@@ -1294,13 +1294,17 @@ export default function WatchEpisode() {
           
           // Use the embedded player URL with parameters
           const audioParam = categoryAsSubOrDub === 'dub' ? '1' : '0'; // a=1 for dub, a=0 for sub
-          const embeddedPlayerUrl = `https://zencloud.cc/e/${accessId}?a=${audioParam}&autoPlay=true`;
-          console.log('Zen server embedded player URL:', embeddedPlayerUrl);
           
-          // Set the video sources using the embedded player URL
+          // Instead of loading zen player directly, use a wrapper page that provides domain context
+          // This fixes the premium detection issue as zen server can detect the proper domain
+          const wrapperUrl = `https://anisurge.me/zen-wrapper.html?accessId=${accessId}&a=${audioParam}&autoPlay=true`;
+          
+          console.log('Zen server wrapper URL:', wrapperUrl);
+          
+          // Set the video sources using the wrapper URL
           sources = {
             sources: [{
-              url: embeddedPlayerUrl,
+              url: wrapperUrl,
               quality: 'HD',
               isM3U8: false, // This is an embedded player, not direct stream
               isZenEmbedded: true // Flag to indicate this is Zen's embedded player
