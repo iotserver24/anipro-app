@@ -2239,7 +2239,20 @@ export default function WatchEpisode() {
   }, [newServerAnimeId, episodeNumber]);
 
   // Update the handleDownload function
-  const handleDownload = useCallback(() => {
+  const handleDownload = useCallback(async () => {
+    // For Zen server - open directly in browser
+    if (selectedServer === 'zen' && downloadUrl) {
+      try {
+        await Linking.openURL(downloadUrl);
+        return;
+      } catch (error) {
+        console.error('Failed to open download URL in browser:', error);
+        // Fall back to WebView if browser fails
+        setShowDownloadPopup(true);
+        return;
+      }
+    }
+    
     // For HardSub server with multiple download options
     if (selectedServer === 'hardSub' && downloadOptions && downloadOptions.length > 0) {
       setShowDownloadOptions(true);
@@ -2258,7 +2271,7 @@ export default function WatchEpisode() {
       setDownloadUrl(videoData.download);
       setShowDownloadPopup(true);
     }
-  }, [videoData, newServerDownloadUrl, selectedServer, downloadOptions]);
+  }, [videoData, newServerDownloadUrl, selectedServer, downloadOptions, downloadUrl]);
 
   // Handle comment button press
   const handleShowComments = useCallback(() => {
@@ -2456,7 +2469,7 @@ export default function WatchEpisode() {
                 onNext={handleNextEpisode}
                 onDownload={handleDownload}
                 onComments={handleShowComments}
-                downloadUrl={newServerDownloadUrl}
+                downloadUrl={downloadUrl || newServerDownloadUrl}
               />
               
               {/* Add Server Selector above anime info */}
