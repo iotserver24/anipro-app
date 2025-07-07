@@ -91,7 +91,7 @@
     "react-native-video-controls": "^2.8.1",
     "react-native-volume-manager": "^2.0.8",
     "react-native-web": "~0.19.13",
-    "react-native-webview": "13.12.5",
+    "react-native-webview": "^13.12.5",
     "stream-chat": "^8.57.6",
     "stream-chat-react-native": "^6.7.0",
     "subtitle": "^4.2.2-alpha.0",

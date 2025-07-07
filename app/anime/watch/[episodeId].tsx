@@ -794,7 +794,7 @@ export default function WatchEpisode() {
   const [videoError, setVideoError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   // Change default server to hardSub
-  const [selectedServer, setSelectedServer] = useState<'softSub' | 'hardSub'>('hardSub');
+  const [selectedServer, setSelectedServer] = useState<'softSub' | 'hardSub' | 'zen'>('hardSub');
   const [isChangingServer, setIsChangingServer] = useState(false);
   const [progress, setProgress] = useState<Progress>({
     currentTime: 0,
@@ -1234,16 +1234,95 @@ export default function WatchEpisode() {
           console.error('Error fetching hardSub sources:', error);
           throw new Error(`Failed to load HardSub server: ${error instanceof Error ? error.message : String(error)}`);
         }
+      } else if (selectedServer === 'zen') {
+        // Zen server implementation
+        try {
+          // First we need the anime's AniList ID
+          let anilistId = null;
+          
+          // Check if we already have anime info with the AniList ID
+          if (animeInfo) {
+            // Try to get AniList ID - may be in different properties
+            if (animeInfo.alID) anilistId = animeInfo.alID;
+            else if (animeInfo.al_id) anilistId = animeInfo.al_id;
+            else if (animeInfo.anilist_id) anilistId = animeInfo.anilist_id;
+            else if (animeInfo.mappings && animeInfo.mappings.al) anilistId = animeInfo.mappings.al;
+          }
+          
+          // If we don't have the AniList ID yet, fetch the anime details
+          if (!anilistId && animeId) {
+            console.log("Fetching anime details to get AniList ID for Zen server");
+            const animeDetails = await animeAPI.getAnimeDetails(animeId as string);
+            
+            // Try to get AniList ID from different possible property names
+            if (animeDetails.alID) anilistId = animeDetails.alID;
+            else if (animeDetails.al_id) anilistId = animeDetails.al_id;
+            else if (animeDetails.anilist_id) anilistId = animeDetails.anilist_id;
+            else if (animeDetails.mappings && animeDetails.mappings.al) anilistId = animeDetails.mappings.al;
+          }
+          
+          if (!anilistId) {
+            throw new Error("AniList ID not available for this anime on Zen server");
+          }
+          
+          console.log(`Using AniList ID: ${anilistId} for Zen server`);
+          
+          // Get the episode data from zencloud.cc
+          const episodeResponse = await fetch(
+            `https://zencloud.cc/videos/raw?anilist_id=${anilistId}&episode=${episodeNumber}`
+          );
+          
+          if (!episodeResponse.ok) {
+            throw new Error(`Failed to fetch episode data: ${episodeResponse.status}`);
+          }
+          
+          const episodeData = await episodeResponse.json();
+          console.log("Zen episode data:", episodeData);
+          
+          if (!episodeData.data || episodeData.data.length === 0) {
+            throw new Error(`Episode ${episodeNumber} not found on Zen server`);
+          }
+          
+          const episodeInfo = episodeData.data[0];
+          const accessId = episodeInfo.access_id;
+          
+          if (!accessId) {
+            throw new Error("No access ID found for this episode on Zen server");
+          }
+          
+          console.log(`Found access ID: ${accessId}`);
+          
+          // Use the embedded player URL instead of fetching direct links
+          const embeddedPlayerUrl = `https://zencloud.cc/e/${accessId}`;
+          console.log('Zen server embedded player URL:', embeddedPlayerUrl);
+          
+          // Set the video sources using the embedded player URL
+          sources = {
+            sources: [{
+              url: embeddedPlayerUrl,
+              quality: 'HD',
+              isM3U8: false, // This is an embedded player, not direct stream
+              isZenEmbedded: true // Flag to indicate this is Zen's embedded player
+            }],
+            subtitles: [] // Subtitles are handled by the embedded player
+          };
+          
+          console.log(`Using Zen server embedded player with access ID: ${accessId}`);
+        } catch (error) {
+          console.error('Error fetching Zen sources:', error);
+          throw new Error(`Failed to load Zen server: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
       
       if (!sources || !sources.sources || sources.sources.length === 0) {
-        setVideoError(`No streaming sources available from ${selectedServer === 'softSub' ? 'SoftSub' : 'HardSub'} server. Please try another server.`);
+        const serverName = selectedServer === 'softSub' ? 'SoftSub' : selectedServer === 'hardSub' ? 'HardSub' : 'Zen';
+        setVideoError(`No streaming sources available from ${serverName} server. Please try another server.`);
         setLoading(false);
         return; // Continue loading the page but with video error
       }
 
-      // Process subtitles from the API response
-      if (sources.subtitles && Array.isArray(sources.subtitles)) {
+      // Process subtitles from the API response (but skip if already processed by Zen server)
+      if (sources.subtitles && Array.isArray(sources.subtitles) && selectedServer !== 'zen') {
         const processedSubtitles = sources.subtitles.map(sub => ({
           title: sub.kind || 'Unknown',
           language: sub.kind || 'Unknown',
@@ -1251,6 +1330,9 @@ export default function WatchEpisode() {
         }));
         console.log('Setting subtitles:', processedSubtitles);
         setSubtitles(processedSubtitles);
+      } else if (selectedServer === 'zen' && sources.subtitles && Array.isArray(sources.subtitles)) {
+        // For Zen server, subtitles are already properly parsed - just set them directly
+        setSubtitles(sources.subtitles);
       }
 
       // Transform the sources data to match VideoResponse type
@@ -1310,7 +1392,8 @@ export default function WatchEpisode() {
 
     } catch (error) {
       logger.error('Error fetching episode:', error as string);
-      setVideoError(`Failed to load episode from ${selectedServer === 'softSub' ? 'SoftSub' : 'HardSub'} server. Please try another server or try again later.`);
+      const serverName = selectedServer === 'softSub' ? 'SoftSub' : selectedServer === 'hardSub' ? 'HardSub' : 'Zen';
+      setVideoError(`Failed to load episode from ${serverName} server. Please try another server or try again later.`);
     } finally {
       setLoading(false);
       setIsChangingServer(false);
@@ -1403,7 +1486,7 @@ export default function WatchEpisode() {
   };
 
   // Add this function near other event handlers
-  const handleServerChange = (newServer: 'softSub' | 'hardSub') => {
+  const handleServerChange = (newServer: 'softSub' | 'hardSub' | 'zen') => {
     if (newServer === selectedServer) return;
     
     // Save current position before switching
@@ -1683,10 +1766,11 @@ export default function WatchEpisode() {
   const videoPlayerProps = useMemo(() => ({
     source: { 
       uri: streamingUrl,
-      headers: videoHeaders
+      headers: videoHeaders,
+      isZenEmbedded: selectedServer === 'zen' // Flag for Zen embedded player
     },
     title: episodeTitle as string,
-    initialPosition: resumePosition,
+    initialPosition: lastServerPosition > 0 ? lastServerPosition : resumePosition, // Use lastServerPosition if available, otherwise resumePosition
     rate: playbackSpeed,
     onPlaybackRateChange: handlePlaybackSpeedChange,
     onProgress: (currentTime: number, videoDuration: number) => {
@@ -1745,6 +1829,7 @@ export default function WatchEpisode() {
     videoHeaders,
     episodeTitle,
     resumePosition,
+    lastServerPosition, // Add lastServerPosition to dependencies
     playbackSpeed,
     isFullscreen,
     playerDimensions,
@@ -1761,7 +1846,8 @@ export default function WatchEpisode() {
     selectedQuality,
     subtitles,
     handleSkipIntro,
-    handleSkipOutro
+    handleSkipOutro,
+    selectedServer // Add selectedServer to dependencies
   ]);
 
   // Add control visibility timeout
@@ -2246,6 +2332,26 @@ export default function WatchEpisode() {
               HardSub
             </Text>
             {isChangingServer && selectedServer === 'hardSub' && (
+              <ActivityIndicator size="small" color="#fff" style={styles.serverButtonLoader} />
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity
+            style={[
+              styles.serverButton,
+              selectedServer === 'zen' && styles.selectedServerButton,
+              isChangingServer && selectedServer === 'zen' && styles.loadingServerButton
+            ]}
+            onPress={() => handleServerChange('zen')}
+            disabled={isChangingServer || selectedServer === 'zen'}
+          >
+            <Text style={[
+              styles.serverButtonText,
+              selectedServer === 'zen' && styles.selectedServerButtonText
+            ]}>
+              Zen
+            </Text>
+            {isChangingServer && selectedServer === 'zen' && (
               <ActivityIndicator size="small" color="#fff" style={styles.serverButtonLoader} />
             )}
           </TouchableOpacity>

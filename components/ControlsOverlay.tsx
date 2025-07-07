@@ -43,7 +43,9 @@ type Quality = {
 // Add Subtitle type
 type Subtitle = {
   url: string;
-  lang: string;
+  lang?: string;
+  language?: string;
+  title?: string;
 };
 
 const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
@@ -88,16 +90,19 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
     };
 
     filteredSubtitles.forEach((sub, index) => {
+      // Handle both 'lang' and 'language' properties, with fallback for undefined
+      const language = sub.lang || sub.language || 'Unknown';
+      
       const subtitleWithId = {
         ...sub,
-        id: `${sub.lang}_${index}`
+        id: `${language}_${index}`
       };
 
-      if (sub.lang.startsWith('English')) {
+      if (language.startsWith('English')) {
         groups['English'].push(subtitleWithId);
-      } else if (['Japanese', 'Chinese', 'Korean', 'Thai', 'Vietnamese', 'Indonesian'].includes(sub.lang)) {
+      } else if (['Japanese', 'Chinese', 'Korean', 'Thai', 'Vietnamese', 'Indonesian'].includes(language)) {
         groups['Asian'].push(subtitleWithId);
-      } else if (['French', 'German', 'Italian', 'Spanish', 'Portuguese'].includes(sub.lang)) {
+      } else if (['French', 'German', 'Italian', 'Spanish', 'Portuguese'].includes(language)) {
         groups['European'].push(subtitleWithId);
       } else {
         groups['Other'].push(subtitleWithId);
@@ -110,7 +115,7 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
   // Memoized selectedSubtitleId
   const [selectedSubtitleId, setSelectedSubtitleId] = useState<string | null>(() => {
     if (selectedSubtitle && filteredSubtitles.length > 0) {
-      const firstMatch = filteredSubtitles.findIndex(sub => sub.lang === selectedSubtitle);
+      const firstMatch = filteredSubtitles.findIndex(sub => (sub.lang || sub.language || 'Unknown') === selectedSubtitle);
       return firstMatch >= 0 ? `${selectedSubtitle}_${firstMatch}` : null;
     }
     return null;

@@ -28,11 +28,13 @@ import Video, { ResizeMode, type VideoRef, TextTrackType, SelectedTrackType, ISO
 import FullScreenChz from "react-native-fullscreen-chz";
 import ControlsOverlay from './ControlsOverlay';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { WebView } from 'react-native-webview';
 
 interface VideoPlayerProps {
   source: {
     uri: string;
     headers?: { [key: string]: string };
+    isZenEmbedded?: boolean; // Flag to indicate Zen embedded player
   };
   style?: any;
   initialPosition?: number;
@@ -160,6 +162,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Refs
   const videoRef = useRef<VideoRef>(null);
+  const webViewRef = useRef<any>(null); // WebView ref for Zen player
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastTapRef = useRef<number>(0);
   const lastTapXRef = useRef<number>(0);
@@ -318,32 +321,56 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Optimize seek handler
   const handleSeek = useCallback(async (value: number) => {
-    if (!videoRef.current) return;
+    if (source.isZenEmbedded && webViewRef.current) {
+      // Handle seek for WebView (Zen embedded player) using correct format
+      try {
+        console.log('Seeking WebView to:', value);
+        webViewRef.current.postMessage(JSON.stringify({
+          command: 'seek',
+          value: value
+        }));
+        setCurrentTime(value);
+      } catch (error) {
+        console.error("Error seeking WebView:", error);
+      }
+    } else if (!source.isZenEmbedded && videoRef.current) {
+      // Handle seek for native Video component
+      try {
+        isSeekingRef.current = true;
 
-    try {
-      isSeekingRef.current = true;
+        // Update UI immediately
+        setCurrentTime(value);
 
-      // Update UI immediately
-      setCurrentTime(value);
+        // Perform the seek operation
+        videoRef.current.seek(value);
 
-      // Perform the seek operation
-      videoRef.current.seek(value);
-
-      // Release the seeking lock more quickly
-      setTimeout(() => {
+        // Release the seeking lock more quickly
+        setTimeout(() => {
+          isSeekingRef.current = false;
+        }, 10); // Much shorter delay
+      } catch (error) {
+        console.error("Error seeking:", error);
         isSeekingRef.current = false;
-      }, 10); // Much shorter delay
-    } catch (error) {
-      console.error("Error seeking:", error);
-      isSeekingRef.current = false;
+      }
     }
-  }, []);
+  }, [source.isZenEmbedded]);
 
   // Create an optimized play/pause toggle function
   const togglePlayPause = useCallback(() => {
-    // IMPORTANT: Just update the state directly - no async operations!
-    setIsPlaying(prev => !prev);
-  }, []);
+    if (source.isZenEmbedded && webViewRef.current) {
+      // Handle play/pause for WebView (Zen embedded player) using correct format
+      const command = isPlaying ? 'pause' : 'play';
+      console.log('Sending command to WebView:', command);
+      webViewRef.current.postMessage(JSON.stringify({
+        command: command
+      }));
+      setIsPlaying(!isPlaying);
+    } else {
+      // Handle play/pause for native Video component
+      // IMPORTANT: Just update the state directly - no async operations!
+      setIsPlaying(prev => !prev);
+    }
+  }, [isPlaying, source.isZenEmbedded]);
 
   // Add animated values for smooth transitions
   const containerWidthAnim = useRef(new Animated.Value(Dimensions.get("window").width)).current;
@@ -836,44 +863,227 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     >
       <Pressable
         style={[styles.videoWrapper]}
-        onPress={handleScreenTap}
+        onPress={source.isZenEmbedded ? undefined : handleScreenTap} // Disable tap for WebView
         hitSlop={{ top: 0, bottom: 0, left: 0, right: 0 }}
         android_ripple={{ color: 'transparent' }}
+        disabled={source.isZenEmbedded} // Disable pressable for WebView
       >
-        <Video
-          ref={videoRef}
-          source={source.uri ? source : undefined}
-          style={videoStyle}
-          resizeMode={ResizeMode.CONTAIN}
-          paused={!isPlaying}
-          onProgress={handleProgress}
-          onLoad={handleLoad}
-          onEnd={handleEnd}
-          onBuffer={handleBuffer}
-          rate={playbackSpeed}
-          repeat={false}
-          muted={false}
-          controls={false}
-          progressUpdateInterval={250}
-          maxBitRate={2000000}
-          bufferConfig={{
-            minBufferMs: 15000,
-            maxBufferMs: 30000,
-            bufferForPlaybackMs: 2500,
-            bufferForPlaybackAfterRebufferMs: 5000
-          }}
-          textTracks={selectedSubtitleTrack ? [selectedSubtitleTrack] : undefined}
-          selectedTextTrack={selectedSubtitleTrack ? {
-            type: SelectedTrackType.LANGUAGE,
-            value: selectedSubtitleTrack.language
-          } : undefined}
-          subtitleStyle={{
-            fontSize: subtitleSettings.fontSize,
-            paddingBottom: subtitleSettings.paddingBottom,
-            opacity: 0.7,
-          }}
-        />
-        {isBuffering && (
+        {source.isZenEmbedded ? (
+          <WebView
+            ref={webViewRef}
+            source={{ 
+              uri: (() => {
+                const finalUrl = source.uri + (initialPosition > 0 ? `?start_at=${Math.floor(initialPosition)}` : '');
+                console.log('WebView URL with start_at:', finalUrl, 'initialPosition:', initialPosition);
+                return finalUrl;
+              })()
+            }}
+            style={videoStyle}
+            allowsFullscreenVideo={true}
+            mediaPlaybackRequiresUserAction={false}
+            allowsInlineMediaPlayback={true}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            startInLoadingState={true}
+            renderLoading={() => (
+              <View style={styles.bufferingContainer}>
+                <ActivityIndicator size="large" color="#f4511e" />
+              </View>
+            )}
+            onMessage={(event) => {
+              try {
+                const data = JSON.parse(event.nativeEvent.data);
+                console.log('WebView message received:', data);
+                
+                if (data.type === 'progress') {
+                  handleProgress({
+                    currentTime: data.currentTime,
+                    playableDuration: data.duration,
+                    seekableDuration: data.duration
+                  });
+                } else if (data.type === 'ended') {
+                  handleEnd();
+                } else if (data.type === 'load') {
+                  handleLoad({ duration: data.duration, currentTime: data.currentTime });
+                } else if (data.playerStatus) {
+                  // Handle status responses
+                  console.log('Player status:', data.playerStatus);
+                  if (data.playerStatus === 'Playing') {
+                    setIsPlaying(true);
+                  } else if (data.playerStatus === 'Paused') {
+                    setIsPlaying(false);
+                  } else if (data.playerStatus === 'Ended') {
+                    setIsPlaying(false);
+                    handleEnd();
+                  }
+                } else if (data.currentTime !== undefined && data.duration !== undefined) {
+                  // Handle time responses
+                  console.log('Time update:', data.currentTime, data.duration);
+                  handleProgress({
+                    currentTime: data.currentTime,
+                    playableDuration: data.duration,
+                    seekableDuration: data.duration
+                  });
+                }
+              } catch (error) {
+                console.warn('Error parsing WebView message:', error);
+              }
+            }}
+            injectedJavaScript={`
+              // Wait for ArtPlayer to be ready
+              function waitForPlayer() {
+                if (window.art && typeof window.art.currentTime !== 'undefined') {
+                  setupPlayerListeners();
+                } else {
+                  setTimeout(waitForPlayer, 500);
+                }
+              }
+              
+              function setupPlayerListeners() {
+                console.log('Setting up ArtPlayer listeners');
+                
+                // Send initial load event
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                  type: 'load',
+                  duration: window.art.duration || 0,
+                  currentTime: window.art.currentTime || 0
+                }));
+                
+                // Set up regular progress updates
+                const progressInterval = setInterval(() => {
+                  if (window.art && !window.art.ended) {
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                      type: 'progress',
+                      currentTime: window.art.currentTime || 0,
+                      duration: window.art.duration || 0
+                    }));
+                  }
+                }, 1000);
+                
+                // Listen for player events
+                window.art.on('video:ended', () => {
+                  console.log('Video ended');
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'ended'
+                  }));
+                });
+                
+                window.art.on('video:play', () => {
+                  console.log('Video playing');
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'playing'
+                  }));
+                });
+                
+                window.art.on('video:pause', () => {
+                  console.log('Video paused');
+                  window.ReactNativeWebView.postMessage(JSON.stringify({
+                    type: 'paused'
+                  }));
+                });
+                
+                // Handle messages from React Native using the exact format provided by Zen server owner
+                window.addEventListener('message', (event) => {
+                  console.log('Received command:', event.data);
+                  const { command, value } = event.data;
+                  
+                  if (!window.art) return;
+                  
+                  switch (command) {
+                    case 'seek':
+                      window.art.seek = value;
+                      break;
+                    case 'play':
+                      window.art.play();
+                      break;
+                    case 'pause':
+                      window.art.pause();
+                      break;
+                    case 'mute':
+                      window.art.muted = true;
+                      break;
+                    case 'unmute':
+                      window.art.muted = false;
+                      break;
+                    case 'volume':
+                      window.art.volume = value;
+                      break;
+                    case 'getStatus':
+                      let status = 'Paused';
+                      if (window.art.ended) {
+                        status = 'Ended';
+                      } else if (!window.art.paused) {
+                        status = 'Playing';
+                      }
+                      
+                      window.ReactNativeWebView.postMessage(JSON.stringify({
+                        playerStatus: status
+                      }));
+                      break;
+                    case 'getTime':
+                      window.ReactNativeWebView.postMessage(JSON.stringify({
+                        currentTime: window.art.currentTime,
+                        duration: window.art.duration
+                      }));
+                      break;
+                    default:
+                      console.warn('Unknown command:', command);
+                  }
+                });
+                
+                // Request status and time periodically for progress tracking
+                const statusInterval = setInterval(() => {
+                  if (window.art) {
+                    // Send time update for progress tracking
+                    window.ReactNativeWebView.postMessage(JSON.stringify({
+                      currentTime: window.art.currentTime || 0,
+                      duration: window.art.duration || 0
+                    }));
+                  }
+                }, 2000);
+              }
+              
+              // Start the setup
+              waitForPlayer();
+              true;
+            `}
+          />
+        ) : (
+          <Video
+            ref={videoRef}
+            source={source.uri ? source : undefined}
+            style={videoStyle}
+            resizeMode={ResizeMode.CONTAIN}
+            paused={!isPlaying}
+            onProgress={handleProgress}
+            onLoad={handleLoad}
+            onEnd={handleEnd}
+            onBuffer={handleBuffer}
+            rate={playbackSpeed}
+            repeat={false}
+            muted={false}
+            controls={false}
+            progressUpdateInterval={250}
+            maxBitRate={2000000}
+            bufferConfig={{
+              minBufferMs: 15000,
+              maxBufferMs: 30000,
+              bufferForPlaybackMs: 2500,
+              bufferForPlaybackAfterRebufferMs: 5000
+            }}
+            textTracks={selectedSubtitleTrack ? [selectedSubtitleTrack] : undefined}
+            selectedTextTrack={selectedSubtitleTrack ? {
+              type: SelectedTrackType.LANGUAGE,
+              value: selectedSubtitleTrack.language
+            } : undefined}
+            subtitleStyle={{
+              fontSize: subtitleSettings.fontSize,
+              paddingBottom: subtitleSettings.paddingBottom,
+              opacity: 0.7,
+            }}
+          />
+        )}
+        {isBuffering && !source.isZenEmbedded && (
           <View style={styles.bufferingContainer}>
             <ActivityIndicator size="large" color="#f4511e" />
           </View>
@@ -930,44 +1140,48 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       )}
 
       {/* Move SkipButtons outside of Pressable but inside the main container */}
-      <SkipButtons
-        position={currentTime}
-        intro={intro}
-        outro={outro}
-        onSkipIntro={handleSkipIntro}
-        onSkipOutro={handleSkipOutro}
-      />
-        
-      {/* Always render controls but manage visibility through opacity */}
-      <View 
-        style={[
-          styles.controlsContainer,
-          { opacity: showControls ? 1 : 0 },
-          { pointerEvents: showControls ? 'auto' : 'none' }
-        ]}
-      >
-        <ControlsOverlay
-          showControls={showControls}
-          isPlaying={isPlaying}
-          isFullscreen={isFullscreen}
-          currentTime={currentTime}
-          duration={duration}
-          title={title || ""}
-          onPlayPress={togglePlayPause}
-          onFullscreenPress={toggleFullscreen}
-          onSeek={handleSeek}
-          playbackSpeed={playbackSpeed}
-          onPlaybackSpeedChange={handlePlaybackSpeedChange}
-          qualities={availableQualities}
-          selectedQuality={currentQuality}
-          onQualityChange={handleQualityChange}
-          isQualityChanging={isQualityChanging}
-          subtitles={subtitles}
-          selectedSubtitle={selectedSubtitle}
-          onSubtitleChange={handleSubtitleChange}
-          onSubtitleSettingsPress={() => setShowSubtitleSettings(true)}
+      {!source.isZenEmbedded && (
+        <SkipButtons
+          position={currentTime}
+          intro={intro}
+          outro={outro}
+          onSkipIntro={handleSkipIntro}
+          onSkipOutro={handleSkipOutro}
         />
-      </View>
+      )}
+        
+      {/* Only show custom controls for native video player, not for Zen embedded player */}
+      {!source.isZenEmbedded && (
+        <View 
+          style={[
+            styles.controlsContainer,
+            { opacity: showControls ? 1 : 0 },
+            { pointerEvents: showControls ? 'auto' : 'none' }
+          ]}
+        >
+          <ControlsOverlay
+            showControls={showControls}
+            isPlaying={isPlaying}
+            isFullscreen={isFullscreen}
+            currentTime={currentTime}
+            duration={duration}
+            title={title || ""}
+            onPlayPress={togglePlayPause}
+            onFullscreenPress={toggleFullscreen}
+            onSeek={handleSeek}
+            playbackSpeed={playbackSpeed}
+            onPlaybackSpeedChange={handlePlaybackSpeedChange}
+            qualities={availableQualities}
+            selectedQuality={currentQuality}
+            onQualityChange={handleQualityChange}
+            isQualityChanging={isQualityChanging}
+            subtitles={subtitles}
+            selectedSubtitle={selectedSubtitle}
+            onSubtitleChange={handleSubtitleChange}
+            onSubtitleSettingsPress={() => setShowSubtitleSettings(true)}
+          />
+        </View>
+      )}
 
       {tapFeedbackVisible && (
         <Animated.View 
