@@ -894,6 +894,19 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, [onFullscreenChange]);
 
+  // Memoize the Zen WebView URL to prevent unnecessary reloads
+  const zenWebViewUrl = useMemo(() => {
+    if (!source.isZenEmbedded) return null;
+    if (!source.uri) return '';
+    let finalUrl = source.uri;
+    if (initialPosition > 0) {
+      const separator = source.uri.includes('?') ? '&' : '?';
+      finalUrl = source.uri + separator + `start_at=${Math.floor(initialPosition)}`;
+    }
+    console.log('WebView URL with start_at:', finalUrl, 'initialPosition:', initialPosition);
+    return finalUrl;
+  }, [source.isZenEmbedded, source.uri, initialPosition]);
+
   return (
     <Animated.View
       style={[
@@ -918,19 +931,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         {source.isZenEmbedded ? (
           <WebView
             ref={webViewRef}
-            source={{ 
-              uri: (() => {
-                if (!source.uri) return '';
-                let finalUrl = source.uri;
-                // If there are already parameters in the URL, add start_at with &, otherwise use ?
-                if (initialPosition > 0) {
-                  const separator = source.uri.includes('?') ? '&' : '?';
-                  finalUrl = source.uri + separator + `start_at=${Math.floor(initialPosition)}`;
-                }
-                console.log('WebView URL with start_at:', finalUrl, 'initialPosition:', initialPosition);
-                return finalUrl;
-              })()
-            }}
+            source={{ uri: zenWebViewUrl || '' }}
             style={videoStyle}
             allowsFullscreenVideo={true}
             mediaPlaybackRequiresUserAction={false}
