@@ -112,18 +112,36 @@ class AnimeAPI {
 
   async getRecentAnime(): Promise<AnimeResult[]> {
     const response = await fetch(`${this.baseUrl}/recent-episodes`);
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('[getRecentAnime] Non-JSON response:', text.slice(0, 200));
+      return [];
+    }
     const data = await response.json();
     return Array.isArray(data) ? data : data.results || [];
   }
 
   async getTrending(): Promise<AnimeResult[]> {
     const response = await fetch(`${this.baseUrl}/top-airing`);
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('[getTrending] Non-JSON response:', text.slice(0, 200));
+      return [];
+    }
     const data = await response.json();
     return Array.isArray(data) ? data : data.results || [];
   }
 
   async getLatestCompleted(): Promise<AnimeResult[]> {
     const response = await fetch(`${this.baseUrl}${ENDPOINTS.LATEST_COMPLETED}`);
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('[getLatestCompleted] Non-JSON response:', text.slice(0, 200));
+      return [];
+    }
     const data = await response.json();
     return Array.isArray(data) ? data : data.results || [];
   }
@@ -148,12 +166,24 @@ class AnimeAPI {
 
   async getPopularAnime(): Promise<AnimeResult[]> {
     const response = await fetch(`${this.baseUrl}${ENDPOINTS.POPULAR}`);
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('[getPopularAnime] Non-JSON response:', text.slice(0, 200));
+      return [];
+    }
     const data = await response.json();
     return Array.isArray(data) ? data : data.results || [];
   }
 
   async getFavoriteAnime(): Promise<AnimeResult[]> {
     const response = await fetch(`${this.baseUrl}${ENDPOINTS.FAVORITE}`);
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('[getFavoriteAnime] Non-JSON response:', text.slice(0, 200));
+      return [];
+    }
     const data = await response.json();
     return Array.isArray(data) ? data : data.results || [];
   }

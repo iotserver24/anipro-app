@@ -494,28 +494,20 @@ export default function ImportExportScreen() {
                 progress: { ...prev.progress, current: 1 }
               }));
               const fileName = `anisurge-export-${getExportDateString()}.${fileExt}`;
-              try {
-                let folderUri = storageFolder;
-                
-                // If no storage folder is set, prompt user to select one
-                if (!folderUri) {
-                  setLoadingModal(prev => ({
-                    ...prev,
-                    message: 'Please select a folder to save the export...',
-                  }));
-                  
-                  const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
-                  if (!permissions.granted) {
-                    setLoadingModal(prev => ({ ...prev, visible: false }));
-                    Alert.alert('Permission Required', 'Storage permission is required to save the export file.');
-                    return;
-                  }
-                  
-                  folderUri = permissions.directoryUri;
-                  await AsyncStorage.setItem(APP_STORAGE_FOLDER_KEY, folderUri);
-                  setStorageFolder(folderUri);
+              let folderUri = storageFolder;
+              // If no folder or permission lost, prompt user to pick a folder
+              if (!folderUri) {
+                const perm = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+                if (!perm.granted) {
+                  setLoadingModal(prev => ({ ...prev, visible: false }));
+                  Alert.alert('Permission Required', 'Please select a folder to save your export.');
+                  return;
                 }
-
+                folderUri = perm.directoryUri;
+                setStorageFolder(folderUri);
+                await AsyncStorage.setItem(APP_STORAGE_FOLDER_KEY, folderUri);
+              }
+              try {
                 const uri = await FileSystem.StorageAccessFramework.createFileAsync(
                   folderUri,
                   fileName,
@@ -523,24 +515,38 @@ export default function ImportExportScreen() {
                 );
                 await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
                 setLoadingModal(prev => ({ ...prev, visible: false }));
-                
-                if (Platform.OS === 'android') {
-                  ToastAndroid.show('Exported successfully!', ToastAndroid.LONG);
-                } else {
-                  Alert.alert('Success', 'Export completed successfully!');
-                }
+                ToastAndroid.show('Exported successfully!', ToastAndroid.LONG);
                 setLastExportPath(uri);
               } catch (error) {
-                console.error('Export error:', error);
-                await AsyncStorage.removeItem(APP_STORAGE_FOLDER_KEY);
-                setStorageFolder(null);
-                setLoadingModal(prev => ({ ...prev, visible: false }));
-                Alert.alert('Error', 'Failed to export list. Please try selecting a different folder and try again.');
+                // If file creation fails, prompt to re-pick folder and retry
+                const perm = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+                if (!perm.granted) {
+                  setLoadingModal(prev => ({ ...prev, visible: false }));
+                  Alert.alert('Permission Required', 'Please select a folder to save your export.');
+                  return;
+                }
+                folderUri = perm.directoryUri;
+                setStorageFolder(folderUri);
+                await AsyncStorage.setItem(APP_STORAGE_FOLDER_KEY, folderUri);
+                try {
+                  const uri = await FileSystem.StorageAccessFramework.createFileAsync(
+                    folderUri,
+                    fileName,
+                    format === 'xml' ? 'text/xml' : format === 'json' ? 'application/json' : 'text/plain'
+                  );
+                  await FileSystem.writeAsStringAsync(uri, content, { encoding: FileSystem.EncodingType.UTF8 });
+                  setLoadingModal(prev => ({ ...prev, visible: false }));
+                  ToastAndroid.show('Exported successfully!', ToastAndroid.LONG);
+                  setLastExportPath(uri);
+                } catch (error2) {
+                  await AsyncStorage.removeItem(APP_STORAGE_FOLDER_KEY);
+                  setLoadingModal(prev => ({ ...prev, visible: false }));
+                  Alert.alert('Error', 'Failed to export list. Please check your folder permission and try again.');
+                }
               }
             } catch (error) {
-              console.error('General export error:', error);
               setLoadingModal(prev => ({ ...prev, visible: false }));
-              Alert.alert('Error', `Failed to export list: ${error.message || 'Unknown error'}. Please try again.`);
+              Alert.alert('Error', 'Failed to export list. Please try again.');
             }
           }
         },
