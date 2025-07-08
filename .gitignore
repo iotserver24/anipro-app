@@ -82,3 +82,9 @@ yarn-error.*
 
 # Releases folder containing APKs
 /releases/
+
+# Android build artifacts
+android/app/build/
+android/app/src/main/assets/index.android.bundle
+android/app/src/main/res/drawable-*
+android/app/src/main/res/raw/

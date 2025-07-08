@@ -1,0 +1,187 @@
+name: Build and Release APKs
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 2.25.1)'
+        required: false
+        type: string
+      version_code:
+        description: 'Version code (integer)'
+        required: false
+        type: string
+      create_release:
+        description: 'Create GitHub release'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+    
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Create Android directories
+      run: |
+        mkdir -p android/app/src/main/assets
+        mkdir -p android/app/src/main/res
+    
+    - name: Update version if specified
+      if: ${{ github.event.inputs.version && github.event.inputs.version_code }}
+      run: |
+        echo "🔄 Updating app version to ${{ github.event.inputs.version }} (code: ${{ github.event.inputs.version_code }})"
+        node scripts/update-version.js "${{ github.event.inputs.version }}" "${{ github.event.inputs.version_code }}"
+    
+    - name: Check current version
+      id: version
+      run: |
+        # Extract version info from appConfig.ts
+        VERSION=$(grep "VERSION:" constants/appConfig.ts | grep -oE "'[^']+'" | tr -d "'")
+        VERSION_CODE=$(grep "VERSION_CODE:" constants/appConfig.ts | grep -oE "[0-9]+")
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_OUTPUT
+        echo "📱 Current version: $VERSION (code: $VERSION_CODE)"
+    
+    - name: Bundle JavaScript
+      run: |
+        echo "📦 Bundling JavaScript code..."
+        npx react-native bundle --platform android \
+          --dev false \
+          --entry-file app/_layout.tsx \
+          --bundle-output android/app/src/main/assets/index.android.bundle \
+          --assets-dest android/app/src/main/res
+    
+    - name: Make gradlew executable
+      run: chmod +x android/gradlew
+    
+    - name: Build APKs
+      working-directory: android
+      run: |
+        echo "🔨 Building release APKs for all architectures..."
+        ./gradlew clean
+        ./gradlew assembleRelease
+    
+    - name: List generated APKs
+      run: |
+        echo "📱 Generated APKs:"
+        find android/app/build/outputs/apk/release -name "*.apk" | sort
+    
+    - name: Process and rename APKs
+      id: process-apks
+      run: |
+        VERSION="${{ steps.version.outputs.VERSION }}"
+        VERSION_CODE="${{ steps.version.outputs.VERSION_CODE }}"
+        
+        # Create releases directory structure
+        RELEASE_DIR="releases/${VERSION}-${VERSION_CODE}"
+        mkdir -p "$RELEASE_DIR"
+        
+        # APK directory
+        APK_DIR="android/app/build/outputs/apk/release"
+        
+        # APK mapping
+        declare -A apk_map=(
+          ["app-arm64-v8a-release.apk"]="Anisurge-arm64.apk"
+          ["app-x86-release.apk"]="Anisurge-x86.apk"
+          ["app-x86_64-release.apk"]="Anisurge-x86_64.apk"
+          ["app-universal-release.apk"]="Anisurge-universal.apk"
+        )
+        
+        # Process APKs
+        APK_FILES=""
+        for original in "${!apk_map[@]}"; do
+          new_name="${apk_map[$original]}"
+          if [ -f "$APK_DIR/$original" ]; then
+            echo "📦 Processing $original -> $new_name"
+            cp "$APK_DIR/$original" "$RELEASE_DIR/$new_name"
+            APK_FILES="$APK_FILES$RELEASE_DIR/$new_name "
+          else
+            echo "⚠️ File not found: $original"
+          fi
+        done
+        
+        # Create version info file
+        cat > "$RELEASE_DIR/version-info.txt" << EOF
+        Version: $VERSION
+        Version Code: $VERSION_CODE
+        Release Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        Commit: ${{ github.sha }}
+        EOF
+        
+        echo "APK_FILES=$APK_FILES" >> $GITHUB_OUTPUT
+        echo "RELEASE_DIR=$RELEASE_DIR" >> $GITHUB_OUTPUT
+        echo "TAG_NAME=v${VERSION}-${VERSION_CODE}" >> $GITHUB_OUTPUT
+        
+        echo "✅ APK processing complete!"
+        echo "📁 APKs available in: $RELEASE_DIR"
+        ls -la "$RELEASE_DIR"
+    
+    - name: Upload APKs as artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: anisurge-apks-v${{ steps.version.outputs.VERSION }}-${{ steps.version.outputs.VERSION_CODE }}
+        path: ${{ steps.process-apks.outputs.RELEASE_DIR }}
+        retention-days: 30
+    
+    - name: Create GitHub Release
+      if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (github.event.inputs.create_release != 'false') }}
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.process-apks.outputs.TAG_NAME }}
+        name: "AniSurge v${{ steps.version.outputs.VERSION }} (Build ${{ steps.version.outputs.VERSION_CODE }})"
+        body: |
+          ## AniSurge v${{ steps.version.outputs.VERSION }}
+          
+          **Build Code:** ${{ steps.version.outputs.VERSION_CODE }}  
+          **Commit:** ${{ github.sha }}  
+          **Release Date:** ${{ github.event.head_commit.timestamp }}
+          
+          ### APK Downloads
+          
+          Choose the appropriate APK for your device:
+          
+          - **Universal APK** (recommended): Compatible with all Android devices
+          - **ARM64**: For modern Android devices (64-bit ARM processors)
+          - **x86**: For Android x86 devices (rare)
+          - **x86_64**: For Android x86_64 devices (rare)
+          
+          ### Installation
+          
+          1. Download the appropriate APK file
+          2. Enable "Install from unknown sources" in your Android settings
+          3. Install the APK file
+          
+          ### What's New
+          
+          See commit history for detailed changes.
+        files: ${{ steps.process-apks.outputs.RELEASE_DIR }}/*
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
