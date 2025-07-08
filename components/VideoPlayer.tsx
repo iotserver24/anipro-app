@@ -1082,9 +1082,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       break;
                     case 'play':
                       window.art.play();
+                      // Status will be sent via the 'play' event listener above
                       break;
                     case 'pause':
                       window.art.pause();
+                      // Status will be sent via the 'pause' event listener above
                       break;
                     case 'mute':
                       window.art.muted = true;
@@ -1096,6 +1098,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                       window.art.volume = value;
                       break;
                     case 'getStatus':
+                      // This now provides the current status when requested - using Zen server owner's exact format
                       let status = 'Paused';
                       if (window.art.ended) {
                         status = 'Ended';
@@ -1103,15 +1106,32 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                         status = 'Playing';
                       }
                       
-                      window.ReactNativeWebView.postMessage(JSON.stringify({
-                        playerStatus: status
-                      }));
+                      // Use the exact response format from Zen server owner
+                      if (event.source && event.source.postMessage) {
+                        event.source.postMessage({
+                          playerStatus: status
+                        }, event.origin);
+                      } else {
+                        // Fallback to React Native WebView method
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                          playerStatus: status
+                        }));
+                      }
                       break;
                     case 'getTime':
-                      window.ReactNativeWebView.postMessage(JSON.stringify({
-                        currentTime: window.art.currentTime,
-                        duration: window.art.duration
-                      }));
+                      // Use the exact response format from Zen server owner
+                      if (event.source && event.source.postMessage) {
+                        event.source.postMessage({
+                          currentTime: window.art.currentTime,
+                          duration: window.art.duration
+                        }, event.origin);
+                      } else {
+                        // Fallback to React Native WebView method
+                        window.ReactNativeWebView.postMessage(JSON.stringify({
+                          currentTime: window.art.currentTime,
+                          duration: window.art.duration
+                        }));
+                      }
                       break;
                     default:
                       console.warn('Unknown command:', command);

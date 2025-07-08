@@ -1292,15 +1292,23 @@ export default function WatchEpisode() {
           
           console.log(`Found access ID: ${accessId}`);
           
-          // Use the embedded player URL with parameters
+          // Use the wrapper URL with parameters and start_at support
           const audioParam = categoryAsSubOrDub === 'dub' ? '1' : '0'; // a=1 for dub, a=0 for sub
-          const embeddedPlayerUrl = `https://anisurge.me/zen-player/${accessId}?a=${audioParam}&autoPlay=true`;
-          console.log('Zen server wrapper player URL:', embeddedPlayerUrl);
+          let wrapperUrl = `https://anisurge.me/zen-player/${accessId}?a=${audioParam}&autoPlay=true`;
           
-          // Set the video sources using the embedded player URL
+          // Add start_at parameter for resume functionality
+          const resumePos = lastServerPosition > 0 ? lastServerPosition : resumePosition;
+          if (resumePos > 0) {
+            wrapperUrl += `&start_at=${Math.floor(resumePos)}`;
+            console.log(`Adding start_at parameter: ${Math.floor(resumePos)} seconds`);
+          }
+          
+          console.log('Zen server wrapper URL:', wrapperUrl);
+          
+          // Set the video sources using the wrapper URL
           sources = {
             sources: [{
-              url: embeddedPlayerUrl,
+              url: wrapperUrl,
               quality: 'HD',
               isM3U8: false, // This is an embedded player, not direct stream
               isZenEmbedded: true // Flag to indicate this is Zen's embedded player
