@@ -1,0 +1,78 @@
+name: Build and Release APKs
+
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: React Native JS bundle
+        run: |
+          npx react-native bundle --platform android \
+            --dev false \
+            --entry-file app/_layout.tsx \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res
+
+      - name: Run version scripts
+        run: |
+          node scripts/check-version.js
+          node scripts/update-version.js 2.25.0 8
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build all APKs
+        working-directory: android
+        run: ./gradlew assembleRelease
+
+      - name: Prepare renamed APKs
+        run: |
+          mkdir renamed
+          for f in android/app/build/outputs/apk/release/*.apk; do
+            base=$(basename "$f")
+            if [[ "$base" == *universal*.apk ]]; then
+              suffix="universal"
+            elif [[ "$base" == *arm64*.apk ]]; then
+              suffix="arm64-v8a"
+            elif [[ "$base" == *x86*.apk ]]; then
+              suffix="x86"
+            else
+              # any other split
+              suffix="${base%.apk}"
+            fi
+            cp "$f" "renamed/anisurge-$suffix.apk"
+          done
+
+      - name: List renamed APKs
+        run: ls -1 renamed/
+
+      - name: Upload to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.run_number }} - ${{ github.sha }}
+          tag_name: build-${{ github.run_number }}
+          files: renamed/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
