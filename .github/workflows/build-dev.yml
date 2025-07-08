@@ -1,0 +1,106 @@
+name: Build APKs (Development)
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      skip_cache:
+        description: 'Skip npm cache'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build-dev:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: ${{ !inputs.skip_cache && 'npm' || '' }}
+    
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Check current version
+      id: version
+      run: |
+        VERSION=$(grep "VERSION:" constants/appConfig.ts | grep -oE "'[^']+'" | tr -d "'")
+        VERSION_CODE=$(grep "VERSION_CODE:" constants/appConfig.ts | grep -oE "[0-9]+")
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_OUTPUT
+        echo "📱 Building version: $VERSION (code: $VERSION_CODE)"
+    
+    - name: Create Android directories
+      run: |
+        mkdir -p android/app/src/main/assets
+        mkdir -p android/app/src/main/res
+    
+    - name: Bundle JavaScript
+      run: |
+        echo "📦 Bundling JavaScript code..."
+        npx react-native bundle --platform android \
+          --dev false \
+          --entry-file app/_layout.tsx \
+          --bundle-output android/app/src/main/assets/index.android.bundle \
+          --assets-dest android/app/src/main/res
+    
+    - name: Verify bundle creation
+      run: |
+        echo "📋 Checking bundle output..."
+        ls -la android/app/src/main/assets/
+        ls -la android/app/src/main/res/ | head -5
+    
+    - name: Make gradlew executable
+      run: chmod +x android/gradlew
+    
+    - name: Build APKs (Development)
+      working-directory: android
+      run: |
+        echo "🔨 Building release APKs..."
+        ./gradlew clean
+        ./gradlew assembleRelease --no-daemon --stacktrace
+    
+    - name: Verify APK generation
+      run: |
+        echo "📱 Generated APKs:"
+        find android/app/build/outputs/apk/release -name "*.apk" | sort
+        echo ""
+        echo "📊 APK sizes:"
+        find android/app/build/outputs/apk/release -name "*.apk" -exec ls -lh {} \;
+    
+    - name: Upload APKs as artifacts (Development)
+      uses: actions/upload-artifact@v4
+      with:
+        name: anisurge-dev-apks-${{ github.sha }}
+        path: android/app/build/outputs/apk/release/*.apk
+        retention-days: 7
+    
+    - name: Build summary
+      run: |
+        echo "## Build Summary 📊" >> $GITHUB_STEP_SUMMARY
+        echo "**Version:** ${{ steps.version.outputs.VERSION }} (code: ${{ steps.version.outputs.VERSION_CODE }})" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### APK Files Generated" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        find android/app/build/outputs/apk/release -name "*.apk" -exec basename {} \; | sort >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "APKs are available as build artifacts for 7 days." >> $GITHUB_STEP_SUMMARY

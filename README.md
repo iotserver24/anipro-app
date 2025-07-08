@@ -58,6 +58,47 @@ The configuration includes:
 - **External Links**: Website and download URLs
 - **Cache Keys**: Keys used for caching data
 
+## Automated Build System
+
+This project includes GitHub Actions workflows for automated building and releasing of Android APKs.
+
+### Build Workflows
+
+1. **Build and Release APKs** (`.github/workflows/build-and-release.yml`)
+   - Automatically builds APKs on push to main/master branch
+   - Creates GitHub releases with APK files
+   - Supports manual triggering with version updates
+   - Generates APKs for all architectures (ARM64, x86, x86_64, Universal)
+
+2. **Build APKs (Development)** (`.github/workflows/build-dev.yml`)
+   - Builds APKs for pull requests and development testing
+   - No releases created, only artifacts for testing
+   - Faster feedback for development
+
+### Manual Release Process
+
+To create a release manually:
+
+1. Go to Actions tab in GitHub
+2. Select "Build and Release APKs" workflow
+3. Click "Run workflow"
+4. Optionally specify version and version code
+5. APKs will be built and attached to a new GitHub release
+
+### Local Build Commands
+
+For local development, use the existing build scripts:
+
+```bash
+# Quick build (for small changes)
+./build-android.sh
+
+# Build with version update
+./build-android.sh --update-version 2.25.1 9
+```
+
+See [.github/ACTIONS_README.md](.github/ACTIONS_README.md) for detailed workflow documentation.
+
 ## Avatar System
 
 The app includes a user avatar system that allows users to select profile pictures from a predefined set of avatars. 
