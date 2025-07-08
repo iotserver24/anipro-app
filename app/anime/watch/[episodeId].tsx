@@ -1294,8 +1294,8 @@ export default function WatchEpisode() {
           
           // Use the embedded player URL with parameters
           const audioParam = categoryAsSubOrDub === 'dub' ? '1' : '0'; // a=1 for dub, a=0 for sub
-          const embeddedPlayerUrl = `https://zencloud.cc/e/${accessId}?a=${audioParam}&autoPlay=true`;
-          console.log('Zen server embedded player URL:', embeddedPlayerUrl);
+          const embeddedPlayerUrl = `https://anisurge.me/zen-player/${accessId}?a=${audioParam}&autoPlay=true`;
+          console.log('Zen server wrapper player URL:', embeddedPlayerUrl);
           
           // Set the video sources using the embedded player URL
           sources = {
