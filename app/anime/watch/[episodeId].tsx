@@ -1784,17 +1784,22 @@ export default function WatchEpisode() {
     rate: playbackSpeed,
     onPlaybackRateChange: handlePlaybackSpeedChange,
     onProgress: (currentTime: number, videoDuration: number) => {
+      console.log('WatchEpisode: onProgress called with:', currentTime, videoDuration);
+      
       // Update local state
       setCurrentTime(currentTime);
       setDuration(videoDuration);
       
       // Save progress if we have valid data
       if (animeInfo && currentTime > 0 && videoDuration > 0) {
+        console.log('WatchEpisode: Valid data for saving progress');
+        
         const now = Date.now();
         
         // Save progress every 2 seconds or if position changed significantly
         if (now - lastProgressUpdateRef.current >= 2000 || 
             Math.abs(currentTime - lastProgressValueRef.current) > 5) {
+          console.log('WatchEpisode: Time check passed, proceeding to save progress');
           
           // Ensure all fields are valid before saving
           const historyItem = {
@@ -1820,7 +1825,15 @@ export default function WatchEpisode() {
           // Update last progress values
           lastProgressUpdateRef.current = now;
           lastProgressValueRef.current = currentTime;
+        } else {
+          console.log('WatchEpisode: Time check failed - not saving progress yet');
         }
+      } else {
+        console.log('WatchEpisode: Invalid data for saving progress:', {
+          hasAnimeInfo: !!animeInfo,
+          currentTime,
+          videoDuration
+        });
       }
     },
     onEnd: onVideoEnd,

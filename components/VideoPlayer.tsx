@@ -205,6 +205,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const debouncedOnProgress = useMemo(
     () =>
       debounce((position: number, duration: number) => {
+        console.log('VideoPlayer: Calling onProgress with:', position, duration);
         if (onProgress) {
           onProgress(position, duration);
         }
@@ -229,22 +230,30 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       playableDuration: number;
       seekableDuration: number;
     }) => {
-      if (isSeekingRef.current || isQualityChanging) return;
+      console.log('VideoPlayer: handleProgress called with:', data);
+      
+      if (isSeekingRef.current || isQualityChanging) {
+        console.log('VideoPlayer: Skipping progress update - seeking or quality changing');
+        return;
+      }
 
       const newPosition = data.currentTime;
+      const videoDuration = data.seekableDuration || data.playableDuration; // Use duration from received data
       currentPositionRef.current = newPosition; // Store current position
+
+      console.log('VideoPlayer: Processing progress - position:', newPosition, 'duration:', videoDuration);
 
       // Batch state updates
       requestAnimationFrame(() => {
         setCurrentTime(newPosition);
+        setDuration(videoDuration); // Update duration state as well
       });
 
-      // Use debounced callbacks for progress and position updates
-      debouncedOnProgress(newPosition, duration);
+      // Use debounced callbacks for progress and position updates with correct duration
+      debouncedOnProgress(newPosition, videoDuration);
       debouncedOnPositionChange(newPosition);
     },
     [
-      duration,
       debouncedOnProgress,
       debouncedOnPositionChange,
       isQualityChanging,
@@ -987,208 +996,42 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 console.warn('Error parsing WebView message:', error);
               }
             }}
-            injectedJavaScript={`
-              // Wait for ArtPlayer to be ready
-              function waitForPlayer() {
-                if (window.art && typeof window.art.currentTime !== 'undefined') {
-                  setupPlayerListeners();
-                } else {
-                  setTimeout(waitForPlayer, 500);
-                }
-              }
-              
-              function setupPlayerListeners() {
-                console.log('Setting up ArtPlayer listeners');
-                
-                // Send initial load event
-                window.ReactNativeWebView.postMessage(JSON.stringify({
-                  type: 'load',
-                  duration: window.art.duration || 0,
-                  currentTime: window.art.currentTime || 0
-                }));
-                
-                // Set up regular progress updates
-                const progressInterval = setInterval(() => {
-                  if (window.art && !window.art.ended) {
-                    window.ReactNativeWebView.postMessage(JSON.stringify({
-                      type: 'progress',
-                      currentTime: window.art.currentTime || 0,
-                      duration: window.art.duration || 0
-                    }));
-                  }
-                }, 1000);
-                
-                // Listen for player events
-                window.art.on('video:ended', () => {
-                  console.log('Video ended');
-                  window.ReactNativeWebView.postMessage(JSON.stringify({
-                    type: 'ended'
-                  }));
-                });
-                
-                window.art.on('video:play', () => {
-                  console.log('Video playing');
-                  window.ReactNativeWebView.postMessage(JSON.stringify({
-                    type: 'playing'
-                  }));
-                });
-                
-                window.art.on('video:pause', () => {
-                  console.log('Video paused');
-                  window.ReactNativeWebView.postMessage(JSON.stringify({
-                    type: 'paused'
-                  }));
-                });
-                
-                // Listen for fullscreen events from ArtPlayer
-                window.art.on('fullscreen', (isFullscreen) => {
-                  console.log('Fullscreen changed:', isFullscreen);
-                  window.ReactNativeWebView.postMessage(JSON.stringify({
-                    type: 'fullscreen',
-                    isFullscreen: isFullscreen
-                  }));
-                });
-                
-                // Also listen for fullscreenchange events on the document
-                document.addEventListener('fullscreenchange', () => {
-                  const isFullscreen = !!document.fullscreenElement;
-                  console.log('Document fullscreen changed:', isFullscreen);
-                  window.ReactNativeWebView.postMessage(JSON.stringify({
-                    type: 'fullscreen',
-                    isFullscreen: isFullscreen
-                  }));
-                });
-                
-                // Listen for webkitfullscreenchange (for Safari/iOS)
-                document.addEventListener('webkitfullscreenchange', () => {
-                  const isFullscreen = !!document.webkitFullscreenElement;
-                  console.log('Webkit fullscreen changed:', isFullscreen);
-                  window.ReactNativeWebView.postMessage(JSON.stringify({
-                    type: 'fullscreen',
-                    isFullscreen: isFullscreen
-                  }));
-                });
-                
-                // Handle messages from React Native using the exact format provided by Zen server owner
-                window.addEventListener('message', (event) => {
-                  console.log('Received command:', event.data);
-                  const { command, value } = event.data;
-                  
-                  if (!window.art) return;
-                  
-                  switch (command) {
-                    case 'seek':
-                      window.art.seek = value;
-                      break;
-                    case 'play':
-                      window.art.play();
-                      // Status will be sent via the 'play' event listener above
-                      break;
-                    case 'pause':
-                      window.art.pause();
-                      // Status will be sent via the 'pause' event listener above
-                      break;
-                    case 'mute':
-                      window.art.muted = true;
-                      break;
-                    case 'unmute':
-                      window.art.muted = false;
-                      break;
-                    case 'volume':
-                      window.art.volume = value;
-                      break;
-                    case 'getStatus':
-                      // This now provides the current status when requested - using Zen server owner's exact format
-                      let status = 'Paused';
-                      if (window.art.ended) {
-                        status = 'Ended';
-                      } else if (!window.art.paused) {
-                        status = 'Playing';
-                      }
-                      
-                      // Use the exact response format from Zen server owner
-                      if (event.source && event.source.postMessage) {
-                        event.source.postMessage({
-                          playerStatus: status
-                        }, event.origin);
-                      } else {
-                        // Fallback to React Native WebView method
-                        window.ReactNativeWebView.postMessage(JSON.stringify({
-                          playerStatus: status
-                        }));
-                      }
-                      break;
-                    case 'getTime':
-                      // Use the exact response format from Zen server owner
-                      if (event.source && event.source.postMessage) {
-                        event.source.postMessage({
-                          currentTime: window.art.currentTime,
-                          duration: window.art.duration
-                        }, event.origin);
-                      } else {
-                        // Fallback to React Native WebView method
-                        window.ReactNativeWebView.postMessage(JSON.stringify({
-                          currentTime: window.art.currentTime,
-                          duration: window.art.duration
-                        }));
-                      }
-                      break;
-                    default:
-                      console.warn('Unknown command:', command);
-                  }
-                });
-                
-                // Request status and time periodically for progress tracking
-                const statusInterval = setInterval(() => {
-                  if (window.art) {
-                    // Send time update for progress tracking
-                    window.ReactNativeWebView.postMessage(JSON.stringify({
-                      currentTime: window.art.currentTime || 0,
-                      duration: window.art.duration || 0
-                    }));
-                  }
-                }, 2000);
-              }
-              
-              // Start the setup
-              waitForPlayer();
-              true;
-            `}
+            // No injectedJavaScript for Zen - the wrapper page handles all communication
           />
         ) : (
-        <Video
-          ref={videoRef}
-          source={source.uri ? source : undefined}
-          style={videoStyle}
-          resizeMode={ResizeMode.CONTAIN}
-          paused={!isPlaying}
-          onProgress={handleProgress}
-          onLoad={handleLoad}
-          onEnd={handleEnd}
-          onBuffer={handleBuffer}
-          rate={playbackSpeed}
-          repeat={false}
-          muted={false}
-          controls={false}
-          progressUpdateInterval={250}
-          maxBitRate={2000000}
-          bufferConfig={{
-            minBufferMs: 15000,
-            maxBufferMs: 30000,
-            bufferForPlaybackMs: 2500,
-            bufferForPlaybackAfterRebufferMs: 5000
-          }}
-          textTracks={selectedSubtitleTrack ? [selectedSubtitleTrack] : undefined}
-          selectedTextTrack={selectedSubtitleTrack ? {
-            type: SelectedTrackType.LANGUAGE,
-            value: selectedSubtitleTrack.language
-          } : undefined}
-          subtitleStyle={{
-            fontSize: subtitleSettings.fontSize,
-            paddingBottom: subtitleSettings.paddingBottom,
-            opacity: 0.7,
-          }}
-        />
+          <Video
+            ref={videoRef}
+            source={source.uri ? source : undefined}
+            style={videoStyle}
+            resizeMode={ResizeMode.CONTAIN}
+            paused={!isPlaying}
+            onProgress={handleProgress}
+            onLoad={handleLoad}
+            onEnd={handleEnd}
+            onBuffer={handleBuffer}
+            rate={playbackSpeed}
+            repeat={false}
+            muted={false}
+            controls={false}
+            progressUpdateInterval={250}
+            maxBitRate={2000000}
+            bufferConfig={{
+              minBufferMs: 15000,
+              maxBufferMs: 30000,
+              bufferForPlaybackMs: 2500,
+              bufferForPlaybackAfterRebufferMs: 5000
+            }}
+            textTracks={selectedSubtitleTrack ? [selectedSubtitleTrack] : undefined}
+            selectedTextTrack={selectedSubtitleTrack ? {
+              type: SelectedTrackType.LANGUAGE,
+              value: selectedSubtitleTrack.language
+            } : undefined}
+            subtitleStyle={{
+              fontSize: subtitleSettings.fontSize,
+              paddingBottom: subtitleSettings.paddingBottom,
+              opacity: 0.7,
+            }}
+          />
         )}
         {isBuffering && !source.isZenEmbedded && (
           <View style={styles.bufferingContainer}>
