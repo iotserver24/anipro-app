@@ -28,13 +28,12 @@ import {
   hasUserLikedComment 
 } from '../services/commentService';
 import { isAuthenticated, getCurrentUser } from '../services/userService';
-import { Timestamp, getDoc, doc, deleteDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
+import { Timestamp, getDoc, doc, deleteDoc, setDoc, updateDoc, increment, query, collection, where, getDocs } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import AuthModal from './AuthModal';
 import { AVATARS } from '../constants/avatars';
 import { useFocusEffect } from '@react-navigation/native';
 import UserProfileModal from './UserProfileModal';
-import { migrateCommentsWithAvatars } from '../services/commentService';
 import { logger } from '../utils/logger';
 import UserDonationBadge from './UserDonationBadge';
 import { getUserPremiumStatus } from '../services/donationService';
@@ -90,13 +89,14 @@ const CommentItem = ({
 
   const getAvatarUrl = useCallback(() => {
     // First check if we have a refreshed avatar URL from a manual fetch
-    if (refreshedAvatarUrl) return { uri: refreshedAvatarUrl };
+    if (refreshedAvatarUrl) return { url: refreshedAvatarUrl, isVideo: refreshedAvatarUrl.match(/\.(mp4|webm|mov|avi|mkv)(\?.*)?$/i) };
     
     // If the comment has an avatar URL, use it
     if (comment.userAvatar) {
       // If it's already a full URL, use it directly
       if (comment.userAvatar.startsWith('http')) {
-        return { uri: comment.userAvatar };
+        const isVideo = comment.userAvatar.match(/\.(mp4|webm|mov|avi|mkv)(\?.*)?$/i);
+        return { url: comment.userAvatar, isVideo: !!isVideo };
       }
       
       // Otherwise, try to resolve the avatar from our constants
@@ -109,20 +109,21 @@ const CommentItem = ({
         
         // Fall back to default if not found
         if (avatarItem) {
-          return { uri: avatarItem.url };
+          const isVideo = avatarItem.url.match(/\.(mp4|webm|mov|avi|mkv)(\?.*)?$/i);
+          return { url: avatarItem.url, isVideo: !!isVideo };
         } else {
           // Get the default avatar (first one in array)
           const defaultAvatar = Array.isArray(AVATARS) && AVATARS.length > 0 
             ? AVATARS[0] 
             : { url: 'https://cdn.pixabay.com/photo/2016/08/08/09/17/avatar-1577909_1280.png' };
-          return { uri: defaultAvatar.url };
+          return { url: defaultAvatar.url, isVideo: false };
         }
       } catch (e) {
         // Get the default avatar (first one in array)
         const defaultAvatar = Array.isArray(AVATARS) && AVATARS.length > 0 
           ? AVATARS[0] 
           : { url: 'https://cdn.pixabay.com/photo/2016/08/08/09/17/avatar-1577909_1280.png' };
-        return { uri: defaultAvatar.url };
+        return { url: defaultAvatar.url, isVideo: false };
       }
     }
     
@@ -130,7 +131,7 @@ const CommentItem = ({
     const defaultAvatar = Array.isArray(AVATARS) && AVATARS.length > 0 
       ? AVATARS[0] 
       : { url: 'https://cdn.pixabay.com/photo/2016/08/08/09/17/avatar-1577909_1280.png' };
-    return { uri: defaultAvatar.url };
+    return { url: defaultAvatar.url, isVideo: false };
   }, [comment.userAvatar, refreshedAvatarUrl]);
 
   // Format the timestamp to a readable date
@@ -152,12 +153,31 @@ const CommentItem = ({
           activeOpacity={0.7}
         >
           <Animated.View style={{ transform: [{ scale: avatarScale }] }}>
-            <Image 
-              source={getAvatarUrl()} 
-              style={styles.avatar}
-              onError={() => {
-              }}
-            />
+            {(() => {
+              const { url, isVideo } = getAvatarUrl();
+              if (isVideo) {
+                return (
+                  <Video 
+                    source={{ uri: url }}
+                    style={styles.avatar}
+                    resizeMode="cover"
+                    isLooping
+                    shouldPlay
+                    isMuted={true}
+                    useNativeControls={false}
+                  />
+                );
+              } else {
+                return (
+                  <Image 
+                    source={{ uri: url }} 
+                    style={styles.avatar}
+                    onError={() => {
+                    }}
+                  />
+                );
+              }
+            })()}
           </Animated.View>
         </TouchableOpacity>
         <View style={styles.commentContent}>
@@ -295,22 +315,6 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
     useCallback(() => {
       loadComments();
       
-      // We could also use this opportunity to trigger the avatar migration
-      // if we want to ensure avatars are always up to date when viewing comments
-      const triggerAvatarCheck = async () => {
-        try {
-          // Use the directly imported function instead of dynamic import
-          await migrateCommentsWithAvatars();
-        } catch (error) {
-          logger.warn('CommentSection', `Failed to trigger avatar check on focus: ${error}`);
-        }
-      };
-      
-      // Only run avatar check occasionally to avoid unnecessary API calls
-      if (Math.random() < 0.2) { // 20% chance on each focus
-        triggerAvatarCheck();
-      }
-      
       return () => {
       };
     }, [animeId])
@@ -381,20 +385,62 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
       const fetchedComments = await getAnimeComments(animeId);
       setComments(fetchedComments);
       
-      // Check which comments the current user has liked
+      // Batch check which comments the current user has liked (much faster)
       if (isAuthenticated()) {
-        const newLikedComments = new Set<string>();
-        await Promise.all(
-          fetchedComments.map(async (comment) => {
-            if (comment.id) {
-              const hasLiked = await hasUserLikedComment(comment.id, getCurrentUser()?.uid || '');
-              if (hasLiked) {
-                newLikedComments.add(comment.id);
+        const currentUserId = getCurrentUser()?.uid || '';
+        const commentIds = fetchedComments.map(c => c.id).filter(Boolean) as string[];
+        
+        if (commentIds.length > 0) {
+          try {
+            // Single query to get all likes for this user on these comments
+            const likesQuery = query(
+              collection(db, 'comment_likes'),
+              where('userId', '==', currentUserId),
+              where('commentId', 'in', commentIds.slice(0, 10)) // Firestore 'in' limit is 10
+            );
+            
+            const likesSnapshot = await getDocs(likesQuery);
+            const newLikedComments = new Set<string>();
+            
+            likesSnapshot.forEach(doc => {
+              const data = doc.data();
+              if (data.commentId) {
+                newLikedComments.add(data.commentId);
               }
+            });
+            
+            // If we have more than 10 comments, we need additional queries
+            if (commentIds.length > 10) {
+              const remainingIds = commentIds.slice(10);
+              const chunks = [];
+              for (let i = 0; i < remainingIds.length; i += 10) {
+                chunks.push(remainingIds.slice(i, i + 10));
+              }
+              
+              await Promise.all(chunks.map(async (chunk) => {
+                const chunkQuery = query(
+                  collection(db, 'comment_likes'),
+                  where('userId', '==', currentUserId),
+                  where('commentId', 'in', chunk)
+                );
+                
+                const chunkSnapshot = await getDocs(chunkQuery);
+                chunkSnapshot.forEach(doc => {
+                  const data = doc.data();
+                  if (data.commentId) {
+                    newLikedComments.add(data.commentId);
+                  }
+                });
+              }));
             }
-          })
-        );
-        setLikedComments(newLikedComments);
+            
+            setLikedComments(newLikedComments);
+          } catch (error) {
+            console.warn('Error fetching like status:', error);
+            // If batch query fails, fall back to empty set
+            setLikedComments(new Set());
+          }
+        }
       }
       
       return fetchedComments; // Return the fetched comments for chaining
@@ -486,37 +532,12 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
         console.warn('Error fetching user data for comment:', error);
         userData = {
           username: 'user',
-          avatarId: null
+          avatarUrl: '' // Use empty string as fallback
         };
       }
       
-      // Get avatar URL from user data
-      let userAvatarUrl = '';
-      
-      // Try to get the latest avatar URL from the API first
-      if (userData.avatarId) {
-        try {
-          const avatarsResponse = await fetch('https://anisurge.me/api/avatars/list');
-          if (avatarsResponse.ok) {
-            const avatars = await avatarsResponse.json();
-            const avatar = avatars.find((a: any) => a.id === userData.avatarId);
-            if (avatar && avatar.url) {
-              userAvatarUrl = avatar.url;
-            }
-          }
-        } catch (avatarError) {
-          // Simplify this error logging
-          console.warn('Error fetching avatar');
-        }
-        
-        // If we couldn't get it from the API, fall back to local AVATARS
-        if (!userAvatarUrl) {
-          const avatar = AVATARS.find(a => a.id === userData.avatarId);
-          if (avatar) {
-            userAvatarUrl = avatar.url;
-          }
-        }
-      }
+      // Use the stored avatar URL directly (no API fetching needed)
+      const userAvatarUrl = userData.avatarUrl || '';
       
       // Save the commented text locally before clearing
       const commentContent = commentText.trim();
@@ -1051,6 +1072,9 @@ const styles = StyleSheet.create({
     height: 40,
     borderWidth: 1,
     borderColor: 'rgba(244, 81, 30, 0.3)',
+    backgroundColor: '#333',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatar: {
     width: 40,

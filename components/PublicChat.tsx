@@ -27,6 +27,7 @@ import { db } from '../services/firebase';
 import AuthModal from './AuthModal';
 import { AVATARS, getAvatarById } from '../constants/avatars';
 import UserProfileModal from './UserProfileModal';
+import AvatarDisplay from './AvatarDisplay';
 import GifPicker from './GifPicker';
 import { API_BASE, ENDPOINTS } from '../constants/api';
 import { useRouter } from 'expo-router';
@@ -561,16 +562,15 @@ const getUsernameColor = (userId: string) => {
 // Memoized Avatar component
 const Avatar = memo(({ userAvatar }: { userAvatar: string }) => {
   const avatarUrl = userAvatar || AVATARS[0].url;
-  const isGif = avatarUrl.toLowerCase().endsWith('.gif');
 
   return (
     <View style={styles.avatarContainer}>
-      <Image
-        source={{ uri: avatarUrl }}
-        style={StyleSheet.flatten([styles.avatar, isGif && styles.gifAvatar])}
-        defaultSource={{ uri: AVATARS[0].url }}
-        onError={(error) => {
-          console.warn('Avatar failed to load:', error.nativeEvent.error);
+      <AvatarDisplay
+        url={avatarUrl}
+        style={styles.avatar}
+        fallbackUrl={AVATARS[0].url}
+        onError={() => {
+          console.warn('Avatar failed to load:', avatarUrl);
         }}
       />
     </View>

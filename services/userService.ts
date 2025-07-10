@@ -198,9 +198,25 @@ export const updateUserAvatar = async (avatarId: string) => {
       }
     }
 
-    // Update only the avatarId field
+    // Fetch the full avatar URL
+    let avatarUrl = '';
+    try {
+      // Use the existing getAvatarById function which handles both regular and premium avatars properly
+      const { getAvatarById } = await import('../constants/avatars');
+      avatarUrl = await getAvatarById(validAvatarId);
+      
+      if (!avatarUrl) {
+        throw new Error('Avatar not found');
+      }
+    } catch (error) {
+      logger.error('UserService', `Error fetching avatar URL: ${error}`);
+      throw new Error('Failed to fetch avatar URL');
+    }
+
+    // Update both avatarId and avatarUrl fields
     await updateDoc(doc(db, 'users', currentUser.uid), {
-      avatarId: validAvatarId
+      avatarId: validAvatarId,
+      avatarUrl: avatarUrl
     });
 
     return true;

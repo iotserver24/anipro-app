@@ -86,10 +86,13 @@ service cloud.firestore {
                      request.auth.uid == userId && 
                      (
                        // For avatar updates, ensure avatarId is valid and user has the right permissions
+                       // Now also allow updating avatarUrl along with avatarId
+                       (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avatarId', 'avatarUrl']) && 
+                        canUseAvatar(request.resource.data.avatarId)) ||
                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['avatarId']) && 
                         canUseAvatar(request.resource.data.avatarId)) || 
                        // OR no avatar field is being changed
-                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['avatarId'])
+                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['avatarId', 'avatarUrl'])
                      );
     }
     

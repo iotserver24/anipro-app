@@ -91,14 +91,7 @@ export const getAnimeComments = async (animeId: string): Promise<Comment[]> => {
     const snapshot = await getDocs(commentsQuery);
     const comments: Comment[] = [];
     
-    // Track which users we need to update avatars for
-    const userAvatarsToUpdate: {[key: string]: {
-      commentIds: string[],
-      oldAvatar: string | undefined,
-      newAvatar: string | null
-    }} = {};
-    
-    // First pass: collect all comments and identify users whose avatars need updating
+    // Simple pass: collect all comments without avatar fetching
     snapshot.forEach(doc => {
       const data = doc.data() as Comment;
       const comment = {
@@ -106,56 +99,8 @@ export const getAnimeComments = async (animeId: string): Promise<Comment[]> => {
         id: doc.id
       };
       
-      // Add to comment list
       comments.push(comment);
-      
-      // Check if we need to update this user's avatar in comments
-      if (comment.userId && !userAvatarsToUpdate[comment.userId]) {
-        userAvatarsToUpdate[comment.userId] = {
-          commentIds: [doc.id],
-          oldAvatar: comment.userAvatar,
-          newAvatar: null // Will be fetched later
-        };
-      } else if (comment.userId) {
-        userAvatarsToUpdate[comment.userId].commentIds.push(doc.id);
-      }
     });
-    
-    // Second pass: fetch latest avatars for users (in parallel)
-    const userIds = Object.keys(userAvatarsToUpdate);
-    await Promise.all(
-      userIds.map(async (userId) => {
-        try {
-          const latestAvatar = await getLatestUserAvatar(userId);
-          if (latestAvatar) {
-            userAvatarsToUpdate[userId].newAvatar = latestAvatar;
-          }
-        } catch (error) {
-          logger.warn('commentService', `Couldn't fetch avatar for user ${userId}: ${error}`);
-          // Don't fail the whole operation for one avatar
-          return;
-        }
-      })
-    );
-    
-    // Third pass: update comments with new avatars and queue Firestore updates
-    // But only in memory - don't try to update Firestore if we're getting permission errors
-    for (const userId in userAvatarsToUpdate) {
-      const { commentIds, oldAvatar, newAvatar } = userAvatarsToUpdate[userId];
-      
-      // Only update if we have a new avatar and it's different from the old one
-      if (newAvatar && newAvatar !== oldAvatar) {
-        // Update in-memory comments
-        comments.forEach(comment => {
-          if (comment.userId === userId) {
-            comment.userAvatar = newAvatar;
-          }
-        });
-        
-        // Don't queue Firestore updates - we're getting permission errors
-        // We'll just use the in-memory updates for this session
-      }
-    }
     
     return comments;
   } catch (error) {

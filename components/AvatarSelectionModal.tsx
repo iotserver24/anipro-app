@@ -14,7 +14,7 @@ import {
   Platform
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { AVATARS, Avatar } from '../constants/avatars';
+import { AVATARS, Avatar, getMediaTypeFromUrl } from '../constants/avatars';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import donationService, { hasPremiumAvatarAccess } from '../services/donationService';
@@ -22,9 +22,11 @@ import { getCurrentUser } from '../services/userService';
 import { logger } from '../utils/logger';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '../services/firebase';
+import AvatarDisplay from './AvatarDisplay';
 
 interface PremiumAvatar extends Avatar {
   isGif: boolean;
+  isVideo?: boolean;
   donorId?: string;
 }
 
@@ -126,14 +128,16 @@ const AvatarSelectionModal = ({
   };
 
   const handleAvatarSelect = async (avatar: Avatar | PremiumAvatar) => {
+    const mediaType = getMediaTypeFromUrl(avatar.url);
     console.log('Selected avatar:', {
       id: avatar.id,
       name: avatar.name,
-      isPremium: 'isGif' in avatar
+      mediaType: mediaType,
+      isPremium: 'isGif' in avatar || 'isVideo' in avatar
     });
     
     // Check if it's a premium avatar
-    if ('isGif' in avatar) {
+    if ('isGif' in avatar || 'isVideo' in avatar) {
       if (!getCurrentUser()) {
         Alert.alert(
           'Login Required',
@@ -172,9 +176,10 @@ const AvatarSelectionModal = ({
   };
 
   const renderItem = ({ item }: { item: Avatar | PremiumAvatar }) => {
-    const isPremiumAvatar = 'isGif' in item;
+    const isPremiumAvatar = 'isGif' in item || 'isVideo' in item;
     const isSelected = selectedAvatarId === item.id;
     const canSelectPremium = hasPremiumAccess || isSelected;
+    const mediaType = getMediaTypeFromUrl(item.url);
 
     return (
       <TouchableOpacity
@@ -187,13 +192,25 @@ const AvatarSelectionModal = ({
         onPress={() => handleAvatarSelect(item)}
       >
         <View style={styles.avatarImageContainer}>
-          <Image 
-            source={{ uri: item.url }} 
+          <AvatarDisplay
+            url={item.url}
             style={styles.avatarImage}
-            onError={(e) => {
-              console.warn('Failed to load avatar image:', item.url);
+            isPremium={isPremiumAvatar}
+            onError={() => {
+              console.warn('Failed to load avatar:', item.url);
             }}
           />
+          
+          {/* Media type indicator */}
+          {(mediaType === 'video' || mediaType === 'gif') && (
+            <View style={styles.mediaTypeIndicator}>
+              <MaterialIcons 
+                name={mediaType === 'video' ? 'play-arrow' : 'gif'} 
+                size={12} 
+                color="#fff" 
+              />
+            </View>
+          )}
           
           {/* Add blur overlay for premium avatars unless user has access or it's already selected */}
           {isPremiumAvatar && !canSelectPremium && (
@@ -509,6 +526,17 @@ const styles = StyleSheet.create({
   blurOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mediaTypeIndicator: {
+    position: 'absolute',
+    top: 4,
+    left: 4,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    flexDirection: 'row',
     alignItems: 'center',
   },
   premiumInfoBanner: {

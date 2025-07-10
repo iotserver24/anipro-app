@@ -16,6 +16,7 @@ import { db } from '../services/firebase';
 import { logger } from '../utils/logger';
 import { AVATARS, getAvatarById } from '../constants/avatars';
 import UserDonationBadge from './UserDonationBadge';
+import Video from 'react-native-video';
 
 interface UserProfileModalProps {
   visible: boolean;
@@ -153,22 +154,20 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
   // Update the getAvatarSource function
   const getAvatarSource = () => {
     // First try the fetched avatar URL
-    if (avatarUrl) {
-      return { uri: avatarUrl };
-    }
-    
-    // Then try various fields from userData
-    if (userData) {
+    let url = avatarUrl;
+    if (!url && userData) {
       if (userData.avatar && userData.avatar.startsWith('http')) {
-        return { uri: userData.avatar };
-      }
-      if (userData.avatarUrl && userData.avatarUrl.startsWith('http')) {
-        return { uri: userData.avatarUrl };
+        url = userData.avatar;
+      } else if (userData.avatarUrl && userData.avatarUrl.startsWith('http')) {
+        url = userData.avatarUrl;
       }
     }
-    
-    // Default avatar if none provided or invalid
-    return { uri: 'https://cdn.pixabay.com/photo/2016/08/08/09/17/avatar-1577909_1280.png' };
+    if (!url) {
+      url = 'https://cdn.pixabay.com/photo/2016/08/08/09/17/avatar-1577909_1280.png';
+    }
+    // Check if it's a video
+    const isVideo = url.match(/\.(mp4|webm|mov|avi|mkv)(\?.*)?$/i);
+    return { url, isVideo: !!isVideo };
   };
   
   // Enhanced modal with improved styling and visibility
@@ -216,14 +215,33 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
             </View>
           ) : userData ? (
             <View style={styles.profileContainer}>
+              {/* Avatar (image or video) */}
+              {(() => {
+                const { url, isVideo } = getAvatarSource();
+                return (
+                  <View style={styles.avatarWrapper}>
+                    {isVideo ? (
+                      <Video
+                        source={{ uri: url }}
+                        style={styles.avatarVideo}
+                        resizeMode="cover"
+                        repeat
+                        muted
+                        paused={false}
+                      />
+                    ) : (
               <Image 
-                source={getAvatarSource()}
-                style={styles.avatar}
+                        source={{ uri: url }}
+                        style={styles.avatarVideo}
                 onError={(e) => {
                   logger.warn('UserProfileModal', 'Failed to load avatar, using default');
                 }}
                 defaultSource={{ uri: 'https://cdn.pixabay.com/photo/2016/08/08/09/17/avatar-1577909_1280.png' }}
               />
+                    )}
+                  </View>
+                );
+              })()}
               <Text style={styles.username}>{userData?.username || 'Unknown User'}</Text>
               
               {(isPremium || donationAmount > 0) && (
@@ -359,6 +377,23 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     borderWidth: 3,
     borderColor: '#f4511e',
+  },
+  avatarWrapper: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#333',
+    marginBottom: 15,
+    borderWidth: 3,
+    borderColor: '#f4511e',
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarVideo: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
   },
   username: {
     fontSize: 22,

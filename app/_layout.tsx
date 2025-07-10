@@ -18,6 +18,7 @@ import { getDoc, doc } from 'firebase/firestore';
 import { getAvatarById, DEFAULT_AVATARS } from '../constants/avatars';
 import { Tabs } from 'expo-router';
 import { NativeStackNavigationOptions } from '@react-navigation/native-stack';
+import AvatarDisplay from '../components/AvatarDisplay';
 // These imports are commented out because we're removing the auth button from the header
 // import { useGlobalStore } from '../store/globalStore';
 // import AuthButton from '../components/AuthButton';
@@ -158,17 +159,32 @@ const HeaderRight = () => {
             <MaterialIcons name="person" size={24} color="#aaa" />
           </View>
         ) : (
-          <Image 
-            source={{ uri: avatarUrl || DEFAULT_AVATARS[0].url }} 
-            style={[styles.avatarImage, isPremium && styles.premiumAvatarBorder]} 
-            onError={(e) => {
-              console.error('[Avatar] Error loading image:', e.nativeEvent.error);
-              console.log('[Avatar] Falling back to default avatar');
-              setAvatarUrl(DEFAULT_AVATARS[0].url);
-            }}
-          />
+          isPremium ? (
+            <View style={styles.premiumAvatarBorderWrapper}>
+              <AvatarDisplay
+                url={avatarUrl || DEFAULT_AVATARS[0].url}
+                style={[styles.avatarImage, { borderWidth: 0, borderColor: 'transparent' }]}
+                isPremium={isPremium}
+                onError={() => {
+                  console.error('[Avatar] Error loading avatar');
+                  console.log('[Avatar] Falling back to default avatar');
+                  setAvatarUrl(DEFAULT_AVATARS[0].url);
+                }}
+              />
+            </View>
+          ) : (
+            <AvatarDisplay
+              url={avatarUrl || DEFAULT_AVATARS[0].url}
+              style={styles.avatarImage}
+              isPremium={isPremium}
+              onError={() => {
+                console.error('[Avatar] Error loading avatar');
+                console.log('[Avatar] Falling back to default avatar');
+                setAvatarUrl(DEFAULT_AVATARS[0].url);
+              }}
+            />
+          )
         )}
-        
         {isPremium && (
           <View style={styles.premiumBadge}>
             <MaterialIcons name="star" size={14} color="#FFD700" />
@@ -497,13 +513,27 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   profileButton: {
     marginRight: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    marginTop: '-2%', // Move avatar up by 2%
   },
   avatarImage: {
     width: 40,
     height: 40,
     borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: '#f4511e',
+    borderColor: '#f4511e', // Only for non-premium
+  },
+  premiumAvatarBorderWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: '#FFD700',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
   avatarPlaceholder: {
     width: 40,
@@ -517,12 +547,10 @@ const styles = StyleSheet.create({
   },
   avatarContainer: {
     position: 'relative',
-    width: 40,
-    height: 40,
-  },
-  premiumAvatarBorder: {
-    borderWidth: 2.5,
-    borderColor: '#FFD700',
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   premiumBadge: {
     position: 'absolute',

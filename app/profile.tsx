@@ -22,6 +22,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { AVATARS, getAvatarById } from '../constants/avatars';
 import { logger } from '../utils/logger';
+import AvatarDisplay from '../components/AvatarDisplay';
 import { collection, query, where, getDocs, limit } from 'firebase/firestore';
 import donationService, { DonationTier } from '../services/donationService';
 import { useMyListStore } from '../store/myListStore';
@@ -1211,11 +1212,12 @@ export default function ProfileScreen() {
           ) : (
             <>
               <View style={styles.avatarWrapper}>
-                <Image 
-                  source={getCurrentAvatar()} 
+                <AvatarDisplay
+                  url={avatarUrl || AVATARS[0].url}
                   style={styles.avatar}
-                  resizeMode="cover"
-                  onError={(e) => {
+                  fallbackUrl={AVATARS[0].url}
+                  isPremium={donationStatus?.tier !== DonationTier.NONE}
+                  onError={() => {
                     console.warn('Failed to load profile avatar');
                     setAvatarUrl(AVATARS[0].url);
                   }}

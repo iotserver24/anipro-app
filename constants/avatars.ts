@@ -6,10 +6,12 @@ export interface Avatar {
   name: string;
   url: string;
   category?: string;
+  type?: 'image' | 'gif' | 'video'; // New field for media type
 }
 
 export interface PremiumAvatar extends Avatar {
   isGif: boolean;
+  isVideo?: boolean; // New field for video support
   donorId?: string;
 }
 
@@ -53,6 +55,36 @@ export let AVATARS: Avatar[] = [...DEFAULT_AVATARS];
 // Function to check if an ID is for a premium avatar
 const isPremiumAvatarId = (id: string): boolean => {
   return id.startsWith('premium_');
+};
+
+// Utility functions to detect media type from URL
+export const getMediaTypeFromUrl = (url: string): 'image' | 'gif' | 'video' => {
+  const urlLower = url.toLowerCase();
+  
+  // Check for video formats
+  if (urlLower.match(/\.(mp4|webm|mov|m4v)(\?.*)?$/)) {
+    return 'video';
+  }
+  
+  // Check for GIF format
+  if (urlLower.match(/\.gif(\?.*)?$/)) {
+    return 'gif';
+  }
+  
+  // Default to image for other formats (jpg, jpeg, png, webp, etc.)
+  return 'image';
+};
+
+export const isVideoUrl = (url: string): boolean => {
+  return getMediaTypeFromUrl(url) === 'video';
+};
+
+export const isGifUrl = (url: string): boolean => {
+  return getMediaTypeFromUrl(url) === 'gif';
+};
+
+export const isImageUrl = (url: string): boolean => {
+  return getMediaTypeFromUrl(url) === 'image';
 };
 
 // Function to fetch avatars from remote source

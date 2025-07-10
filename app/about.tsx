@@ -21,6 +21,7 @@ import { getCurrentUser } from '../services/userService';
 import { getDoc, doc, collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
+import Video from 'react-native-video';
 
 interface ChangelogItem {
   type: 'text' | 'image' | 'video' | 'url';
@@ -517,17 +518,17 @@ export default function AboutScreen() {
     updateDeviceInfo();
   }, [simulatedArchitecture]);
 
-  // Preload the background image
+  // Preload the background video
   useEffect(() => {
-    const preloadImage = async () => {
+    const preloadVideo = async () => {
       try {
         setIsLoading(true);
-        // Preload the image using Expo's Asset system
-        const asset = Asset.fromModule(require('../assets/back.gif'));
+        // Preload the video using Expo's Asset system
+        const asset = Asset.fromModule(require('../assets/back.mp4'));
         await asset.downloadAsync();
         setImageReady(true);
       } catch (error) {
-        console.error('Error preloading image:', error);
+        console.error('Error preloading video:', error);
         // If preloading fails, still mark as ready to avoid blocking UI
         setImageReady(true);
       } finally {
@@ -535,7 +536,7 @@ export default function AboutScreen() {
       }
     };
     
-    preloadImage();
+    preloadVideo();
   }, []);
 
   useEffect(() => {
@@ -976,12 +977,16 @@ Architecture: ${deviceInfo.deviceArchitecture}
             </View>
           </LinearGradient>
         ) : (
-          <ImageBackground
-            source={require('../assets/back.gif')}
-            style={styles.header}
-            blurRadius={5}
-            defaultSource={require('../assets/icon.png')}
-          >
+          <View style={styles.header}>
+            <Video
+              source={require('../assets/back.mp4')}
+              style={styles.backgroundVideo}
+              resizeMode="cover"
+              repeat
+              muted
+              paused={false}
+            />
+            <View style={styles.videoOverlay} />
             <View style={styles.headerContent}>
               <View style={styles.appInfoContainer}>
                 <Image
@@ -1006,7 +1011,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
                 </TouchableOpacity>
               </View>
             </View>
-          </ImageBackground>
+          </View>
         )}
 
         {/* About Section */}
@@ -1382,6 +1387,25 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
     overflow: 'hidden',
+    position: 'relative',
+  },
+  backgroundVideo: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    right: 0,
+    width: '100%',
+    height: '100%',
+  },
+  videoOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backdropFilter: 'blur(5px)',
   },
   headerContent: {
     alignItems: 'center',
@@ -1390,6 +1414,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    position: 'relative',
+    zIndex: 2,
   },
   appInfoContainer: {
     alignItems: 'center',
