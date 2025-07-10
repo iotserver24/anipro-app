@@ -1772,6 +1772,48 @@ export default function WatchEpisode() {
     }
   }, [videoData?.outro]);
 
+  // Create stable onProgress callback
+  const handleVideoProgress = useCallback((currentTime: number, videoDuration: number) => {
+    // Update local state
+    setCurrentTime(currentTime);
+    setDuration(videoDuration);
+    
+    // Save progress if we have valid data
+    if (animeInfo && currentTime > 0 && videoDuration > 0) {
+      const now = Date.now();
+      
+      // Save progress every 2 seconds or if position changed significantly
+      if (now - lastProgressUpdateRef.current >= 2000 || 
+          Math.abs(currentTime - lastProgressValueRef.current) > 5) {
+        
+        // Ensure all fields are valid before saving
+        const historyItem = {
+          id: animeId as string,
+          name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
+          img: animeInfo.image || animeInfo.info?.image || '',
+          episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
+          episodeNumber: Number(episodeNumber) || 0,
+          timestamp: now,
+          progress: Math.max(0, Math.floor(currentTime)), // Ensure positive integer
+          duration: Math.max(0, Math.floor(videoDuration)), // Ensure positive integer
+          lastWatched: now,
+          subOrDub: (typeof category === 'string' && (category === 'sub' || category === 'dub')) ? 
+            category as 'sub' | 'dub' : 'sub'
+        };
+        
+        // Log the history item for debugging
+        logger.debug('Saving history item:', historyItem);
+        
+        // Save progress to history
+        addToHistory(historyItem);
+        
+        // Update last progress values
+        lastProgressUpdateRef.current = now;
+        lastProgressValueRef.current = currentTime;
+      }
+    }
+  }, [animeInfo, animeId, episodeId, episodeNumber, category, addToHistory]);
+
   // Memoize video props
   const videoPlayerProps = useMemo(() => ({
     source: { 
@@ -1783,59 +1825,7 @@ export default function WatchEpisode() {
     initialPosition: lastServerPosition > 0 ? lastServerPosition : resumePosition, // Use lastServerPosition if available, otherwise resumePosition
     rate: playbackSpeed,
     onPlaybackRateChange: handlePlaybackSpeedChange,
-    onProgress: (currentTime: number, videoDuration: number) => {
-      console.log('WatchEpisode: onProgress called with:', currentTime, videoDuration);
-      
-      // Update local state
-      setCurrentTime(currentTime);
-      setDuration(videoDuration);
-      
-      // Save progress if we have valid data
-      if (animeInfo && currentTime > 0 && videoDuration > 0) {
-        console.log('WatchEpisode: Valid data for saving progress');
-        
-        const now = Date.now();
-        
-        // Save progress every 2 seconds or if position changed significantly
-        if (now - lastProgressUpdateRef.current >= 2000 || 
-            Math.abs(currentTime - lastProgressValueRef.current) > 5) {
-          console.log('WatchEpisode: Time check passed, proceeding to save progress');
-          
-          // Ensure all fields are valid before saving
-          const historyItem = {
-            id: animeId as string,
-            name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
-            img: animeInfo.image || animeInfo.info?.image || '',
-            episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
-            episodeNumber: Number(episodeNumber) || 0,
-            timestamp: now,
-            progress: Math.max(0, Math.floor(currentTime)), // Ensure positive integer
-            duration: Math.max(0, Math.floor(videoDuration)), // Ensure positive integer
-            lastWatched: now,
-            subOrDub: (typeof category === 'string' && (category === 'sub' || category === 'dub')) ? 
-              category as 'sub' | 'dub' : 'sub'
-          };
-          
-          // Log the history item for debugging
-          logger.debug('Saving history item:', historyItem);
-          
-          // Save progress to history
-          addToHistory(historyItem);
-          
-          // Update last progress values
-          lastProgressUpdateRef.current = now;
-          lastProgressValueRef.current = currentTime;
-        } else {
-          console.log('WatchEpisode: Time check failed - not saving progress yet');
-        }
-      } else {
-        console.log('WatchEpisode: Invalid data for saving progress:', {
-          hasAnimeInfo: !!animeInfo,
-          currentTime,
-          videoDuration
-        });
-      }
-    },
+    onProgress: handleVideoProgress,
     onEnd: onVideoEnd,
     onFullscreenChange: handleFullscreenChange,
     style: isFullscreen ? 
@@ -1856,25 +1846,20 @@ export default function WatchEpisode() {
     videoHeaders,
     episodeTitle,
     resumePosition,
-    lastServerPosition, // Add lastServerPosition to dependencies
+    lastServerPosition,
     playbackSpeed,
+    handleVideoProgress,
     isFullscreen,
     playerDimensions,
     videoData,
     isQualityChanging,
     savedPosition,
-    animeInfo,
-    animeId,
-    episodeId,
-    episodeNumber,
-    category,
-    addToHistory,
     qualities,
     selectedQuality,
     subtitles,
     handleSkipIntro,
     handleSkipOutro,
-    selectedServer // Add selectedServer to dependencies
+    selectedServer
   ]);
 
   // Add control visibility timeout
