@@ -853,9 +853,19 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     console.log('Zen player fullscreen changed:', isFullscreen);
     try {
       if (isFullscreen) {
-        // Enter fullscreen: rotate to landscape
+        // Enter fullscreen: rotate to landscape aggressively
         console.log('Zen player entering fullscreen - rotating to landscape');
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+        
+        // Try multiple landscape orientations for better compatibility
+        try {
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_LEFT);
+        } catch {
+          try {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE_RIGHT);
+          } catch {
+            await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+          }
+        }
         
         // Hide status bar and navigation bar
         StatusBar.setHidden(true, 'fade');
@@ -943,11 +953,19 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             source={{ uri: zenWebViewUrl || '' }}
             style={videoStyle}
             allowsFullscreenVideo={true}
+            allowsProtectedMedia={true}
             mediaPlaybackRequiresUserAction={false}
             allowsInlineMediaPlayback={true}
             javaScriptEnabled={true}
             domStorageEnabled={true}
             startInLoadingState={true}
+            originWhitelist={['*']}
+            mixedContentMode="compatibility"
+            allowFileAccess={true}
+            allowUniversalAccessFromFileURLs={true}
+            setSupportMultipleWindows={false}
+            webviewDebuggingEnabled={__DEV__}
+            androidLayerType="hardware"
             renderLoading={() => (
               <View style={styles.bufferingContainer}>
                 <ActivityIndicator size="large" color="#f4511e" />
@@ -996,7 +1014,39 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 console.warn('Error parsing WebView message:', error);
               }
             }}
-            // No injectedJavaScript for Zen - the wrapper page handles all communication
+            injectedJavaScript={`
+              (function() {
+                const lockLandscape = function() {
+                  if (screen.orientation && screen.orientation.lock) {
+                    screen.orientation.lock('landscape-primary').catch(() => {
+                      screen.orientation.lock('landscape').catch(() => {});
+                    });
+                  }
+                };
+                
+                // Override fullscreen requests
+                const originalRequestFS = HTMLElement.prototype.requestFullscreen || HTMLElement.prototype.webkitRequestFullscreen;
+                if (originalRequestFS) {
+                  HTMLElement.prototype.requestFullscreen = HTMLElement.prototype.webkitRequestFullscreen = function() {
+                    lockLandscape();
+                    return originalRequestFS.call(this);
+                  };
+                }
+                
+                // Listen for fullscreen events
+                document.addEventListener('fullscreenchange', lockLandscape);
+                document.addEventListener('webkitfullscreenchange', lockLandscape);
+                
+                // Force landscape on any video that goes fullscreen
+                document.addEventListener('click', function(e) {
+                  if (e.target && (e.target.tagName === 'VIDEO' || e.target.closest('video'))) {
+                    setTimeout(lockLandscape, 100);
+                  }
+                });
+                
+                true;
+              })();
+            `}
           />
         ) : (
         <Video
