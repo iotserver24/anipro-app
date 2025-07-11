@@ -340,10 +340,17 @@ type Quality = {
 };
 
 // Add this utility function at the top of the file
-const extractQualities = async (m3u8Url: string): Promise<Quality[]> => {
+const extractQualities = async (m3u8Url: string, headers?: {[key: string]: string}): Promise<Quality[]> => {
   try {
     console.log('Extracting qualities from:', m3u8Url);
-    const response = await fetch(m3u8Url);
+    // Use the same headers as the video source to bypass Cloudflare
+    const response = await fetch(m3u8Url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Referer': headers?.Referer || 'https://megacloud.blog/',
+        ...headers
+      }
+    });
     const manifest = await response.text();
     console.log('M3U8 manifest first 500 chars:', manifest.substring(0, 500));
     const qualities: Quality[] = [];
@@ -1444,7 +1451,7 @@ export default function WatchEpisode() {
 
       // Extract qualities from m3u8
       if (videoSource.url.includes('.m3u8')) {
-        const availableQualities = await extractQualities(videoSource.url);
+        const availableQualities = await extractQualities(videoSource.url, sources.headers);
         setQualities(availableQualities);
         
         // Set default quality (auto)
