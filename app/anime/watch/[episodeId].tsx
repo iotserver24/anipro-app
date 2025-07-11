@@ -25,6 +25,7 @@ type StreamSource = {
 type Subtitle = {
   title: string;
   language: string;
+  lang: string;
   url: string;
 };
 
@@ -1395,6 +1396,7 @@ export default function WatchEpisode() {
         const processedSubtitles = sources.tracks.map(track => ({
           title: track.lang || 'Unknown',
           language: track.lang || 'Unknown',
+          lang: track.lang || 'Unknown', // Add lang property for VideoPlayer compatibility
           url: track.url
         }));
         console.log('Setting subtitles from tracks:', processedSubtitles);
@@ -1403,6 +1405,7 @@ export default function WatchEpisode() {
         const processedSubtitles = sources.subtitles.map(sub => ({
           title: sub.kind || 'Unknown',
           language: sub.kind || 'Unknown',
+          lang: sub.kind || 'Unknown', // Add lang property for VideoPlayer compatibility
           url: sub.url
         }));
         console.log('Setting subtitles:', processedSubtitles);

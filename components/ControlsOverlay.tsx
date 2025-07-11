@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Modal, ScrollView } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -80,50 +80,24 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
 
   // Filter out thumbnail subtitles - Memoized for performance
   const filteredSubtitles = useMemo(() => 
-    subtitles.filter(sub => sub.lang !== 'thumbnails'),
+    subtitles.filter(sub => {
+      const langToCheck = sub.lang || sub.language || sub.title || '';
+      return !langToCheck.toLowerCase().includes('thumbnails');
+    }),
     [subtitles]
   );
 
-  // Group subtitles by language region - Memoized for performance
-  const groupedSubtitles = useMemo(() => {
-    const groups: { [key: string]: Array<Subtitle & { id: string }> } = {
-      'English': [],
-      'Asian': [],
-      'European': [],
-      'Other': []
-    };
-
-    filteredSubtitles.forEach((sub, index) => {
-      // Handle both 'lang' and 'language' properties, with fallback for undefined
-      const language = sub.lang || sub.language || 'Unknown';
-      
-      const subtitleWithId = {
-        ...sub,
-        id: `${language}_${index}`
-      };
-
-      if (language.startsWith('English')) {
-        groups['English'].push(subtitleWithId);
-      } else if (['Japanese', 'Chinese', 'Korean', 'Thai', 'Vietnamese', 'Indonesian'].includes(language)) {
-        groups['Asian'].push(subtitleWithId);
-      } else if (['French', 'German', 'Italian', 'Spanish', 'Portuguese'].includes(language)) {
-        groups['European'].push(subtitleWithId);
-      } else {
-        groups['Other'].push(subtitleWithId);
+  // Auto-select English subtitle as default
+  useEffect(() => {
+    if (filteredSubtitles.length > 0 && !selectedSubtitle) {
+      const englishSub = filteredSubtitles.find(sub => 
+        (sub.lang || sub.language || '').toLowerCase().includes('english')
+      );
+      if (englishSub && onSubtitleChange) {
+        onSubtitleChange(englishSub.lang || englishSub.language || 'English');
       }
-    });
-
-    return groups;
-  }, [filteredSubtitles]);
-
-  // Memoized selectedSubtitleId
-  const [selectedSubtitleId, setSelectedSubtitleId] = useState<string | null>(() => {
-    if (selectedSubtitle && filteredSubtitles.length > 0) {
-      const firstMatch = filteredSubtitles.findIndex(sub => (sub.lang || sub.language || 'Unknown') === selectedSubtitle);
-      return firstMatch >= 0 ? `${selectedSubtitle}_${firstMatch}` : null;
     }
-    return null;
-  });
+  }, [filteredSubtitles, selectedSubtitle, onSubtitleChange]);
 
   // Optimized handlers with minimal state updates
   const handleSpeedSelect = (speed: number) => {
@@ -137,7 +111,6 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
   };
 
   const handleSubtitleSelect = (lang: string | null, id: string | null = null) => {
-    setSelectedSubtitleId(id);
     onSubtitleChange(lang);
     setShowSubtitleOptions(false);
   };
@@ -430,101 +403,27 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
                   </Text>
                 </TouchableOpacity>
 
-                {/* English subtitles first */}
-                {groupedSubtitles['English'].length > 0 && (
-                  <>
-                    <Text style={styles.subtitleGroupHeader}>English</Text>
-                    {groupedSubtitles['English'].map(sub => (
-                      <TouchableOpacity
-                        key={sub.id}
-                        style={[
-                          styles.subtitleOptionButton,
-                          selectedSubtitle === sub.lang && selectedSubtitleId === sub.id && styles.selectedSubtitleButton
-                        ]}
-                        onPress={() => handleSubtitleSelect(sub.lang, sub.id)}
-                      >
-                        <Text style={[
-                          styles.subtitleOptionText,
-                          selectedSubtitle === sub.lang && selectedSubtitleId === sub.id && styles.selectedSubtitleText
-                        ]}>
-                          {sub.lang} {groupedSubtitles['English'].length > 1 ? `(${sub.id.split('_')[1]})` : ''}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </>
-                )}
-
-                {/* Asian languages */}
-                {groupedSubtitles['Asian'].length > 0 && (
-                  <>
-                    <Text style={styles.subtitleGroupHeader}>Asian Languages</Text>
-                    {groupedSubtitles['Asian'].map(sub => (
-                      <TouchableOpacity
-                        key={sub.id}
-                        style={[
-                          styles.subtitleOptionButton,
-                          selectedSubtitle === sub.lang && selectedSubtitleId === sub.id && styles.selectedSubtitleButton
-                        ]}
-                        onPress={() => handleSubtitleSelect(sub.lang, sub.id)}
-                      >
-                        <Text style={[
-                          styles.subtitleOptionText,
-                          selectedSubtitle === sub.lang && selectedSubtitleId === sub.id && styles.selectedSubtitleText
-                        ]}>
-                          {sub.lang} {groupedSubtitles['Asian'].filter(s => s.lang === sub.lang).length > 1 ? `(${sub.id.split('_')[1]})` : ''}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </>
-                )}
-
-                {/* European languages */}
-                {groupedSubtitles['European'].length > 0 && (
-                  <>
-                    <Text style={styles.subtitleGroupHeader}>European Languages</Text>
-                    {groupedSubtitles['European'].map(sub => (
-                      <TouchableOpacity
-                        key={sub.id}
-                        style={[
-                          styles.subtitleOptionButton,
-                          selectedSubtitle === sub.lang && selectedSubtitleId === sub.id && styles.selectedSubtitleButton
-                        ]}
-                        onPress={() => handleSubtitleSelect(sub.lang, sub.id)}
-                      >
-                        <Text style={[
-                          styles.subtitleOptionText,
-                          selectedSubtitle === sub.lang && selectedSubtitleId === sub.id && styles.selectedSubtitleText
-                        ]}>
-                          {sub.lang} {groupedSubtitles['European'].filter(s => s.lang === sub.lang).length > 1 ? `(${sub.id.split('_')[1]})` : ''}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </>
-                )}
-
-                {/* Other languages */}
-                {groupedSubtitles['Other'].length > 0 && (
-                  <>
-                    <Text style={styles.subtitleGroupHeader}>Other Languages</Text>
-                    {groupedSubtitles['Other'].map(sub => (
-                      <TouchableOpacity
-                        key={sub.id}
-                        style={[
-                          styles.subtitleOptionButton,
-                          selectedSubtitle === sub.lang && selectedSubtitleId === sub.id && styles.selectedSubtitleButton
-                        ]}
-                        onPress={() => handleSubtitleSelect(sub.lang, sub.id)}
-                      >
-                        <Text style={[
-                          styles.subtitleOptionText,
-                          selectedSubtitle === sub.lang && selectedSubtitleId === sub.id && styles.selectedSubtitleText
-                        ]}>
-                          {sub.lang} {groupedSubtitles['Other'].filter(s => s.lang === sub.lang).length > 1 ? `(${sub.id.split('_')[1]})` : ''}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </>
-                )}
+                {/* All filtered subtitles */}
+                {filteredSubtitles.map((sub, index) => {
+                  const subLang = sub.lang || sub.language || sub.title || 'Unknown';
+                  return (
+                    <TouchableOpacity
+                      key={sub.url} // Use url as key for uniqueness
+                      style={[
+                        styles.subtitleOptionButton,
+                        selectedSubtitle === subLang && styles.selectedSubtitleButton
+                      ]}
+                      onPress={() => handleSubtitleSelect(subLang, sub.url)} // Pass url as id
+                    >
+                      <Text style={[
+                        styles.subtitleOptionText,
+                        selectedSubtitle === subLang && styles.selectedSubtitleText
+                      ]}>
+                        {subLang}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             </View>
           </View>
@@ -700,19 +599,13 @@ const styles = StyleSheet.create({
     backgroundColor: "#f4511e",
   },
   subtitleModalContainer: {
-    maxHeight: '80%',
+    maxHeight: '90%',
+    height: 'auto',
   },
   subtitleScrollView: {
     flexGrow: 0,
-    maxHeight: 400,
-  },
-  subtitleGroupHeader: {
-    color: '#999',
-    fontSize: 14,
-    fontWeight: '600',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    maxHeight: 500,
+    minHeight: 200,
   },
   subtitleOptionsContainer: {
     flexDirection: "column",
@@ -722,12 +615,16 @@ const styles = StyleSheet.create({
   subtitleOptionButton: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    marginBottom: 1,
-    backgroundColor: "#333",
+    marginBottom: 2,
+    backgroundColor: "#2a2a2a",
+    borderWidth: 1,
+    borderColor: "#444",
+    borderRadius: 4,
     width: "100%",
   },
   selectedSubtitleButton: {
     backgroundColor: "#f4511e",
+    borderColor: "#f4511e",
   },
   subtitleOptionText: {
     color: "white",

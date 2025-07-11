@@ -130,6 +130,8 @@ type Quality = {
 type Subtitle = {
   url: string;
   lang: string;
+  language?: string;
+  title?: string;
 };
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -676,12 +678,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Handle subtitle selection with position maintenance
   const handleSubtitleChange = useCallback((lang: string | null) => {
-    console.log('Changing subtitle to:', lang);
+    console.log('handleSubtitleChange called with:', lang);
+    console.log('Available subtitles:', subtitles.map(s => ({ lang: s.lang, url: s.url.substring(0, 50) + '...' })));
+    
+    // Update the selected subtitle state
     setSelectedSubtitle(lang || undefined);
+    console.log('Updated selectedSubtitle state to:', lang || undefined);
     
     // Small delay to let subtitle change process before seeking
     const timeoutId = setTimeout(() => {
       if (videoRef.current && currentPositionRef.current > 0) {
+        console.log('Seeking to maintain position after subtitle change:', currentPositionRef.current);
         videoRef.current.seek(currentPositionRef.current);
       }
     }, 100);
@@ -692,19 +699,57 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         clearTimeout(timeoutId);
       }
     };
-  }, []);
+  }, [subtitles]);
 
   // Update selected subtitle track with logging
   const selectedSubtitleTrack = useMemo(() => {
-    if (!selectedSubtitle) return undefined;
-    const subtitle = subtitles.find(s => s.lang === selectedSubtitle);
-    console.log('Selected subtitle track:', subtitle);
-    return subtitle ? {
-      title: subtitle.lang,
-      language: subtitle.lang.toLowerCase(),
+    console.log('Computing selectedSubtitleTrack, selectedSubtitle:', selectedSubtitle);
+    console.log('Available subtitles:', subtitles);
+    
+    if (!selectedSubtitle) {
+      console.log('No subtitle selected, returning undefined');
+      return undefined;
+    }
+    
+    const subtitle = subtitles.find(s => 
+      s.lang === selectedSubtitle || 
+      s.language === selectedSubtitle || 
+      s.title === selectedSubtitle
+    );
+    console.log('Found subtitle for selection:', subtitle);
+    
+    if (!subtitle) {
+      console.log('Subtitle not found in subtitles array');
+      return undefined;
+    }
+    
+    // Create proper language code - use ISO 639-1 format if possible
+    const originalLang = subtitle.lang || subtitle.language || subtitle.title || 'Unknown';
+    let languageCode = originalLang.toLowerCase().replace(/[^a-z]/g, '');
+    
+    // Map common languages to ISO codes
+    const languageMap: { [key: string]: string } = {
+      'english': 'en',
+      'chinese': 'zh',
+      'chinesetraditional': 'zh',
+      'indonesian': 'id',
+      'korean': 'ko',
+      'malay': 'ms',
+      'thai': 'th',
+      'vietnamese': 'vi'
+    };
+    
+    languageCode = languageMap[languageCode] || languageCode;
+    
+    const track = {
+      title: originalLang,
+      language: languageCode,
       type: TextTrackType.VTT,
       uri: subtitle.url
-    } : undefined;
+    };
+    
+    console.log('Created subtitle track:', track);
+    return track;
   }, [selectedSubtitle, subtitles]);
 
   // Add a cleanup function to normalize orientation
@@ -721,29 +766,30 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   };
 
-  // Consolidated cleanup on component unmount - REMOVE DUPLICATE
-  // useEffect(() => {
-  //   return () => {
-  //     if (controlsTimeoutRef.current) {
-  //       clearTimeout(controlsTimeoutRef.current);
-  //     }
-
-  //     // Normalize orientation when component unmounts
-  //     normalizeOrientation();
-  //   };
-  // }, []);
-
-  // Update useEffect for subtitle initialization
+  // Update useEffect for subtitle initialization to be more explicit
   useEffect(() => {
-    console.log('Received subtitles:', subtitles);
+    console.log('Subtitle initialization effect triggered');
+    console.log('Current selectedSubtitle:', selectedSubtitle);
+    console.log('Available subtitles:', subtitles);
+    
     // Set English as default if available and no subtitle is selected
     if (!selectedSubtitle && subtitles.length > 0) {
-      const englishSub = subtitles.find(sub => sub.lang === 'English');
+      console.log('No subtitle selected, looking for English...');
+      const englishSub = subtitles.find(sub => {
+        const langToCheck = sub.lang || sub.language || sub.title || '';
+        return langToCheck.toLowerCase().includes('english');
+      });
+      console.log('Found English subtitle:', englishSub);
+      
       if (englishSub) {
-        handleSubtitleChange(englishSub.lang);
+        const langToUse = englishSub.lang || englishSub.language || englishSub.title || 'English';
+        console.log('Setting English as default subtitle:', langToUse);
+        handleSubtitleChange(langToUse);
+      } else {
+        console.log('No English subtitle found, available languages:', subtitles.map(s => s.lang || s.language || s.title));
       }
     }
-  }, [subtitles, selectedSubtitle, handleSubtitleChange]);
+  }, [subtitles, handleSubtitleChange]); // Add handleSubtitleChange to dependencies
 
   // Subtitle settings state
   const [subtitleSettings, setSubtitleSettings] = useState({
@@ -997,13 +1043,24 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           }}
           textTracks={selectedSubtitleTrack ? [selectedSubtitleTrack] : undefined}
           selectedTextTrack={selectedSubtitleTrack ? {
-            type: SelectedTrackType.LANGUAGE,
-            value: selectedSubtitleTrack.language
-          } : undefined}
+            type: SelectedTrackType.INDEX,
+            value: 0 // Always select the first (and only) track we provide
+          } : {
+            type: SelectedTrackType.DISABLED,
+            value: undefined
+          }}
+          onTextTracks={(tracks) => {
+            console.log('Video textTracks loaded:', tracks);
+          }}
+          onTimedMetadata={(metadata) => {
+            console.log('Video timed metadata:', metadata);
+          }}
           subtitleStyle={{
             fontSize: subtitleSettings.fontSize,
             paddingBottom: subtitleSettings.paddingBottom,
-            opacity: 0.7,
+            opacity: 1.0,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            color: 'white',
           }}
         />
         )}
