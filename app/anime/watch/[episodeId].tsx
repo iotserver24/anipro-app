@@ -342,8 +342,10 @@ type Quality = {
 // Add this utility function at the top of the file
 const extractQualities = async (m3u8Url: string): Promise<Quality[]> => {
   try {
+    console.log('Extracting qualities from:', m3u8Url);
     const response = await fetch(m3u8Url);
     const manifest = await response.text();
+    console.log('M3U8 manifest first 500 chars:', manifest.substring(0, 500));
     const qualities: Quality[] = [];
     
     // Parse m3u8 manifest
@@ -352,6 +354,7 @@ const extractQualities = async (m3u8Url: string): Promise<Quality[]> => {
     
     for (const line of lines) {
       if (line.includes('#EXT-X-STREAM-INF')) {
+        console.log('Found stream info line:', line);
         // Extract resolution/bandwidth info
         const resolution = line.match(/RESOLUTION=(\d+x\d+)/)?.[1];
         const bandwidth = line.match(/BANDWIDTH=(\d+)/)?.[1];
@@ -359,18 +362,27 @@ const extractQualities = async (m3u8Url: string): Promise<Quality[]> => {
         if (resolution) {
           const height = resolution.split('x')[1];
           currentQuality = `${height}p`;
+          console.log('Found resolution quality:', currentQuality);
         } else if (bandwidth) {
           // Fallback to bandwidth if no resolution
           const bw = Math.floor(parseInt(bandwidth) / 1000);
           currentQuality = `${bw}k`;
+          console.log('Found bandwidth quality:', currentQuality);
         }
       } else if (line.trim() && !line.startsWith('#') && currentQuality) {
         // This is a stream URL
-        const streamUrl = new URL(line, m3u8Url).href;
+        let streamUrl;
+        try {
+          streamUrl = new URL(line.trim(), m3u8Url).href;
+        } catch {
+          // If URL construction fails, use the line as is if it's already a full URL
+          streamUrl = line.trim().startsWith('http') ? line.trim() : m3u8Url.replace(/[^/]*$/, line.trim());
+        }
         qualities.push({
           url: streamUrl,
           quality: currentQuality
         });
+        console.log('Added quality:', currentQuality, 'URL:', streamUrl.substring(0, 100) + '...');
         currentQuality = '';
       }
     }
@@ -381,15 +393,22 @@ const extractQualities = async (m3u8Url: string): Promise<Quality[]> => {
       quality: 'auto'
     });
 
+    console.log('Final qualities array:', qualities.map(q => ({ quality: q.quality, urlPreview: q.url.substring(0, 50) + '...' })));
+
     return qualities.sort((a, b) => {
       // Sort qualities with highest first, but keep auto at top
       if (a.quality === 'auto') return -1;
       if (b.quality === 'auto') return 1;
-      return parseInt(b.quality) - parseInt(a.quality);
+      // Handle quality strings that might not be pure numbers
+      const aNum = parseInt(a.quality);
+      const bNum = parseInt(b.quality);
+      if (isNaN(aNum) || isNaN(bNum)) return 0;
+      return bNum - aNum;
     });
 
   } catch (error) {
     console.error('Error parsing m3u8:', error);
+    console.log('Falling back to auto quality only');
     return [{
       url: m3u8Url,
       quality: 'auto'
@@ -793,8 +812,8 @@ export default function WatchEpisode() {
   const [error, setError] = useState<string | null>(null);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
-  // Change default server to hardSub
-  const [selectedServer, setSelectedServer] = useState<'softSub' | 'hardSub' | 'zen'>('zen');
+  // Change default server to softSub
+  const [selectedServer, setSelectedServer] = useState<'softSub' | 'hardSub' | 'zen'>('softSub');
   const [isChangingServer, setIsChangingServer] = useState(false);
   const [progress, setProgress] = useState<Progress>({
     currentTime: 0,
@@ -1074,16 +1093,31 @@ export default function WatchEpisode() {
         // NEW TEMPORARY URL FOR SOFTSUB SERVER
         try {
           const category = currentCategory === 'dub' ? 'dub' : 'sub';
-          const softSubUrl = `https://ani.anisurge.me/api/v2/hianime/episode/sources?animeEpisodeId=${cleanEpisodeId}&server=hd-1&category=${category}`;
+          // Parse episodeId to required format: animeId?ep=episodeNumber
+          let animeIdPart = '';
+          let episodeNumPart = '';
+          if (typeof episodeId === 'string' && episodeId.includes('$episode$')) {
+            const parts = episodeId.split('$episode$');
+            animeIdPart = parts[0];
+            episodeNumPart = parts[1]?.split('$')[0]; // In case there are extra $category= params
+          } else {
+            animeIdPart = (episodeId as string).split('$category=')[0];
+          }
+          const formattedEpisodeId = (animeIdPart && episodeNumPart) ? `${animeIdPart}?ep=${episodeNumPart}` : animeIdPart;
+          const softSubUrl = `https://ani.anisurge.me/api/v2/hianime/episode/sources?animeEpisodeId=${formattedEpisodeId}&server=hd-1&category=${category}`;
           console.log('SoftSub URL:', softSubUrl);
           
           const response = await fetch(softSubUrl);
+          const responseBody = await response.text(); // Always read the body as text for debugging
+          console.log('SoftSub API response:', responseBody);
+          
           if (!response.ok) {
-            throw new Error(`Failed to fetch SoftSub sources: ${response.status}`);
+            throw new Error(`Failed to fetch SoftSub sources: ${response.status} - ${responseBody}`);
           }
           
-          sources = await response.json();
-          console.log('SoftSub sources response:', sources);
+          const parsed = JSON.parse(responseBody);
+          sources = parsed.data;
+          console.log('SoftSub sources response (parsed):', sources);
         } catch (error) {
           console.error('Error fetching SoftSub sources:', error);
           throw new Error(`Failed to load SoftSub server: ${error instanceof Error ? error.message : String(error)}`);
@@ -1350,7 +1384,15 @@ export default function WatchEpisode() {
       }
 
       // Process subtitles from the API response (but skip if already processed by Zen server)
-      if (sources.subtitles && Array.isArray(sources.subtitles) && selectedServer !== 'zen') {
+      if (selectedServer === 'softSub' && sources.tracks && Array.isArray(sources.tracks)) {
+        const processedSubtitles = sources.tracks.map(track => ({
+          title: track.lang || 'Unknown',
+          language: track.lang || 'Unknown',
+          url: track.url
+        }));
+        console.log('Setting subtitles from tracks:', processedSubtitles);
+        setSubtitles(processedSubtitles);
+      } else if (sources.subtitles && Array.isArray(sources.subtitles) && selectedServer !== 'zen') {
         const processedSubtitles = sources.subtitles.map(sub => ({
           title: sub.kind || 'Unknown',
           language: sub.kind || 'Unknown',

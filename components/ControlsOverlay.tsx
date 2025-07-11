@@ -6,6 +6,8 @@ import Slider from '@react-native-community/slider';
 
 interface ControlsOverlayProps {
   showControls: boolean;
+  controlsLocked?: boolean;
+  onToggleLock?: () => void;
   isPlaying: boolean;
   isFullscreen: boolean;
   currentTime: number;
@@ -50,6 +52,8 @@ type Subtitle = {
 
 const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
   showControls,
+  controlsLocked = false,
+  onToggleLock,
   isPlaying,
   isFullscreen,
   currentTime,
@@ -143,77 +147,105 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
       style={styles.controlsOverlay}
       pointerEvents="box-none"
     >
+      {/* Lock/Unlock Button - Always Visible */}
+      {onToggleLock && (
+        <TouchableOpacity
+          style={styles.lockButton}
+          onPress={onToggleLock}
+          activeOpacity={0.7}
+          hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+        >
+          <MaterialIcons
+            name={controlsLocked ? "lock" : "lock-open"}
+            size={24}
+            color="white"
+          />
+        </TouchableOpacity>
+      )}
+
+      {/* All other controls - Hidden when locked */}
+      {showControls && (
+      <>
       {/* Top bar with controls */}
       <LinearGradient
         colors={["rgba(0,0,0,0.7)", "transparent"]}
         style={styles.topBar}
       >
         <View style={styles.topBarContent}>
-          {/* Left side subtitle control */}
           <View style={styles.topLeftControls}>
+            {/* Empty space to avoid lock button overlap */}
+          </View>
+
+          <View style={styles.topRightControls}>
+            {/* Quality Button */}
             <TouchableOpacity
-              style={[
-                styles.topControlButton,
-                selectedSubtitle && styles.activeTopControlButton
-              ]}
-              onPress={() => setShowSubtitleOptions(true)}
-              activeOpacity={0.5}
-              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+              style={[styles.topControlButton, isQualityChanging && styles.qualityChanging]}
+              onPress={() => setShowQualityOptions(true)}
+              activeOpacity={0.7}
+              disabled={isQualityChanging}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <MaterialIcons
-                name="subtitles"
-                size={20}
-                color="white"
+              <MaterialIcons 
+                name="high-quality" 
+                size={16} 
+                color="white" 
               />
               <Text style={styles.topButtonText}>
-                {selectedSubtitle || 'CC'}
+                {selectedQuality}
               </Text>
             </TouchableOpacity>
-            {/* Subtitle Settings Button */}
-            {onSubtitleSettingsPress && (
-              <TouchableOpacity
-                style={[styles.topControlButton, { marginLeft: 4 }]}
-                onPress={onSubtitleSettingsPress}
-                activeOpacity={0.5}
-                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-              >
-                <MaterialIcons name="tune" size={20} color="white" />
-              </TouchableOpacity>
-            )}
-          </View>
-          
-          {/* Moved controls to top right */}
-          <View style={styles.topRightControls}>
+
             {/* Speed Button */}
             <TouchableOpacity
               style={styles.topControlButton}
               onPress={() => setShowSpeedOptions(true)}
-              activeOpacity={0.5}
-              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Text style={styles.topButtonText}>{playbackSpeed}x</Text>
+              <MaterialIcons 
+                name="speed" 
+                size={16} 
+                color="white" 
+              />
+              <Text style={styles.topButtonText}>
+                {playbackSpeed}x
+              </Text>
             </TouchableOpacity>
 
-            {/* Quality Button */}
-            {qualities.length > 1 && (
+            {/* CC Button */}
+            {subtitles && subtitles.length > 0 && (
               <TouchableOpacity
-                style={[
-                  styles.topControlButton,
-                  isQualityChanging && styles.qualityChanging
-                ]}
-                onPress={() => setShowQualityOptions(true)}
-                activeOpacity={0.5}
-                hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                disabled={isQualityChanging}
+                style={[styles.topControlButton, selectedSubtitle && styles.activeTopControlButton]}
+                onPress={() => setShowSubtitleOptions(true)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
+                <MaterialIcons 
+                  name="closed-caption" 
+                  size={16} 
+                  color="white" 
+                />
                 <Text style={styles.topButtonText}>
-                  {selectedQuality}
-                  {isQualityChanging && '...'}
+                  {selectedSubtitle || 'CC'}
                 </Text>
               </TouchableOpacity>
             )}
-            
-            {/* Fullscreen button */}
+
+            {/* Settings Button */}
+            <TouchableOpacity
+              style={styles.topControlButton}
+              onPress={onSubtitleSettingsPress}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <MaterialIcons 
+                name="tune" 
+                size={16} 
+                color="white" 
+              />
+            </TouchableOpacity>
+
+            {/* Fullscreen Button */}
             <TouchableOpacity
               style={styles.topFullscreenButton}
               onPress={onFullscreenPress}
@@ -498,6 +530,8 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
           </View>
         </TouchableOpacity>
       </Modal>
+      </>
+      )}
     </View>
   );
 };
@@ -704,6 +738,18 @@ const styles = StyleSheet.create({
   selectedSubtitleText: {
     color: "white",
     fontWeight: "600",
+  },
+  lockButton: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

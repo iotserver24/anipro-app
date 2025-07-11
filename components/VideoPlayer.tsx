@@ -163,9 +163,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Refs
   const videoRef = useRef<VideoRef>(null);
   const webViewRef = useRef<any>(null); // WebView ref for Zen player
-  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastTapRef = useRef<number>(0);
-  const lastTapXRef = useRef<number>(0);
   const isSeekingRef = useRef<boolean>(false);
   const didCompletePlaybackRef = useRef<boolean>(false);
   const isOrientationChangingRef = useRef<boolean>(false);
@@ -174,7 +171,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [isPlaying, setIsPlaying] = useState(true);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [showControls, setShowControls] = useState(true);
+  const [showControls, setShowControls] = useState(true); // Always true now
+  const [controlsLocked, setControlsLocked] = useState(false); // New lock state
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [dimensions, setDimensions] = useState({
     width: Dimensions.get("window").width,
@@ -251,74 +249,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       isQualityChanging,
     ]
   );
-
-  // Optimize screen tap handler
-  const handleScreenTap = useCallback((event: any) => {
-    // Immediately toggle controls visibility
-    setShowControls(prev => !prev);
-
-    // Handle double tap logic
-    const now = Date.now();
-    const tapX = event.nativeEvent.locationX;
-
-    if (now - lastTapRef.current < 300 && Math.abs(tapX - lastTapXRef.current) < 40) {
-      if (tapX < dimensions.width / 2) {
-        handleSeek(Math.max(0, currentTime - 10));
-      } else {
-        handleSeek(Math.min(duration, currentTime + 10));
-      }
-      return;
-    }
-
-    lastTapRef.current = now;
-    lastTapXRef.current = tapX;
-
-    // Clear existing timeout
-    if (controlsTimeoutRef.current) {
-      clearTimeout(controlsTimeoutRef.current);
-    }
-
-    // Set auto-hide timeout only if showing controls
-    if (!showControls && isPlaying) {
-      controlsTimeoutRef.current = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-    }
-  }, [showControls, isPlaying, currentTime, duration, dimensions.width]);
-
-  // Optimize controls visibility effect
-  useEffect(() => {
-    let timeout: NodeJS.Timeout;
-    
-    if (showControls && isPlaying && !isFullscreen) {
-      timeout = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-    }
-
-    return () => {
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    };
-  }, [showControls, isPlaying, isFullscreen]);
-
-  // Add separate effect for fullscreen controls
-  useEffect(() => {
-    let timeout: NodeJS.Timeout;
-    
-    if (showControls && isPlaying && isFullscreen) {
-      timeout = setTimeout(() => {
-        setShowControls(false);
-      }, 3000);
-    }
-
-    return () => {
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    };
-  }, [showControls, isPlaying, isFullscreen]);
 
   // Optimize seek handler
   const handleSeek = useCallback(async (value: number) => {
@@ -499,11 +429,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     
     return () => {
       // Clean up all timeouts
-      if (controlsTimeoutRef.current) {
-        clearTimeout(controlsTimeoutRef.current);
-        controlsTimeoutRef.current = null;
-      }
-
       // Clean up event listeners
       subscription?.remove();
 
@@ -942,10 +867,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     >
       <Pressable
         style={[styles.videoWrapper]}
-        onPress={source.isZenEmbedded ? undefined : handleScreenTap} // Disable tap for WebView
         hitSlop={{ top: 0, bottom: 0, left: 0, right: 0 }}
         android_ripple={{ color: 'transparent' }}
-        disabled={source.isZenEmbedded} // Disable pressable for WebView
+        disabled={true} // Disable all touch interactions on video
       >
         {source.isZenEmbedded ? (
           <WebView
@@ -1155,12 +1079,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       <View 
         style={[
           styles.controlsContainer,
-          { opacity: showControls ? 1 : 0 },
-          { pointerEvents: showControls ? 'auto' : 'none' }
+          { opacity: 1 },
+          { pointerEvents: 'auto' }
         ]}
       >
         <ControlsOverlay
-          showControls={showControls}
+          showControls={!controlsLocked} // Hide all controls except lock when locked
+          controlsLocked={controlsLocked}
+          onToggleLock={() => setControlsLocked(!controlsLocked)}
           isPlaying={isPlaying}
           isFullscreen={isFullscreen}
           currentTime={currentTime}
