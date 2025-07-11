@@ -194,8 +194,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Update subtitle handling to set English as default
   const [selectedSubtitle, setSelectedSubtitle] = useState<string | undefined>(() => {
-    const englishSub = subtitles.find(sub => sub.lang === 'English');
-    return englishSub ? englishSub.lang : undefined;
+    const englishSub = subtitles.find(sub => {
+      const lang = sub.lang || sub.language || sub.title || '';
+      return lang.toLowerCase().includes('english');
+    });
+    return englishSub ? (englishSub.lang || englishSub.language || englishSub.title) : undefined;
   });
 
   // Add position tracking for subtitle changes
@@ -767,6 +770,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         handleSubtitleChange(langToUse);
       } else {
         console.log('No English subtitle found, available languages:', subtitles.map(s => s.lang || s.language || s.title));
+        // If no English found, select the first available subtitle
+        const firstSub = subtitles[0];
+        if (firstSub) {
+          const langToUse = firstSub.lang || firstSub.language || firstSub.title || 'Unknown';
+          console.log('Setting first available subtitle as default:', langToUse);
+          handleSubtitleChange(langToUse);
+        }
       }
     }
   }, [subtitles, handleSubtitleChange]); // Add handleSubtitleChange to dependencies
@@ -1019,6 +1029,20 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             }));
             
             console.log('Text tracks for video player:', tracks);
+            
+            // Test subtitle URL accessibility
+            if (tracks.length > 0) {
+              tracks.forEach((track, index) => {
+                fetch(track.uri, { method: 'HEAD' })
+                  .then(response => {
+                    console.log(`Subtitle track ${index} (${track.title}) accessibility:`, response.ok ? 'OK' : 'Failed', response.status);
+                  })
+                  .catch(error => {
+                    console.log(`Subtitle track ${index} (${track.title}) accessibility: Failed -`, error.message);
+                  });
+              });
+            }
+            
             return tracks.length > 0 ? tracks : undefined;
           })()}
           textTracksAllowChunklessPreparation={false}
@@ -1048,34 +1072,65 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               return !langToCheck.toLowerCase().includes('thumbnails');
             });
             
-            if (!selectedSubtitle) {
-              console.log('No subtitle selected');
+            if (!selectedSubtitle || filteredSubtitles.length === 0) {
+              console.log('No subtitle selected or no subtitles available');
               return {
                 type: SelectedTrackType.DISABLED,
                 value: undefined
               };
             }
             
-            const selectedIndex = filteredSubtitles.findIndex(sub => 
-              (sub.lang || sub.language || sub.title) === selectedSubtitle
-            );
+            // Try to find the selected subtitle by matching the language/title
+            const selectedIndex = filteredSubtitles.findIndex(sub => {
+              const subLang = sub.lang || sub.language || sub.title || '';
+              const selectedLang = selectedSubtitle || '';
+              return subLang.toLowerCase() === selectedLang.toLowerCase() || 
+                     subLang.toLowerCase().includes(selectedLang.toLowerCase()) ||
+                     selectedLang.toLowerCase().includes(subLang.toLowerCase());
+            });
             
             console.log('Selected subtitle track:', {
               selectedSubtitle,
               selectedIndex,
-              availableSubtitles: filteredSubtitles.map(s => s.lang || s.language || s.title)
+              availableSubtitles: filteredSubtitles.map(s => s.lang || s.language || s.title),
+              filteredSubtitles: filteredSubtitles.map(s => ({
+                lang: s.lang || s.language || s.title,
+                url: s.url.substring(0, 50) + '...'
+              }))
             });
             
             if (selectedIndex >= 0) {
+              console.log(`Enabling subtitle track at index ${selectedIndex}: ${filteredSubtitles[selectedIndex].lang || filteredSubtitles[selectedIndex].language || filteredSubtitles[selectedIndex].title}`);
               return {
                 type: SelectedTrackType.INDEX,
                 value: selectedIndex
               };
             } else {
-              return {
-                type: SelectedTrackType.DISABLED,
-                value: undefined
-              };
+              // If exact match not found, try to auto-select English or first available
+              const englishIndex = filteredSubtitles.findIndex(sub => {
+                const lang = sub.lang || sub.language || sub.title || '';
+                return lang.toLowerCase().includes('english');
+              });
+              
+              if (englishIndex >= 0) {
+                console.log(`Auto-selecting English subtitle at index ${englishIndex}`);
+                return {
+                  type: SelectedTrackType.INDEX,
+                  value: englishIndex
+                };
+              } else if (filteredSubtitles.length > 0) {
+                console.log(`Auto-selecting first available subtitle at index 0`);
+                return {
+                  type: SelectedTrackType.INDEX,
+                  value: 0
+                };
+              } else {
+                console.log('No suitable subtitle found, disabling');
+                return {
+                  type: SelectedTrackType.DISABLED,
+                  value: undefined
+                };
+              }
             }
           })()}
           onTextTracks={(tracks) => {
@@ -1087,6 +1142,22 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 type: t.type,
                 index: t.index
               })));
+            }
+            
+            // Check if any tracks are enabled
+            if (tracks.selectedIndex !== undefined) {
+              console.log('Currently selected text track index:', tracks.selectedIndex);
+              if (tracks.textTracks && tracks.textTracks[tracks.selectedIndex]) {
+                const selectedTrack = tracks.textTracks[tracks.selectedIndex];
+                console.log('Selected track details:', {
+                  title: selectedTrack.title,
+                  language: selectedTrack.language,
+                  type: selectedTrack.type,
+                  index: selectedTrack.index
+                });
+              }
+            } else {
+              console.log('No text track currently selected');
             }
           }}
           onTimedMetadata={(metadata) => {
