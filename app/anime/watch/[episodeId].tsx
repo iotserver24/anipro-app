@@ -1065,11 +1065,29 @@ export default function WatchEpisode() {
       // Handle different servers
       let sources;
       if (selectedServer === 'softSub') {
-        // Original API source (Zoro/SoftSub)
-        sources = await animeAPI.getEpisodeSources(
-          cleanEpisodeId,
-          currentCategory === 'dub'
-        );
+        // Original API source (Zoro/SoftSub) - COMMENTED OUT TEMPORARILY
+        // sources = await animeAPI.getEpisodeSources(
+        //   cleanEpisodeId,
+        //   currentCategory === 'dub'
+        // );
+        
+        // NEW TEMPORARY URL FOR SOFTSUB SERVER
+        try {
+          const category = currentCategory === 'dub' ? 'dub' : 'sub';
+          const softSubUrl = `https://ani.anisurge.me/api/v2/hianime/episode/sources?animeEpisodeId=${cleanEpisodeId}&server=hd-1&category=${category}`;
+          console.log('SoftSub URL:', softSubUrl);
+          
+          const response = await fetch(softSubUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch SoftSub sources: ${response.status}`);
+          }
+          
+          sources = await response.json();
+          console.log('SoftSub sources response:', sources);
+        } catch (error) {
+          console.error('Error fetching SoftSub sources:', error);
+          throw new Error(`Failed to load SoftSub server: ${error instanceof Error ? error.message : String(error)}`);
+        }
       } else if (selectedServer === 'hardSub') {
         // HardSub server implementation
         try {
