@@ -701,55 +701,35 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
   }, [subtitles]);
 
-  // Update selected subtitle track with logging
-  const selectedSubtitleTrack = useMemo(() => {
-    console.log('Computing selectedSubtitleTrack, selectedSubtitle:', selectedSubtitle);
-    console.log('Available subtitles:', subtitles);
+  // Log subtitle changes for debugging
+  useEffect(() => {
+    const filteredSubtitles = subtitles.filter(track => {
+      const langToCheck = track.lang || track.language || track.title || '';
+      return !langToCheck.toLowerCase().includes('thumbnails');
+    });
     
-    if (!selectedSubtitle) {
-      console.log('No subtitle selected, returning undefined');
-      return undefined;
-    }
-    
-    const subtitle = subtitles.find(s => 
-      s.lang === selectedSubtitle || 
-      s.language === selectedSubtitle || 
-      s.title === selectedSubtitle
+    const selectedIndex = filteredSubtitles.findIndex(sub => 
+      (sub.lang || sub.language || sub.title) === selectedSubtitle
     );
-    console.log('Found subtitle for selection:', subtitle);
     
-    if (!subtitle) {
-      console.log('Subtitle not found in subtitles array');
-      return undefined;
+    console.log('Subtitle selection changed:', {
+      selectedSubtitle,
+      availableSubtitles: filteredSubtitles.map(s => s.lang || s.language || s.title),
+      selectedIndex,
+      totalSubtitles: subtitles.length,
+      filteredSubtitles: filteredSubtitles.length
+    });
+    
+    // Log the text tracks that will be passed to the video player
+    if (filteredSubtitles.length > 0) {
+      console.log('Text tracks for video player:', filteredSubtitles.map((track, index) => ({
+        title: track.lang || track.language || track.title || 'Unknown',
+        language: (track.lang || track.language || track.title || 'en').toLowerCase().substring(0, 2),
+        type: 'text/vtt',
+        uri: track.url,
+        index
+      })));
     }
-    
-    // Create proper language code - use ISO 639-1 format if possible
-    const originalLang = subtitle.lang || subtitle.language || subtitle.title || 'Unknown';
-    let languageCode = originalLang.toLowerCase().replace(/[^a-z]/g, '');
-    
-    // Map common languages to ISO codes
-    const languageMap: { [key: string]: string } = {
-      'english': 'en',
-      'chinese': 'zh',
-      'chinesetraditional': 'zh',
-      'indonesian': 'id',
-      'korean': 'ko',
-      'malay': 'ms',
-      'thai': 'th',
-      'vietnamese': 'vi'
-    };
-    
-    languageCode = languageMap[languageCode] || languageCode;
-    
-    const track = {
-      title: originalLang,
-      language: languageCode,
-      type: TextTrackType.VTT,
-      uri: subtitle.url
-    };
-    
-    console.log('Created subtitle track:', track);
-    return track;
   }, [selectedSubtitle, subtitles]);
 
   // Add a cleanup function to normalize orientation
@@ -1021,7 +1001,22 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         ) : (
         <Video
           ref={videoRef}
-          source={source.uri ? source : undefined}
+          source={{
+            uri: source.uri || '',
+            headers: source.headers,
+            textTracks: subtitles.length > 0 ? subtitles
+              .filter(track => {
+                const langToCheck = track.lang || track.language || track.title || '';
+                return !langToCheck.toLowerCase().includes('thumbnails');
+              })
+              .map((track, index) => ({
+                title: track.lang || track.language || track.title || 'Unknown',
+                language: (track.lang || track.language || track.title || 'en').toLowerCase().substring(0, 2),
+                type: TextTrackType.VTT,
+                uri: track.url,
+              })) : [],
+            textTracksAllowChunklessPreparation: false,
+          }}
           style={videoStyle}
           resizeMode={ResizeMode.CONTAIN}
           paused={!isPlaying}
@@ -1041,26 +1036,54 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             bufferForPlaybackMs: 2500,
             bufferForPlaybackAfterRebufferMs: 5000
           }}
-          textTracks={selectedSubtitleTrack ? [selectedSubtitleTrack] : undefined}
-          selectedTextTrack={selectedSubtitleTrack ? {
+
+          selectedTextTrack={selectedSubtitle ? {
             type: SelectedTrackType.INDEX,
-            value: 0 // Always select the first (and only) track we provide
+            value: subtitles
+              .filter(track => {
+                const langToCheck = track.lang || track.language || track.title || '';
+                return !langToCheck.toLowerCase().includes('thumbnails');
+              })
+              .findIndex(sub => 
+                (sub.lang || sub.language || sub.title) === selectedSubtitle
+              )
           } : {
             type: SelectedTrackType.DISABLED,
             value: undefined
           }}
           onTextTracks={(tracks) => {
             console.log('Video textTracks loaded:', tracks);
+            if (tracks.textTracks && tracks.textTracks.length > 0) {
+              console.log('Text tracks details:', tracks.textTracks.map(t => ({
+                title: t.title,
+                language: t.language,
+                type: t.type,
+                index: t.index
+              })));
+            }
           }}
           onTimedMetadata={(metadata) => {
             console.log('Video timed metadata:', metadata);
           }}
+          onLoad={(data) => {
+            console.log('Video onLoad data:', data);
+            if (data.textTracks) {
+              console.log('TextTracks on load:', data.textTracks.map(t => ({
+                title: t.title,
+                language: t.language,
+                type: t.type
+              })));
+            }
+          }}
           subtitleStyle={{
             fontSize: subtitleSettings.fontSize,
             paddingBottom: subtitleSettings.paddingBottom,
-            opacity: 1.0,
-            backgroundColor: 'rgba(0,0,0,0.8)',
+            opacity: 0.9,
             color: 'white',
+            backgroundColor: 'rgba(0,0,0,0.75)',
+            borderRadius: 4,
+            textAlign: 'center',
+            fontWeight: 'bold'
           }}
         />
         )}
