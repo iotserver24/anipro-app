@@ -998,25 +998,30 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               })();
             `}
           />
-        ) : (
+                  ) : (
         <Video
           ref={videoRef}
           source={{
             uri: source.uri || '',
             headers: source.headers,
-            textTracks: subtitles.length > 0 ? subtitles
-              .filter(track => {
-                const langToCheck = track.lang || track.language || track.title || '';
-                return !langToCheck.toLowerCase().includes('thumbnails');
-              })
-              .map((track, index) => ({
-                title: track.lang || track.language || track.title || 'Unknown',
-                language: (track.lang || track.language || track.title || 'en').toLowerCase().substring(0, 2),
-                type: TextTrackType.VTT,
-                uri: track.url,
-              })) : [],
-            textTracksAllowChunklessPreparation: false,
           }}
+          textTracks={(() => {
+            const filteredSubtitles = subtitles.filter(track => {
+              const langToCheck = track.lang || track.language || track.title || '';
+              return !langToCheck.toLowerCase().includes('thumbnails');
+            });
+            
+            const tracks = filteredSubtitles.map((track, index) => ({
+              title: track.lang || track.language || track.title || 'Unknown',
+              language: (track.lang || track.language || track.title || 'en').toLowerCase().substring(0, 2),
+              type: TextTrackType.VTT,
+              uri: track.url,
+            }));
+            
+            console.log('Text tracks for video player:', tracks);
+            return tracks.length > 0 ? tracks : undefined;
+          })()}
+          textTracksAllowChunklessPreparation={false}
           style={videoStyle}
           resizeMode={ResizeMode.CONTAIN}
           paused={!isPlaying}
@@ -1037,20 +1042,42 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             bufferForPlaybackAfterRebufferMs: 5000
           }}
 
-          selectedTextTrack={selectedSubtitle ? {
-            type: SelectedTrackType.INDEX,
-            value: subtitles
-              .filter(track => {
-                const langToCheck = track.lang || track.language || track.title || '';
-                return !langToCheck.toLowerCase().includes('thumbnails');
-              })
-              .findIndex(sub => 
-                (sub.lang || sub.language || sub.title) === selectedSubtitle
-              )
-          } : {
-            type: SelectedTrackType.DISABLED,
-            value: undefined
-          }}
+          selectedTextTrack={(() => {
+            const filteredSubtitles = subtitles.filter(track => {
+              const langToCheck = track.lang || track.language || track.title || '';
+              return !langToCheck.toLowerCase().includes('thumbnails');
+            });
+            
+            if (!selectedSubtitle) {
+              console.log('No subtitle selected');
+              return {
+                type: SelectedTrackType.DISABLED,
+                value: undefined
+              };
+            }
+            
+            const selectedIndex = filteredSubtitles.findIndex(sub => 
+              (sub.lang || sub.language || sub.title) === selectedSubtitle
+            );
+            
+            console.log('Selected subtitle track:', {
+              selectedSubtitle,
+              selectedIndex,
+              availableSubtitles: filteredSubtitles.map(s => s.lang || s.language || s.title)
+            });
+            
+            if (selectedIndex >= 0) {
+              return {
+                type: SelectedTrackType.INDEX,
+                value: selectedIndex
+              };
+            } else {
+              return {
+                type: SelectedTrackType.DISABLED,
+                value: undefined
+              };
+            }
+          })()}
           onTextTracks={(tracks) => {
             console.log('Video textTracks loaded:', tracks);
             if (tracks.textTracks && tracks.textTracks.length > 0) {
