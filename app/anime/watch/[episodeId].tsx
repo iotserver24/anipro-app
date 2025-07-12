@@ -75,6 +75,12 @@ type VideoPlayerProps = {
       Referer: string;
       'User-Agent': string;
     };
+    textTracks?: Array<{
+      title: string;
+      language: string;
+      type: string;
+      uri: string;
+    }>;
   };
   style?: any;
   paused?: boolean;
@@ -84,12 +90,6 @@ type VideoPlayerProps = {
   onLoad?: (data: OnLoadData) => void;
   onBuffer?: (data: OnBufferData) => void;
   rate?: number;
-  textTracks?: Array<{
-    title: string;
-    language: string;
-    type: string;
-    uri: string;
-  }>;
   selectedTextTrack?: {
     type: 'system' | 'disabled' | 'title' | 'language' | 'index';
     value: string | number;
@@ -1889,7 +1889,13 @@ export default function WatchEpisode() {
     source: { 
       uri: streamingUrl,
       headers: videoHeaders,
-      isZenEmbedded: selectedServer === 'zen' // Flag for Zen embedded player
+      isZenEmbedded: selectedServer === 'zen', // Flag for Zen embedded player
+      textTracks: subtitles.map(subtitle => ({
+        title: subtitle.title || subtitle.language || subtitle.lang || 'Unknown',
+        language: subtitle.lang || subtitle.language || 'en',
+        type: 'text/vtt',
+        uri: subtitle.url
+      }))
     },
     title: episodeTitle as string,
     initialPosition: lastServerPosition > 0 ? lastServerPosition : resumePosition, // Use lastServerPosition if available, otherwise resumePosition

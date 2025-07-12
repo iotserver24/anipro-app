@@ -35,6 +35,12 @@ interface VideoPlayerProps {
     uri: string;
     headers?: { [key: string]: string };
     isZenEmbedded?: boolean; // Flag to indicate Zen embedded player
+    textTracks?: Array<{
+      title: string;
+      language: string;
+      type: any;
+      uri: string;
+    }>;
   };
   style?: any;
   initialPosition?: number;
@@ -1014,37 +1020,37 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           source={{
             uri: source.uri || '',
             headers: source.headers,
-          }}
-          textTracks={(() => {
-            const filteredSubtitles = subtitles.filter(track => {
-              const langToCheck = track.lang || track.language || track.title || '';
-              return !langToCheck.toLowerCase().includes('thumbnails');
-            });
-            
-            const tracks = filteredSubtitles.map((track, index) => ({
-              title: track.lang || track.language || track.title || 'Unknown',
-              language: (track.lang || track.language || track.title || 'en').toLowerCase().substring(0, 2),
-              type: TextTrackType.VTT,
-              uri: track.url,
-            }));
-            
-            console.log('Text tracks for video player:', tracks);
-            
-            // Test subtitle URL accessibility
-            if (tracks.length > 0) {
-              tracks.forEach((track, index) => {
-                fetch(track.uri, { method: 'HEAD' })
-                  .then(response => {
-                    console.log(`Subtitle track ${index} (${track.title}) accessibility:`, response.ok ? 'OK' : 'Failed', response.status);
-                  })
-                  .catch(error => {
-                    console.log(`Subtitle track ${index} (${track.title}) accessibility: Failed -`, error.message);
-                  });
+            textTracks: (() => {
+              const filteredSubtitles = subtitles.filter(track => {
+                const langToCheck = track.lang || track.language || track.title || '';
+                return !langToCheck.toLowerCase().includes('thumbnails');
               });
-            }
-            
-            return tracks.length > 0 ? tracks : undefined;
-          })()}
+              
+              const tracks = filteredSubtitles.map((track, index) => ({
+                title: track.lang || track.language || track.title || 'Unknown',
+                language: (track.lang || track.language || track.title || 'en').toLowerCase().substring(0, 2),
+                type: TextTrackType.VTT,
+                uri: track.url,
+              }));
+              
+              console.log('Text tracks for video player (now in source):', tracks);
+              
+              // Test subtitle URL accessibility
+              if (tracks.length > 0) {
+                tracks.forEach((track, index) => {
+                  fetch(track.uri, { method: 'HEAD' })
+                    .then(response => {
+                      console.log(`Subtitle track ${index} (${track.title}) accessibility:`, response.ok ? 'OK' : 'Failed', response.status);
+                    })
+                    .catch(error => {
+                      console.log(`Subtitle track ${index} (${track.title}) accessibility: Failed -`, error.message);
+                    });
+                });
+              }
+              
+              return tracks.length > 0 ? tracks : undefined;
+            })(),
+          }}
           textTracksAllowChunklessPreparation={false}
           style={videoStyle}
           resizeMode={ResizeMode.CONTAIN}
