@@ -1052,14 +1052,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             uri: source.uri || '',
             headers: source.headers,
           }}
-          textTracks={textTracks}
-          selectedTextTrack={selectedTextTrackIndex >= 0 ? {
-            type: SelectedTrackType.INDEX,
-            value: selectedTextTrackIndex
-          } : {
-            type: SelectedTrackType.DISABLED,
-            value: undefined
-          }}
+          textTracks={selectedSubtitleTrack ? [selectedSubtitleTrack] : undefined}
+          selectedTextTrack={selectedSubtitleTrack ? {
+            type: SelectedTrackType.LANGUAGE,
+            value: selectedSubtitleTrack.language
+          } : undefined}
           useExoPlayer={true}
           style={videoStyle}
           resizeMode={ResizeMode.CONTAIN}
@@ -1079,6 +1076,14 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             maxBufferMs: 30000,
             bufferForPlaybackMs: 2500,
             bufferForPlaybackAfterRebufferMs: 5000
+          }}
+
+          selectedTextTrack={selectedTextTrackIndex >= 0 ? {
+            type: SelectedTrackType.INDEX,
+            value: selectedTextTrackIndex
+          } : {
+            type: SelectedTrackType.DISABLED,
+            value: undefined
           }}
           onTextTracks={(tracks) => {
             console.log('Video textTracks loaded:', tracks);
