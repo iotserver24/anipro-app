@@ -389,6 +389,7 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
               <ScrollView style={styles.subtitleScrollView}>
                 {/* Off option */}
                 <TouchableOpacity
+                  key="subtitle-off"
                   style={[
                     styles.subtitleOptionButton,
                     !selectedSubtitle && styles.selectedSubtitleButton
@@ -408,7 +409,7 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
                   const subLang = sub.lang || sub.language || sub.title || 'Unknown';
                   return (
                     <TouchableOpacity
-                      key={sub.url} // Use url as key for uniqueness
+                      key={sub.url || subLang || index} // Use url as key for uniqueness, fallback to lang or index
                       style={[
                         styles.subtitleOptionButton,
                         selectedSubtitle === subLang && styles.selectedSubtitleButton

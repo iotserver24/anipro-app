@@ -35,6 +35,12 @@ interface VideoPlayerProps {
     uri: string;
     headers?: { [key: string]: string };
     isZenEmbedded?: boolean; // Flag to indicate Zen embedded player
+    textTracks?: Array<{
+      title: string;
+      language: string;
+      type: string;
+      uri: string;
+    }>;
   };
   style?: any;
   initialPosition?: number;
@@ -55,7 +61,6 @@ interface VideoPlayerProps {
   savedQualityPosition?: number;
   qualities?: Quality[];
   selectedQuality?: string;
-  subtitles?: Subtitle[];
 }
 
 interface APIEpisode {
@@ -155,12 +160,30 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   qualities = [],
   selectedQuality = 'auto',
   onQualityChange,
-  subtitles = [],
 }) => {
-  // Add console log to debug subtitles
+  // Use textTracks from source, filter out 'thumbnails' tracks once, and set type to 'vtt'
+  const textTracks = (source.textTracks || []).filter(track => {
+    const langToCheck = track.language || track.title || '';
+    return !langToCheck.toLowerCase().includes('thumbnails');
+  }).map(track => ({
+    ...track,
+    type: 'vtt', // Force type to 'vtt' for ExoPlayer compatibility
+  }));
+
+  // Debug log for Video props
   useEffect(() => {
-    console.log('Received subtitles:', subtitles);
-  }, [subtitles]);
+    console.log('Video component props:', {
+      uri: source.uri,
+      headers: source.headers,
+      textTracks,
+      selectedTextTrack: selectedSubtitle,
+    });
+  }, [source, textTracks, selectedSubtitle]);
+
+  // Add console log to debug textTracks
+  useEffect(() => {
+    console.log('Received textTracks:', textTracks);
+  }, [textTracks]);
 
   // Refs
   const videoRef = useRef<VideoRef>(null);
@@ -194,8 +217,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   // Update subtitle handling to set English as default
   const [selectedSubtitle, setSelectedSubtitle] = useState<string | undefined>(() => {
-    const englishSub = subtitles.find(sub => sub.lang === 'English');
-    return englishSub ? englishSub.lang : undefined;
+    const englishSub = textTracks.find(sub => 
+      sub.language === 'en' || 
+      sub.title === 'English' || 
+      sub.language === 'english'
+    );
+    return englishSub ? (englishSub.language || englishSub.title) : undefined;
   });
 
   // Add position tracking for subtitle changes
@@ -679,7 +706,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Handle subtitle selection with position maintenance
   const handleSubtitleChange = useCallback((lang: string | null) => {
     console.log('handleSubtitleChange called with:', lang);
-    console.log('Available subtitles:', subtitles.map(s => ({ lang: s.lang, url: s.url.substring(0, 50) + '...' })));
+    console.log('Available subtitles:', textTracks.map(s => ({ lang: s.language, url: s.uri.substring(0, 50) + '...' })));
     
     // Update the selected subtitle state
     setSelectedSubtitle(lang || undefined);
@@ -699,38 +726,33 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         clearTimeout(timeoutId);
       }
     };
-  }, [subtitles]);
+  }, [textTracks]);
 
   // Log subtitle changes for debugging
   useEffect(() => {
-    const filteredSubtitles = subtitles.filter(track => {
-      const langToCheck = track.lang || track.language || track.title || '';
-      return !langToCheck.toLowerCase().includes('thumbnails');
-    });
-    
-    const selectedIndex = filteredSubtitles.findIndex(sub => 
-      (sub.lang || sub.language || sub.title) === selectedSubtitle
+    const selectedIndex = textTracks.findIndex(sub => 
+      sub.language === selectedSubtitle || 
+      sub.title === selectedSubtitle
     );
     
     console.log('Subtitle selection changed:', {
       selectedSubtitle,
-      availableSubtitles: filteredSubtitles.map(s => s.lang || s.language || s.title),
+      availableSubtitles: textTracks.map(s => ({ language: s.language, title: s.title })),
       selectedIndex,
-      totalSubtitles: subtitles.length,
-      filteredSubtitles: filteredSubtitles.length
+      totalSubtitles: textTracks.length,
     });
     
     // Log the text tracks that will be passed to the video player
-    if (filteredSubtitles.length > 0) {
-      console.log('Text tracks for video player:', filteredSubtitles.map((track, index) => ({
-        title: track.lang || track.language || track.title || 'Unknown',
-        language: (track.lang || track.language || track.title || 'en').toLowerCase().substring(0, 2),
-        type: 'text/vtt',
-        uri: track.url,
+    if (textTracks.length > 0) {
+      console.log('Text tracks for video player:', textTracks.map((track, index) => ({
+        title: track.title || 'Unknown',
+        language: track.language || 'en',
+        type: track.type || 'text/vtt',
+        uri: track.uri,
         index
       })));
     }
-  }, [selectedSubtitle, subtitles]);
+  }, [selectedSubtitle, textTracks]);
 
   // Add a cleanup function to normalize orientation
   const normalizeOrientation = async () => {
@@ -750,26 +772,26 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   useEffect(() => {
     console.log('Subtitle initialization effect triggered');
     console.log('Current selectedSubtitle:', selectedSubtitle);
-    console.log('Available subtitles:', subtitles);
+    console.log('Available textTracks:', textTracks);
     
     // Set English as default if available and no subtitle is selected
-    if (!selectedSubtitle && subtitles.length > 0) {
+    if (!selectedSubtitle && textTracks.length > 0) {
       console.log('No subtitle selected, looking for English...');
-      const englishSub = subtitles.find(sub => {
-        const langToCheck = sub.lang || sub.language || sub.title || '';
-        return langToCheck.toLowerCase().includes('english');
+      const englishSub = textTracks.find(sub => {
+        const langToCheck = sub.language || sub.title || '';
+        return langToCheck.toLowerCase().includes('english') || langToCheck === 'en';
       });
       console.log('Found English subtitle:', englishSub);
       
       if (englishSub) {
-        const langToUse = englishSub.lang || englishSub.language || englishSub.title || 'English';
+        const langToUse = englishSub.language || englishSub.title || 'English';
         console.log('Setting English as default subtitle:', langToUse);
-        handleSubtitleChange(langToUse);
+        setSelectedSubtitle(langToUse);
       } else {
-        console.log('No English subtitle found, available languages:', subtitles.map(s => s.lang || s.language || s.title));
+        console.log('No English subtitle found, available languages:', textTracks.map(s => ({ language: s.language, title: s.title })));
       }
     }
-  }, [subtitles, handleSubtitleChange]); // Add handleSubtitleChange to dependencies
+  }, [textTracks]); // Remove handleSubtitleChange from dependencies to avoid infinite loop
 
   // Subtitle settings state
   const [subtitleSettings, setSubtitleSettings] = useState({
@@ -876,6 +898,31 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     console.log('WebView URL with start_at:', finalUrl, 'initialPosition:', initialPositionRef.current);
     return finalUrl;
   }, [source.isZenEmbedded, source.uri]);
+
+  // Calculate the selected text track index for the Video component
+  const selectedTextTrackIndex = useMemo(() => {
+    if (!selectedSubtitle || textTracks.length === 0) return -1;
+    
+    const index = textTracks.findIndex(sub => 
+      sub.language === selectedSubtitle || 
+      sub.title === selectedSubtitle
+    );
+    
+    console.log('Selected text track index:', index, 'for subtitle:', selectedSubtitle);
+    return index;
+  }, [selectedSubtitle, textTracks]);
+
+  // Subtitle selection logic (old working style)
+  const selectedSubtitleTrack = useMemo(() => {
+    if (!selectedSubtitle) return undefined;
+    const subtitle = textTracks.find(s => s.lang === selectedSubtitle);
+    return subtitle ? {
+      title: subtitle.lang,
+      language: (subtitle.lang || '').toLowerCase().substring(0, 2),
+      type: TextTrackType.VTT,
+      uri: subtitle.url
+    } : undefined;
+  }, [selectedSubtitle, textTracks]);
 
   return (
     <Animated.View
@@ -1004,19 +1051,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           source={{
             uri: source.uri || '',
             headers: source.headers,
-            textTracks: subtitles.length > 0 ? subtitles
-              .filter(track => {
-                const langToCheck = track.lang || track.language || track.title || '';
-                return !langToCheck.toLowerCase().includes('thumbnails');
-              })
-              .map((track, index) => ({
-                title: track.lang || track.language || track.title || 'Unknown',
-                language: (track.lang || track.language || track.title || 'en').toLowerCase().substring(0, 2),
-                type: TextTrackType.VTT,
-                uri: track.url,
-              })) : [],
-            textTracksAllowChunklessPreparation: false,
           }}
+          textTracks={selectedSubtitleTrack ? [selectedSubtitleTrack] : undefined}
+          selectedTextTrack={selectedSubtitleTrack ? {
+            type: SelectedTrackType.LANGUAGE,
+            value: selectedSubtitleTrack.language
+          } : undefined}
+          useExoPlayer={true}
           style={videoStyle}
           resizeMode={ResizeMode.CONTAIN}
           paused={!isPlaying}
@@ -1037,16 +1078,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             bufferForPlaybackAfterRebufferMs: 5000
           }}
 
-          selectedTextTrack={selectedSubtitle ? {
+          selectedTextTrack={selectedTextTrackIndex >= 0 ? {
             type: SelectedTrackType.INDEX,
-            value: subtitles
-              .filter(track => {
-                const langToCheck = track.lang || track.language || track.title || '';
-                return !langToCheck.toLowerCase().includes('thumbnails');
-              })
-              .findIndex(sub => 
-                (sub.lang || sub.language || sub.title) === selectedSubtitle
-              )
+            value: selectedTextTrackIndex
           } : {
             type: SelectedTrackType.DISABLED,
             value: undefined
@@ -1058,7 +1092,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 title: t.title,
                 language: t.language,
                 type: t.type,
-                index: t.index
+                index: t.index,
+                selected: t.selected
               })));
             }
           }}
@@ -1071,7 +1106,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               console.log('TextTracks on load:', data.textTracks.map(t => ({
                 title: t.title,
                 language: t.language,
-                type: t.type
+                type: t.type,
+                selected: t.selected
               })));
             }
           }}
@@ -1181,7 +1217,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           selectedQuality={currentQuality}
           onQualityChange={handleQualityChange}
           isQualityChanging={isQualityChanging}
-          subtitles={subtitles}
+          subtitles={textTracks}
           selectedSubtitle={selectedSubtitle}
           onSubtitleChange={handleSubtitleChange}
           onSubtitleSettingsPress={() => setShowSubtitleSettings(true)}

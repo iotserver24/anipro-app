@@ -8,7 +8,7 @@
 export const APP_CONFIG = {
   // App Information
   APP_NAME: 'AniSurge',
-  VERSION: '2.26.0',
+  VERSION: '2.26.1',
   VERSION_CODE: 1,
   
   // API Endpoints

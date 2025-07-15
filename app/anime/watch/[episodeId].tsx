@@ -1889,7 +1889,18 @@ export default function WatchEpisode() {
     source: { 
       uri: streamingUrl,
       headers: videoHeaders,
-      isZenEmbedded: selectedServer === 'zen' // Flag for Zen embedded player
+      isZenEmbedded: selectedServer === 'zen', // Flag for Zen embedded player
+      textTracks: subtitles.length > 0 ? subtitles
+        .filter(track => {
+          const langToCheck = track.lang || track.language || track.title || '';
+          return !langToCheck.toLowerCase().includes('thumbnails');
+        })
+        .map((track, index) => ({
+          title: track.lang || track.language || track.title || 'Unknown',
+          language: (track.lang || track.language || track.title || 'en').toLowerCase().substring(0, 2),
+          type: 'text/vtt',
+          uri: track.url,
+        })) : []
     },
     title: episodeTitle as string,
     initialPosition: lastServerPosition > 0 ? lastServerPosition : resumePosition, // Use lastServerPosition if available, otherwise resumePosition
@@ -1909,8 +1920,7 @@ export default function WatchEpisode() {
     savedQualityPosition: savedPosition,
     qualities: qualities,
     selectedQuality: selectedQuality,
-    onQualityChange: handleQualityChange,
-    subtitles: subtitles
+    onQualityChange: handleQualityChange
   }), [
     streamingUrl,
     videoHeaders,
