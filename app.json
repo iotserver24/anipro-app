@@ -20,6 +20,10 @@
           "data": [
             {
               "scheme": "anisurge",
+              "host": "*"
+            },
+            {
+              "scheme": "anisurge",
               "host": "*",
               "pathPrefix": "/anime"
             },
@@ -114,7 +118,8 @@
           "androidCollapsedTitle": "AniSurge",
           "androidImportance": "high"
         }
-      ]
+      ],
+      "expo-font"
     ],
     "scheme": "anisurge",
     "fonts": [

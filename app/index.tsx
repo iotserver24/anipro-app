@@ -20,9 +20,8 @@ import { shouldShowWhatsNew, fetchWhatsNewInfo, WhatsNewInfo } from '../utils/wh
 import * as Device from 'expo-device';
 import { getArchitectureSpecificDownloadUrl } from '../utils/deviceUtils';
 import { notificationEmitter } from './notifications';
-import * as BackgroundFetch from 'expo-background-fetch';
-import * as TaskManager from 'expo-task-manager';
-import { checkAndNotifyAiringAnime } from './schedule';
+// Background fetch removed - old feature no longer used
+// Removed import to avoid circular dependency issues
 import * as Notifications from 'expo-notifications';
 import AuthModal from '../components/AuthModal';
 import { auth } from '../services/firebase';
@@ -188,51 +187,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// Constants
-const AIRING_NOTIFICATION_TASK = 'AIRING_NOTIFICATION_TASK';
-
-// Configure notifications for background tasks
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
-
-// Define the background task
-TaskManager.defineTask(AIRING_NOTIFICATION_TASK, async () => {
-  try {
-    // Get the user's My List from AsyncStorage
-    const myListJson = await AsyncStorage.getItem('my_list');
-    const myList = myListJson ? JSON.parse(myListJson) : [];
-
-    // Get today's date
-    const today = new Date().toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric'
-    });
-
-    // Since schedule endpoint is not available in new API, we'll use recent episodes instead
-    const response = await fetch(`https://con.anisurge.me/anime/zoro/recent-episodes`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch recent episodes');
-    }
-
-    const recentEpisodes = await response.json();
-    // Convert recent episodes to schedule format
-    const schedule = { [today]: recentEpisodes };
-
-    // Check for notifications
-    await checkAndNotifyAiringAnime(schedule, myList, today);
-
-    return BackgroundFetch.BackgroundFetchResult.NewData;
-  } catch (error) {
-    logger.error('Background task error:', String(error));
-    return BackgroundFetch.BackgroundFetchResult.Failed;
-  }
-});
+// Background fetch functionality removed - old feature no longer used
 
 // Add function to get next 1 AM IST trigger
 const getNext1AMIST = () => {
@@ -709,29 +664,7 @@ export default function Home() {
     fetchAnime();
   }, []);
 
-  useEffect(() => {
-    const registerBackgroundTask = async () => {
-      try {
-        // Get next 1 AM IST time
-        const next1AM = getNext1AMIST();
-        const now = Date.now();
-        const timeUntil1AM = next1AM.getTime() - now;
-
-        // Register the background task
-        await BackgroundFetch.registerTaskAsync(AIRING_NOTIFICATION_TASK, {
-          minimumInterval: 24 * 60 * 60, // 24 hours
-          startOnBoot: true,
-          stopOnTerminate: false,
-        });
-
-        logger.info(`Background task registered. Next check at: ${next1AM.toLocaleString()}`, '');
-      } catch (error) {
-        logger.error('Failed to register background task:', String(error));
-      }
-    };
-
-    registerBackgroundTask();
-  }, []);
+  // Background fetch registration removed - old feature no longer used
 
   useEffect(() => {
     const checkAndShowAuthPrompt = async () => {

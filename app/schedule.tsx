@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, AppState } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, AppState, Platform } from 'react-native';
 import { useEffect, useState } from 'react';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -7,8 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMyListStore } from '../store/myListStore';
 import * as Notifications from 'expo-notifications';
 import { logger } from '../utils/logger';
-import * as BackgroundFetch from 'expo-background-fetch';
-import * as TaskManager from 'expo-task-manager';
+// Background fetch removed - old feature no longer used
 
 interface AnimeScheduleItem {
   id: string;
@@ -193,8 +192,7 @@ export const checkAndNotifyAiringAnime = async (schedule: ScheduleData, myList: 
   }
 };
 
-// Move all task-related code outside the component
-const BACKGROUND_NOTIFICATION_TASK = 'BACKGROUND_NOTIFICATION_TASK';
+// Background fetch functionality removed - old feature no longer used
 
 const getNext1AMIST = () => {
   const now = new Date();
@@ -208,30 +206,6 @@ const getNext1AMIST = () => {
   
   return new Date(next1AM.getTime() - (5.5 * 60 * 60 * 1000));
 };
-
-// Define background task outside component
-TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async () => {
-  try {
-    const today = new Date().toLocaleDateString('en-US', {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric'
-    });
-
-    const cachedData = await AsyncStorage.getItem(CACHE_KEY);
-    if (!cachedData) return BackgroundFetch.BackgroundFetchResult.NoData;
-
-    const { data: schedule } = JSON.parse(cachedData);
-    const myListData = await AsyncStorage.getItem('my_list');
-    const myList = myListData ? JSON.parse(myListData) : [];
-
-    await checkAndNotifyAiringAnime(schedule, myList, today);
-    return BackgroundFetch.BackgroundFetchResult.NewData;
-  } catch (error) {
-    logger.error('Background task error:', error);
-    return BackgroundFetch.BackgroundFetchResult.Failed;
-  }
-});
 
 export default function Schedule() {
   const [schedule, setSchedule] = useState<ScheduleData>({});
@@ -461,24 +435,7 @@ export default function Schedule() {
     return () => subscription.remove();
   }, []);
 
-  // Register background task in a separate useEffect
-  useEffect(() => {
-    const setupBackgroundTask = async () => {
-      try {
-        await BackgroundFetch.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK, {
-          minimumInterval: 24 * 60 * 60, // 24 hours in seconds
-          stopOnTerminate: false,
-          startOnBoot: true,
-        });
-
-        logger.info('Background task registered successfully');
-      } catch (error) {
-        logger.error('Failed to register background task:', error);
-      }
-    };
-
-    setupBackgroundTask();
-  }, []);
+  // Background fetch registration removed - old feature no longer used
 
   return (
     <View style={styles.container}>

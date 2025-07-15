@@ -45,17 +45,15 @@ const styles = StyleSheet.create({
 
 export default AppVersionInfo;
 
-/**
- * Usage example:
- * 
- * import AppVersionInfo from '../components/AppVersionInfo';
- * 
- * const SettingsScreen = () => {
- *   return (
- *     <View style={{ flex: 1 }}>
- *       {/* Other components */}
- *       <AppVersionInfo />
- *     </View>
- *   );
- * };
- */ 
+// Usage example:
+// 
+// import AppVersionInfo from '../components/AppVersionInfo';
+// 
+// const SettingsScreen = () => {
+//   return (
+//     <View style={{ flex: 1 }}>
+//       // Other components
+//       <AppVersionInfo />
+//     </View>
+//   );
+// }; 

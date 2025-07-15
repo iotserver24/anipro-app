@@ -4,8 +4,7 @@ import { Stack, router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as BackgroundFetch from 'expo-background-fetch';
-import * as TaskManager from 'expo-task-manager';
+// Background fetch removed - old feature no longer used
 import * as Notifications from 'expo-notifications';
 import { APP_CONFIG } from '../constants/appConfig';
 import { logger } from '../utils/logger';
@@ -34,9 +33,7 @@ interface Notification {
 const DEVICE_ID_KEY = 'device_id';
 const READ_NOTIFICATIONS_KEY = 'read_notifications';
 
-// Background task name
-const BACKGROUND_NOTIFICATION_TASK = 'BACKGROUND_NOTIFICATION_TASK';
-const NOTIFICATION_CHECK_INTERVAL = 5 * 60; // 5 minutes in seconds
+// Background fetch functionality removed - old feature no longer used
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -46,78 +43,6 @@ Notifications.setNotificationHandler({
     shouldSetBadge: true,
   }),
 });
-
-// Define the background task
-TaskManager.defineTask(BACKGROUND_NOTIFICATION_TASK, async () => {
-  try {
-    // Get device ID
-    const deviceId = await AsyncStorage.getItem(DEVICE_ID_KEY);
-    if (!deviceId) return BackgroundFetch.BackgroundFetchResult.Failed;
-
-    // Get last notification check timestamp
-    const lastCheck = await AsyncStorage.getItem('last_notification_check');
-    const now = Date.now();
-    
-    if (lastCheck && (now - parseInt(lastCheck)) < NOTIFICATION_CHECK_INTERVAL * 1000) {
-      return BackgroundFetch.BackgroundFetchResult.NoData;
-    }
-
-    // Fetch notifications
-    const response = await fetch(`${APP_CONFIG.API_BASE_URL}/notifications`);
-    if (!response.ok) return BackgroundFetch.BackgroundFetchResult.Failed;
-    
-    const notifications = await response.json();
-    
-    // Get read notifications
-    const readIds = await AsyncStorage.getItem(READ_NOTIFICATIONS_KEY);
-    const readNotifications = readIds ? JSON.parse(readIds) : [];
-    
-    // Filter unread notifications
-    const unreadNotifications = notifications.filter(
-      (notification: Notification) => !readNotifications.includes(notification.id)
-    );
-
-    // Show notifications for unread items
-    for (const notification of unreadNotifications) {
-      await Notifications.scheduleNotificationAsync({
-        content: {
-          title: notification.title,
-          body: notification.message,
-          data: { 
-            id: notification.id,
-            deepLink: notification.deepLink,
-            type: notification.type,
-            priority: notification.priority
-          },
-        },
-        trigger: null, // Show immediately
-      });
-    }
-
-    // Update last check timestamp
-    await AsyncStorage.setItem('last_notification_check', now.toString());
-    
-    return unreadNotifications.length > 0 
-      ? BackgroundFetch.BackgroundFetchResult.NewData
-      : BackgroundFetch.BackgroundFetchResult.NoData;
-  } catch (error) {
-    logger.error('Background notification check failed:', error);
-    return BackgroundFetch.BackgroundFetchResult.Failed;
-  }
-});
-
-// Register background task
-async function registerBackgroundTask() {
-  try {
-    await BackgroundFetch.registerTaskAsync(BACKGROUND_NOTIFICATION_TASK, {
-      minimumInterval: NOTIFICATION_CHECK_INTERVAL, // 30 minutes
-      stopOnTerminate: false, // Keep running after app is closed
-      startOnBoot: true, // Start after device reboot
-    });
-  } catch (err) {
-    logger.error('Task registration failed:', err);
-  }
-}
 
 // Handle notification taps
 Notifications.addNotificationResponseReceivedListener((response) => {
@@ -168,9 +93,6 @@ export default function NotificationsScreen() {
   }, [deviceId]);
 
   useEffect(() => {
-    // Register background task when component mounts
-    registerBackgroundTask();
-    
     // Configure notifications
     const configurePushNotifications = async () => {
       const { status } = await Notifications.requestPermissionsAsync();

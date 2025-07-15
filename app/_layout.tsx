@@ -1,3 +1,4 @@
+// NOTE: The main entry page for the app is app/index.tsx as per Expo Router conventions.
 import { Stack, router, usePathname } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
@@ -19,10 +20,6 @@ import { getAvatarById, DEFAULT_AVATARS } from '../constants/avatars';
 import { Tabs } from 'expo-router';
 import { NativeStackNavigationOptions } from '@react-navigation/native-stack';
 import AvatarDisplay from '../components/AvatarDisplay';
-// These imports are commented out because we're removing the auth button from the header
-// import { useGlobalStore } from '../store/globalStore';
-// import AuthButton from '../components/AuthButton';
-
 // Make sure SplashScreen is prevented from auto-hiding
 SplashScreen.preventAutoHideAsync();
 
@@ -161,16 +158,16 @@ const HeaderRight = () => {
         ) : (
           isPremium ? (
             <View style={styles.premiumAvatarBorderWrapper}>
-              <AvatarDisplay
-                url={avatarUrl || DEFAULT_AVATARS[0].url}
-                style={[styles.avatarImage, { borderWidth: 0, borderColor: 'transparent' }]}
-                isPremium={isPremium}
-                onError={() => {
-                  console.error('[Avatar] Error loading avatar');
-                  console.log('[Avatar] Falling back to default avatar');
-                  setAvatarUrl(DEFAULT_AVATARS[0].url);
-                }}
-              />
+                          <AvatarDisplay
+              url={avatarUrl || DEFAULT_AVATARS[0].url}
+              style={styles.avatarImage}
+              isPremium={isPremium}
+              onError={() => {
+                console.error('[Avatar] Error loading avatar');
+                console.log('[Avatar] Falling back to default avatar');
+                setAvatarUrl(DEFAULT_AVATARS[0].url);
+              }}
+            />
             </View>
           ) : (
             <AvatarDisplay
@@ -498,7 +495,7 @@ export default function RootLayout() {
               title: 'Mentions',
               headerShown: true,
               headerRight: () => <HeaderRight />,
-            } as NativeStackNavigationOptions}
+            }}
           />
         </Stack>
         {/* Position the bottom tab bar with absolute positioning outside the Stack */}
