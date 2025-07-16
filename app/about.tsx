@@ -1025,6 +1025,14 @@ Architecture: ${deviceInfo.deviceArchitecture}
               With a vast library of content, {APP_CONFIG.APP_NAME} provides a seamless viewing experience with high-quality streams and a user-friendly interface.
             </Text>
           </View>
+          {/* Schedule Page Button */}
+          <TouchableOpacity 
+            style={[styles.profileButton, {marginBottom: 16}]}
+            onPress={() => router.push('/schedule')}
+          >
+            <MaterialIcons name="event" size={24} color="#fff" />
+            <Text style={styles.profileButtonText}>Schedule</Text>
+          </TouchableOpacity>
         </View>
 
         {/* User Account Section */}
