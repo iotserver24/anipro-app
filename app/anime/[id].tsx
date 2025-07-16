@@ -190,6 +190,13 @@ export default function AnimeDetails() {
   // Add new state for skeleton loading
   const [isPageLoaded, setIsPageLoaded] = useState(false);
 
+  const [nextEpisode, setNextEpisode] = useState<null | {
+    airingISOTimestamp: string;
+    airingTimestamp: number;
+    secondsUntilAiring: number;
+  }>(null);
+  const [countdown, setCountdown] = useState<string>('');
+
   const router = useRouter();
 
   // Define all useCallback hooks at the top to maintain consistent hook order
@@ -603,6 +610,53 @@ export default function AnimeDetails() {
     startShimmerAnimation();
   }, []);
 
+  // Fetch next episode schedule
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    const fetchNextEpisode = async () => {
+      if (!id) return;
+      try {
+        const resp = await fetch(`https://ani.anisurge.me/api/v2/hianime/anime/${id}/next-episode-schedule`);
+        const json = await resp.json();
+        if (json.status === 200 && json.data && json.data.airingISOTimestamp) {
+          setNextEpisode(json.data);
+        } else {
+          setNextEpisode(null);
+        }
+      } catch {
+        setNextEpisode(null);
+      }
+    };
+    fetchNextEpisode();
+    return () => { if (timer) clearInterval(timer); };
+  }, [id]);
+
+  // Live countdown effect
+  useEffect(() => {
+    if (!nextEpisode) return;
+    function formatCountdown(secs: number) {
+      if (secs <= 0) return 'Airing soon!';
+      const d = Math.floor(secs / 86400);
+      const h = Math.floor((secs % 86400) / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      const s = secs % 60;
+      let out = '';
+      if (d > 0) out += `${d}d `;
+      if (h > 0 || d > 0) out += `${h}h `;
+      if (m > 0 || h > 0 || d > 0) out += `${m}m `;
+      out += `${s}s`;
+      return out;
+    }
+    setCountdown(formatCountdown(nextEpisode.secondsUntilAiring));
+    const interval = setInterval(() => {
+      setCountdown(prev => {
+        const newSecs = Math.max(0, nextEpisode.secondsUntilAiring - Math.floor((Date.now() - nextEpisode.airingTimestamp + nextEpisode.secondsUntilAiring * 1000) / 1000));
+        return formatCountdown(newSecs);
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [nextEpisode]);
+
   const fetchAnimeDetails = async () => {
     try {
       console.log('Fetching anime details for ID:', id);
@@ -952,6 +1006,14 @@ export default function AnimeDetails() {
                 </Text>
               </TouchableOpacity>
             </Animated.View>
+            {nextEpisode && (
+              <View style={styles.nextEpisodeContainer}>
+                <MaterialIcons name="schedule" size={18} color="#f4511e" style={{ marginRight: 4 }} />
+                <Text style={styles.nextEpisodeText}>
+                  Next episode airs: {new Date(nextEpisode.airingISOTimestamp).toLocaleString()} ({countdown})
+                </Text>
+              </View>
+            )}
 
             {/* Synopsis */}
             <View style={styles.synopsisContainer}>
@@ -1942,4 +2004,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 12,
   },
+  nextEpisodeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(244,81,30,0.12)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 4,
+    marginBottom: 4,
+},
+nextEpisodeText: {
+  color: '#f4511e',
+  fontSize: 14,
+  fontWeight: 'bold',
+},
 }); 
