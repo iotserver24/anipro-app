@@ -30,7 +30,8 @@ if (-not (Test-Path $outputDir)) {
 
 # Mapping of original names to new names
 $renameMap = @{
-    "app-arm64-v8a-release.apk" = "Anisurge-arm64.apk"
+    "app-arm64-v8a-release.apk" = "Anisurge-arm64-v8a.apk"
+    "app-armeabi-v7a-release.apk" = "Anisurge-armeabi-v7a.apk"
     "app-x86-release.apk" = "Anisurge-x86.apk"
     "app-x86_64-release.apk" = "Anisurge-x86_64.apk"
     "app-universal-release.apk" = "Anisurge-universal.apk"
