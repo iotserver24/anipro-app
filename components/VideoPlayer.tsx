@@ -34,7 +34,7 @@ interface VideoPlayerProps {
   source: {
     uri: string;
     headers?: { [key: string]: string };
-    isZenEmbedded?: boolean; // Flag to indicate Zen embedded player
+    isZenEmbedded?: boolean; // Flag to indicate embedded player (Zen or SoftSub)
     textTracks?: Array<{
       title: string;
       language: string;
@@ -282,7 +282,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Optimize seek handler
   const handleSeek = useCallback(async (value: number) => {
     if (source.isZenEmbedded && webViewRef.current) {
-      // Handle seek for WebView (Zen embedded player) using correct format
+      // Handle seek for WebView (embedded player - Zen or SoftSub) using correct format
       try {
         console.log('Seeking WebView to:', value);
         webViewRef.current.postMessage(JSON.stringify({
@@ -318,7 +318,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Create an optimized play/pause toggle function
   const togglePlayPause = useCallback(() => {
     if (source.isZenEmbedded && webViewRef.current) {
-      // Handle play/pause for WebView (Zen embedded player) using correct format
+      // Handle play/pause for WebView (embedded player - Zen or SoftSub) using correct format
       const command = isPlaying ? 'pause' : 'play';
       console.log('Sending command to WebView:', command);
       webViewRef.current.postMessage(JSON.stringify({
@@ -886,16 +886,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     initialPositionRef.current = initialPosition;
   }, [source.uri]);
 
-  // Memoize the Zen WebView URL to prevent unnecessary reloads
-  const zenWebViewUrl = useMemo(() => {
+  // Memoize the embedded WebView URL to prevent unnecessary reloads
+  const embeddedWebViewUrl = useMemo(() => {
     if (!source.isZenEmbedded) return null;
     if (!source.uri) return '';
     let finalUrl = source.uri;
-    if (initialPositionRef.current > 0) {
+    
+    // Only add start_at for Zen server (SoftSub doesn't support it)
+    if (initialPositionRef.current > 0 && source.uri.includes('anisurge.me')) {
       const separator = source.uri.includes('?') ? '&' : '?';
       finalUrl = source.uri + separator + `start_at=${Math.floor(initialPositionRef.current)}`;
     }
-    console.log('WebView URL with start_at:', finalUrl, 'initialPosition:', initialPositionRef.current);
+    console.log('WebView URL:', finalUrl, 'initialPosition:', initialPositionRef.current);
     return finalUrl;
   }, [source.isZenEmbedded, source.uri]);
 
@@ -947,7 +949,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         {source.isZenEmbedded ? (
           <WebView
             ref={webViewRef}
-            source={{ uri: zenWebViewUrl || '' }}
+            source={{ uri: embeddedWebViewUrl || '' }}
             style={videoStyle}
             allowsFullscreenVideo={true}
             allowsProtectedMedia={true}
@@ -973,6 +975,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 const data = JSON.parse(event.nativeEvent.data);
                 console.log('WebView message received:', data);
                 
+                // Handle Zen server messages
                 if (data.type === 'progress') {
                   handleProgress({
                     currentTime: data.currentTime,
@@ -1001,6 +1004,23 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 } else if (data.currentTime !== undefined && data.duration !== undefined) {
                   // Handle time responses
                   console.log('Time update:', data.currentTime, data.duration);
+                  handleProgress({
+                    currentTime: data.currentTime,
+                    playableDuration: data.duration,
+                    seekableDuration: data.duration
+                  });
+                }
+                
+                // Handle SoftSub (megaplay.buzz) messages
+                if (data.channel === 'megacloud' && data.event === 'time') {
+                  console.log('SoftSub time update:', data.time, data.duration);
+                  handleProgress({
+                    currentTime: data.time,
+                    playableDuration: data.duration,
+                    seekableDuration: data.duration
+                  });
+                } else if (data.type === 'watching-log') {
+                  console.log('SoftSub watching log:', data.currentTime, data.duration);
                   handleProgress({
                     currentTime: data.currentTime,
                     playableDuration: data.duration,

@@ -1098,36 +1098,55 @@ export default function WatchEpisode() {
         //   currentCategory === 'dub'
         // );
         
-        // NEW TEMPORARY URL FOR SOFTSUB SERVER
+        // NEW IFRAME-BASED SOFTSUB SERVER
         try {
           const category = currentCategory === 'dub' ? 'dub' : 'sub';
-          // Parse episodeId to required format: animeId?ep=episodeNumber
-          let animeIdPart = '';
+          // Parse episodeId to get the episode number ID
           let episodeNumPart = '';
           if (typeof episodeId === 'string' && episodeId.includes('$episode$')) {
             const parts = episodeId.split('$episode$');
-            animeIdPart = parts[0];
-            episodeNumPart = parts[1]?.split('$')[0]; // In case there are extra $category= params
+            episodeNumPart = parts[1]?.split('$')[0]; // Get the episode ID number
           } else {
-            animeIdPart = (episodeId as string).split('$category=')[0];
-          }
-          const formattedEpisodeId = (animeIdPart && episodeNumPart) ? `${animeIdPart}?ep=${episodeNumPart}` : animeIdPart;
-          const softSubUrl = `https://ani.anisurge.me/api/v2/hianime/episode/sources?animeEpisodeId=${formattedEpisodeId}&server=hd-1&category=${category}`;
-          console.log('SoftSub URL:', softSubUrl);
-          
-          const response = await fetch(softSubUrl);
-          const responseBody = await response.text(); // Always read the body as text for debugging
-          console.log('SoftSub API response:', responseBody);
-          
-          if (!response.ok) {
-            throw new Error(`Failed to fetch SoftSub sources: ${response.status} - ${responseBody}`);
+            // For old format, we need to extract episode number differently
+            const parts = (episodeId as string).split('$ep=');
+            if (parts.length > 1) {
+              episodeNumPart = parts[1]?.split('$')[0];
+            }
           }
           
-          const parsed = JSON.parse(responseBody);
-          sources = parsed.data;
-          console.log('SoftSub sources response (parsed):', sources);
+          if (!episodeNumPart) {
+            throw new Error('Could not extract episode ID from episodeId');
+          }
+          
+          console.log('SoftSub episode ID:', episodeNumPart);
+          
+          // Create the wrapper URL for SoftSub iframe
+          let wrapperUrl = `https://anisurge.me/softsub-player/${episodeNumPart}?category=${category}`;
+          
+          // Add start_at parameter for resume functionality
+          const resumePos = lastServerPosition > 0 ? lastServerPosition : resumePosition;
+          if (resumePos > 0) {
+            wrapperUrl += `&start_at=${Math.floor(resumePos)}`;
+            console.log(`Adding start_at parameter: ${Math.floor(resumePos)} seconds`);
+          }
+          
+          console.log('SoftSub wrapper URL:', wrapperUrl);
+          
+          // Set the video sources using the wrapper URL (similar to Zen server)
+          sources = {
+            sources: [{
+              url: wrapperUrl,
+              quality: 'HD',
+              isM3U8: false, // This is an embedded player, not direct stream
+              isZenEmbedded: true // Flag to indicate this is an embedded player
+            }],
+            subtitles: [], // Subtitles are handled by the embedded player
+            download: null // No direct download for iframe-based player
+          };
+          
+          console.log(`Using SoftSub wrapper player with episode ID: ${episodeNumPart}`);
         } catch (error) {
-          console.error('Error fetching SoftSub sources:', error);
+          console.error('Error setting up SoftSub wrapper:', error);
           throw new Error(`Failed to load SoftSub server: ${error instanceof Error ? error.message : String(error)}`);
         }
       } else if (selectedServer === 'hardSub') {
@@ -1391,7 +1410,7 @@ export default function WatchEpisode() {
         return; // Continue loading the page but with video error
       }
 
-      // Process subtitles from the API response (but skip if already processed by Zen server)
+      // Process subtitles from the API response (but skip if already processed by embedded servers)
       if (selectedServer === 'softSub' && sources.tracks && Array.isArray(sources.tracks)) {
         const processedSubtitles = sources.tracks.map(track => ({
           title: track.lang || 'Unknown',
@@ -1401,7 +1420,7 @@ export default function WatchEpisode() {
         }));
         console.log('Setting subtitles from tracks:', processedSubtitles);
         setSubtitles(processedSubtitles);
-      } else if (sources.subtitles && Array.isArray(sources.subtitles) && selectedServer !== 'zen') {
+      } else if (sources.subtitles && Array.isArray(sources.subtitles) && selectedServer !== 'zen' && selectedServer !== 'softSub') {
         const processedSubtitles = sources.subtitles.map(sub => ({
           title: sub.kind || 'Unknown',
           language: sub.kind || 'Unknown',
@@ -1410,8 +1429,8 @@ export default function WatchEpisode() {
         }));
         console.log('Setting subtitles:', processedSubtitles);
         setSubtitles(processedSubtitles);
-      } else if (selectedServer === 'zen' && sources.subtitles && Array.isArray(sources.subtitles)) {
-        // For Zen server, subtitles are already properly parsed - just set them directly
+      } else if ((selectedServer === 'zen' || selectedServer === 'softSub') && sources.subtitles && Array.isArray(sources.subtitles)) {
+        // For embedded servers (Zen and SoftSub), subtitles are already properly parsed - just set them directly
         setSubtitles(sources.subtitles);
       }
 
@@ -1889,7 +1908,7 @@ export default function WatchEpisode() {
     source: { 
       uri: streamingUrl,
       headers: videoHeaders,
-      isZenEmbedded: selectedServer === 'zen', // Flag for Zen embedded player
+              isZenEmbedded: selectedServer === 'zen' || selectedServer === 'softSub', // Flag for embedded players (Zen and SoftSub)
       textTracks: subtitles.length > 0 ? subtitles
         .filter(track => {
           const langToCheck = track.lang || track.language || track.title || '';
