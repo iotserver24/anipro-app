@@ -684,7 +684,7 @@ const SkeletonLoader = React.memo(() => {
   });
 
   const shimmerStyle = {
-    position: 'absolute',
+    position: 'absolute' as const,
     top: 0,
     left: 0,
     right: 0,
@@ -924,7 +924,7 @@ export default function WatchEpisode() {
   }, [savedProgress, resumeTime]);
 
   useEffect(() => {
-    fetchEpisodeData();
+    fetchEpisodeData(false); // Initial load, not a server change
     if (animeId) {
       fetchAnimeInfo();
     }
@@ -1020,12 +1020,15 @@ export default function WatchEpisode() {
   };
 
   // Modify the fetchEpisodeData function to handle server selection
-  const fetchEpisodeData = async () => {
-    setLoading(true);
+  const fetchEpisodeData = async (isServerChange = false) => {
+    // Only set main loading state if this is not a server change
+    if (!isServerChange) {
+      setLoading(true);
+    }
     setError(null);
     setVideoError(null);
     setRetryCount(0);
-    setIsChangingServer(selectedServer === 'hardSub');
+    setIsChangingServer(true);
     
     try {
       // Reset video state
@@ -1159,15 +1162,15 @@ export default function WatchEpisode() {
           // Check if we already have anime info with the IDs
           if (animeInfo) {
             // Try to get MAL ID - may be in different properties depending on API response structure
-            if (animeInfo.malID) malId = animeInfo.malID;
-            else if (animeInfo.mal_id) malId = animeInfo.mal_id;
-            else if (animeInfo.mappings && animeInfo.mappings.mal) malId = animeInfo.mappings.mal;
+            if ((animeInfo as any).malID) malId = (animeInfo as any).malID;
+            else if ((animeInfo as any).mal_id) malId = (animeInfo as any).mal_id;
+            else if ((animeInfo as any).mappings && (animeInfo as any).mappings.mal) malId = (animeInfo as any).mappings.mal;
             
             // Try to get AniList ID - may be in different properties
-            if (animeInfo.alID) anilistId = animeInfo.alID;
-            else if (animeInfo.al_id) anilistId = animeInfo.al_id;
-            else if (animeInfo.anilist_id) anilistId = animeInfo.anilist_id;
-            else if (animeInfo.mappings && animeInfo.mappings.al) anilistId = animeInfo.mappings.al;
+            if ((animeInfo as any).alID) anilistId = (animeInfo as any).alID;
+            else if ((animeInfo as any).al_id) anilistId = (animeInfo as any).al_id;
+            else if ((animeInfo as any).anilist_id) anilistId = (animeInfo as any).anilist_id;
+            else if ((animeInfo as any).mappings && (animeInfo as any).mappings.al) anilistId = (animeInfo as any).mappings.al;
           }
           
           // If we don't have the IDs yet, fetch the anime details
@@ -1176,15 +1179,15 @@ export default function WatchEpisode() {
             const animeDetails = await animeAPI.getAnimeDetails(animeId as string);
             
             // Try to get MAL ID from different possible property names
-            if (animeDetails.malID) malId = animeDetails.malID;
-            else if (animeDetails.mal_id) malId = animeDetails.mal_id;
-            else if (animeDetails.mappings && animeDetails.mappings.mal) malId = animeDetails.mappings.mal;
+            if ((animeDetails as any).malID) malId = (animeDetails as any).malID;
+            else if ((animeDetails as any).mal_id) malId = (animeDetails as any).mal_id;
+            else if ((animeDetails as any).mappings && (animeDetails as any).mappings.mal) malId = (animeDetails as any).mappings.mal;
             
             // Try to get AniList ID from different possible property names
-            if (animeDetails.alID) anilistId = animeDetails.alID;
-            else if (animeDetails.al_id) anilistId = animeDetails.al_id;
-            else if (animeDetails.anilist_id) anilistId = animeDetails.anilist_id;
-            else if (animeDetails.mappings && animeDetails.mappings.al) anilistId = animeDetails.mappings.al;
+            if ((animeDetails as any).alID) anilistId = (animeDetails as any).alID;
+            else if ((animeDetails as any).al_id) anilistId = (animeDetails as any).al_id;
+            else if ((animeDetails as any).anilist_id) anilistId = (animeDetails as any).anilist_id;
+            else if ((animeDetails as any).mappings && (animeDetails as any).mappings.al) anilistId = (animeDetails as any).mappings.al;
           }
           
           if (!malId && !anilistId) {
@@ -1322,10 +1325,10 @@ export default function WatchEpisode() {
           // Check if we already have anime info with the AniList ID
           if (animeInfo) {
             // Try to get AniList ID - may be in different properties
-            if (animeInfo.alID) anilistId = animeInfo.alID;
-            else if (animeInfo.al_id) anilistId = animeInfo.al_id;
-            else if (animeInfo.anilist_id) anilistId = animeInfo.anilist_id;
-            else if (animeInfo.mappings && animeInfo.mappings.al) anilistId = animeInfo.mappings.al;
+            if ((animeInfo as any).alID) anilistId = (animeInfo as any).alID;
+            else if ((animeInfo as any).al_id) anilistId = (animeInfo as any).al_id;
+            else if ((animeInfo as any).anilist_id) anilistId = (animeInfo as any).anilist_id;
+            else if ((animeInfo as any).mappings && (animeInfo as any).mappings.al) anilistId = (animeInfo as any).mappings.al;
           }
           
           // If we don't have the AniList ID yet, fetch the anime details
@@ -1334,10 +1337,10 @@ export default function WatchEpisode() {
             const animeDetails = await animeAPI.getAnimeDetails(animeId as string);
             
             // Try to get AniList ID from different possible property names
-            if (animeDetails.alID) anilistId = animeDetails.alID;
-            else if (animeDetails.al_id) anilistId = animeDetails.al_id;
-            else if (animeDetails.anilist_id) anilistId = animeDetails.anilist_id;
-            else if (animeDetails.mappings && animeDetails.mappings.al) anilistId = animeDetails.mappings.al;
+            if ((animeDetails as any).alID) anilistId = (animeDetails as any).alID;
+            else if ((animeDetails as any).al_id) anilistId = (animeDetails as any).al_id;
+            else if ((animeDetails as any).anilist_id) anilistId = (animeDetails as any).anilist_id;
+            else if ((animeDetails as any).mappings && (animeDetails as any).mappings.al) anilistId = (animeDetails as any).mappings.al;
           }
           
           if (!anilistId) {
@@ -1494,7 +1497,10 @@ export default function WatchEpisode() {
       const serverName = selectedServer === 'softSub' ? 'SoftSub' : selectedServer === 'hardSub' ? 'HardSub' : 'Zen';
       setVideoError(`Failed to load episode from ${serverName} server. Please try another server or try again later.`);
     } finally {
-      setLoading(false);
+      // Only set main loading to false if this is not a server change
+      if (!isServerChange) {
+        setLoading(false);
+      }
       setIsChangingServer(false);
     }
   };
@@ -1507,7 +1513,7 @@ export default function WatchEpisode() {
         setLastServerPosition(currentTime);
         console.log(`Saving position ${currentTime} before switching servers`);
       }
-      fetchEpisodeData();
+      fetchEpisodeData(true); // Pass true to indicate this is a server change
     }
   }, [selectedServer]);
 
@@ -1594,7 +1600,7 @@ export default function WatchEpisode() {
       console.log(`Saving position ${currentTime} before switching to ${newServer}`);
     }
     
-    // Change server
+    // Change server - the useEffect will handle fetching new data
     setSelectedServer(newServer);
   };
 
@@ -2557,7 +2563,7 @@ export default function WatchEpisode() {
                 onRetry={() => {
                   setRetryCount(0);
                   setVideoError(null);
-                  fetchEpisodeData();
+                  fetchEpisodeData(false); // Not a server change, so pass false
                 }} 
               />
             </View>
