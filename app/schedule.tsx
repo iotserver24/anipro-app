@@ -22,6 +22,15 @@ export default function ScheduleScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [animes, setAnimes] = useState<ScheduledAnime[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState<number>(Math.floor(Date.now() / 1000));
+
+  // Live timer to update countdowns every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(Math.floor(Date.now() / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchSchedule = async () => {
     setLoading(true);
@@ -53,7 +62,9 @@ export default function ScheduleScreen() {
 
   const renderAnime = ({ item }: { item: ScheduledAnime }) => {
     const airingTime = dayjs(item.airingTimestamp).format('HH:mm');
-    const isAiringSoon = item.secondsUntilAiring > 0;
+    // Calculate seconds until airing based on current time
+    const secondsUntilAiring = Math.floor(item.airingTimestamp / 1000) - now;
+    const isAiringSoon = secondsUntilAiring > 0;
     const showBanner = item.bannerUrl && (item.bannerType === 'banner' || item.bannerType === 'poster');
     return (
       <TouchableOpacity
@@ -84,7 +95,10 @@ export default function ScheduleScreen() {
             </View>
             <View style={styles.episodeRow}>
               <MaterialIcons name="confirmation-number" size={16} color="#888" />
-              <Text style={styles.episodeText}>Episode {item.episode}</Text>
+              <Text style={styles.episodeTextSmall}>Episode {item.episode}</Text>
+            </View>
+            <View style={styles.countdownContainer}>
+              <Text style={styles.countdownText}>{formatCountdown(secondsUntilAiring)}</Text>
             </View>
           </View>
         </View>
@@ -206,9 +220,8 @@ const styles = StyleSheet.create({
   detailsContainer: {
     flex: 0.4,
     justifyContent: 'center',
-    alignItems: 'flex-start',
-    paddingLeft: 12,
-    marginLeft: 16,
+    alignItems: 'center',
+    height: '100%',
     zIndex: 2,
   },
   timeContainer: {
@@ -240,11 +253,17 @@ const styles = StyleSheet.create({
   episodeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
   },
   episodeText: {
     color: '#fff',
     fontSize: 14,
+    marginLeft: 4,
+    marginRight: 8,
+  },
+  episodeTextSmall: {
+    color: '#fff',
+    fontSize: 11,
     marginLeft: 4,
     marginRight: 8,
   },
