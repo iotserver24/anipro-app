@@ -227,6 +227,7 @@ export default function Search() {
   }, []);
 
   const handleSearch = (text: string) => {
+    console.log('[Search] handleSearch called with text:', text);
     setSearchText(text);
     setCurrentPage(1);
     const apiQuery = text.toLowerCase().trim().replace(/\s+/g, '-');
@@ -275,11 +276,17 @@ export default function Search() {
   const [appliedFilters, setAppliedFilters] = useState<any>(getCurrentFilters());
   useEffect(() => {
     setAllFilters(appliedFilters);
+    // (Removed searchAnime call from here)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedFilters]);
+
+  // NEW: Trigger search when searchText, appliedFilters, or currentPage changes
+  useEffect(() => {
     if (searchText && searchText.trim().length > 0) {
       searchAnime();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appliedFilters]);
+  }, [searchText, appliedFilters, currentPage]);
 
   // Update searchAnime to use new API and advanced filters
   const searchAnime = async () => {
@@ -307,6 +314,7 @@ export default function Search() {
       if (customLanguage) params.set('language', customLanguage);
       if (customSort) params.set('sort', customSort);
       const url = `https://ani.anisurge.me/api/v2/hianime/search?${params.toString()}`;
+      console.log('[Search] searchAnime called. Fetching:', url);
       const response = await fetch(url);
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data = await response.json();
@@ -317,7 +325,10 @@ export default function Search() {
         image: item.poster || '',
         type: item.type || '',
         releaseDate: '',
-        subOrDub: item.episodes?.dub > 0 ? 'dub' : 'sub',
+        rating: item.rating || '', // ADDED
+        duration: item.duration || '', // ADDED
+        episodes: item.episodes || {}, // ADDED
+        subOrDub: item.episodes?.dub > 0 && item.episodes?.sub > 0 ? 'sub & dub' : (item.episodes?.dub > 0 ? 'dub' : 'sub'), // for legacy
         episodeNumber: (item.episodes?.sub || 0) + (item.episodes?.dub || 0),
         status: item.status || '',
         genres: [],
@@ -325,8 +336,9 @@ export default function Search() {
       setResults(currentPage === 1 ? transformedResults : [...results, ...transformedResults]);
       setHasNextPage(data?.data?.hasNextPage || false);
       setTotalPages(data?.data?.totalPages || 1);
+      console.log('[Search] searchAnime results:', transformedResults.length, 'animes found.');
     } catch (error) {
-      console.error('Error searching anime:', error);
+      console.error('[Search] Error searching anime:', error);
       setResults(currentPage === 1 ? [] : results);
       setHasNextPage(false);
       setTotalPages(1);
@@ -467,63 +479,76 @@ export default function Search() {
     </Modal>
   );
 
-  const renderAnimeCard = ({ item }: { item: SearchAnime }) => (
-    <View style={styles.animeCardContainer}>
-      <TouchableOpacity
-        style={styles.animeCard}
-        onPress={() => router.push({
-          pathname: "/anime/[id]",
-          params: { id: item.id }
-        })}
-      >
-        <Image source={{ uri: item.image }} style={styles.animeImage} />
-        <LinearGradient
-          colors={['transparent', 'rgba(0,0,0,0.8)']}
-          style={styles.gradient}
+  const renderAnimeCard = ({ item }: { item: SearchAnime & { rating?: string, duration?: string, type?: string, episodes?: { sub?: number, dub?: number } } }) => {
+    // Extract badges and info
+    const is18 = item.rating === '18+';
+    return (
+      <View style={styles.animeCardContainer}>
+        <TouchableOpacity
+          style={styles.animeCard}
+          onPress={() => router.push({
+            pathname: "/anime/[id]",
+            params: { id: item.id }
+          })}
         >
-          <View>
-            <Text style={styles.animeName} numberOfLines={2}>{item.title}</Text>
-            {item.episodeNumber > 0 && (
+          <Image source={{ uri: item.image }} style={styles.animeImage} />
+          {/* 18+ badge in top-left */}
+          {is18 && (
+            <View style={styles.badge18Absolute}>
+              <Text style={styles.badge18Text}>18+</Text>
+            </View>
+          )}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.8)']}
+            style={styles.gradient}
+          >
+            <View>
+              <Text style={styles.animeName} numberOfLines={2}>{item.title}</Text>
               <View style={styles.infoContainer}>
+                {/* Type */}
+                {item.type && (
+                  <View style={styles.badge}><Text style={styles.badgeText}>{item.type}</Text></View>
+                )}
+                {/* Duration */}
+                {item.duration && (
+                  <View style={styles.badge}><Text style={styles.badgeText}>{item.duration}</Text></View>
+                )}
+              </View>
+              {item.episodeNumber > 0 && (
                 <View style={styles.episodeInfo}>
                   <MaterialIcons name="tv" size={12} color="#fff" />
                   <Text style={styles.episodeText}>
                     {item.episodeNumber} Episodes
                   </Text>
                 </View>
-                {item.subOrDub && (
-                  <Text style={[styles.episodeText, styles.typeText]}>
-                    {item.subOrDub.toUpperCase()}
-                  </Text>
-                )}
-              </View>
-            )}
-          </View>
-        </LinearGradient>
-      </TouchableOpacity>
-      <TouchableOpacity 
-        style={styles.bookmarkButton}
-        onPress={async () => {
-          if (isBookmarked(item.id)) {
-            await removeAnime(item.id);
-          } else {
-            await addAnime({
-              id: item.id,
-              name: item.title,
-              img: item.image,
-              addedAt: Date.now()
-            });
-          }
-        }}
-      >
-        <MaterialIcons 
-          name={isBookmarked(item.id) ? "bookmark" : "bookmark-outline"} 
-          size={24} 
-          color="#f4511e" 
-        />
-      </TouchableOpacity>
-    </View>
-  );
+              )}
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.bookmarkButton}
+          onPress={async () => {
+            if (isBookmarked(item.id)) {
+              await removeAnime(item.id);
+            } else {
+              await addAnime({
+                id: item.id,
+                name: item.title,
+                img: item.image,
+                addedAt: Date.now()
+              });
+            }
+          }}
+        >
+          <MaterialIcons 
+            name={isBookmarked(item.id) ? "bookmark" : "bookmark-outline"} 
+            size={24} 
+            color="#f4511e" 
+          />
+        </TouchableOpacity>
+      </View>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -1002,5 +1027,38 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginRight: 4,
     fontWeight: '500',
+  },
+  badge: {
+    backgroundColor: '#222',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginRight: 4,
+    marginBottom: 2,
+    alignSelf: 'flex-start',
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  badge18: {
+    backgroundColor: '#f4511e',
+  },
+  badge18Absolute: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#f4511e',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    zIndex: 2,
+    alignSelf: 'flex-start',
+  },
+  badge18Text: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
   },
 }); 

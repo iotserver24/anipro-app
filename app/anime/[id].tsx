@@ -580,11 +580,10 @@ export default function AnimeDetails() {
     
     // Use setTimeout to defer API requests until after the UI is rendered
     if (id) {
-      const timer = setTimeout(() => {
-        fetchAnimeDetails();
+      const timeout = setTimeout(() => {
+        fetchAnimeDetailsNew(); // UPDATED to new fetch function
       }, 100); // Short delay to ensure UI renders first
-      
-      return () => clearTimeout(timer);
+      return () => clearTimeout(timeout);
     }
   }, [id]);
 
@@ -612,7 +611,6 @@ export default function AnimeDetails() {
 
   // Fetch next episode schedule
   useEffect(() => {
-    let timer: NodeJS.Timeout;
     const fetchNextEpisode = async () => {
       if (!id) return;
       try {
@@ -628,7 +626,7 @@ export default function AnimeDetails() {
       }
     };
     fetchNextEpisode();
-    return () => { if (timer) clearInterval(timer); };
+    // No cleanup needed
   }, [id]);
 
   // Live countdown effect
@@ -657,57 +655,68 @@ export default function AnimeDetails() {
     return () => clearInterval(interval);
   }, [nextEpisode]);
 
-  const fetchAnimeDetails = async () => {
+  // NEW: Fetch anime details using new API
+  const fetchAnimeDetailsNew = async () => {
     try {
-      console.log('Fetching anime details for ID:', id);
-      console.log('API URL:', `https://con.anisurge.me/anime/zoro/info?id=${id}`);
-      
-      // Fetch data in parallel for better performance
-      const data = await animeAPI.getAnimeDetails(id as string);
-      console.log('Anime details response:', data);
-      
-      // Transform the API response to match the expected structure
+      setLoading(true);
+      // Fetch anime info
+      const resp = await fetch(`https://ani.anisurge.me/api/v2/hianime/anime/${id}`);
+      const data = await resp.json();
+      if (!data.data || !data.data.anime) throw new Error('Failed to fetch anime info');
+      const anime = data.data.anime; // FIX: anime is now an object, not an array
+      // Fetch episodes (REVERT TO OLD API)
+      const epResp = await fetch(`https://con.anisurge.me/anime/zoro/info?id=${id}`);
+      const epData = await epResp.json();
+      if (!epData.episodes) throw new Error('Failed to fetch episodes');
+      // Transform info for UI
       const transformedData = {
         info: {
-          name: data.title,
-          img: data.image,
-          description: data.description,
+          name: anime.info.name,
+          img: anime.info.poster,
+          description: anime.info.description,
           episodes: {
-            sub: data.hasSub ? data.totalEpisodes : 0,
-            dub: data.hasDub ? data.totalEpisodes : 0,
-            total: data.totalEpisodes
+            sub: epData.hasSub ? epData.totalEpisodes : 0,
+            dub: epData.hasDub ? epData.totalEpisodes : 0,
+            total: epData.totalEpisodes
           },
-          rating: 'N/A', // API doesn't provide rating
-          japaneseTitle: data.japaneseTitle
+          rating: anime.info.stats.rating,
+          japaneseTitle: anime.moreInfo?.japanese || '', // updated key
         },
         moreInfo: {
-          'Status': data.status,
-          'Type': data.type,
-          'Season': data.season,
-          'Genres': data.genres.join(', '),
-          'Japanese Title': data.japaneseTitle,
-          'MAL ID': data.malID,
-          'AniList ID': data.alID
+          ...anime.moreInfo,
+          type: anime.info.stats.type,
+          duration: anime.info.stats.duration,
         },
-        recommendations: data.recommendations?.map(rec => ({
+        recommendations: (data.data.recommendedAnimes || []).map((rec: any) => ({
           id: rec.id,
-          title: rec.title,
-          image: rec.image,
+          title: rec.name,
+          image: rec.poster,
           type: rec.type,
-          episodes: rec.episodes
+          episodes: (rec.episodes?.sub || 0) + (rec.episodes?.dub || 0)
         })),
-        relations: data.relatedAnime?.map(rel => ({
+        relations: (data.data.relatedAnimes || []).map((rel: any) => ({
           id: rel.id,
-          title: rel.title,
-          image: rel.image,
+          title: rel.name,
+          image: rel.poster,
           type: rel.type,
-          episodes: rel.episodes,
+          episodes: (rel.episodes?.sub || 0) + (rel.episodes?.dub || 0),
           relationType: 'Related'
-        })) || [] // Ensure we have an empty array if no related anime
+        })),
+        malID: anime.info.malId || anime.moreInfo?.malId,
+        alID: anime.info.anilistId || anime.moreInfo?.anilistId,
       };
-      
       setAnimeData(transformedData);
-      setEpisodeList(data.episodes || []);
+      // Map episodes for UI (old API)
+      const episodes = (epData.episodes || []).map((ep: any) => ({
+        id: ep.id,
+        number: ep.number,
+        title: ep.title,
+        isSubbed: ep.isSubbed,
+        isDubbed: ep.isDubbed,
+        url: ep.url,
+        isFiller: ep.isFiller || false,
+      }));
+      setEpisodeList(episodes);
     } catch (error) {
       console.error('Error fetching anime details:', error);
       // Show error toast
@@ -1024,26 +1033,6 @@ export default function AnimeDetails() {
                 <Text style={styles.japaneseTitle}>{animeData.info.japaneseTitle}</Text>
               )}
 
-              {/* External Links */}
-              <View style={styles.externalLinks}>
-                {animeData?.malID && (
-                  <TouchableOpacity 
-                    style={styles.externalButton}
-                    onPress={() => Linking.openURL(`https://myanimelist.net/anime/${animeData.malID}`)}
-                  >
-                    <Text style={styles.externalButtonText}>MAL</Text>
-                  </TouchableOpacity>
-                )}
-                {animeData?.alID && (
-                  <TouchableOpacity 
-                    style={styles.externalButton}
-                    onPress={() => Linking.openURL(`https://anilist.co/anime/${animeData.alID}`)}
-                  >
-                    <Text style={styles.externalButtonText}>AniList</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
               <Text style={styles.description} numberOfLines={showMoreInfo ? undefined : 3}>
                 {animeData?.info.description}
               </Text>
@@ -1076,35 +1065,8 @@ export default function AnimeDetails() {
             >
               <View style={styles.infoGrid}>
                 {Object.entries(animeData?.moreInfo || {}).map(([key, value]) => {
-                  // Special handling for MAL and AniList IDs
-                  if (key === 'MAL ID') {
-                    return (
-                      <View key={key} style={styles.infoItem}>
-                        <Text style={styles.infoLabel}>MyAnimeList</Text>
-                        <TouchableOpacity 
-                          style={styles.infoLinkButton}
-                          onPress={() => Linking.openURL(`https://myanimelist.net/anime/${value}`)}
-                        >
-                          <Text style={styles.infoLinkButtonText}>View on MAL</Text>
-                          <MaterialIcons name="open-in-new" size={14} color="#f4511e" />
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  }
-                  if (key === 'AniList ID') {
-                    return (
-                      <View key={key} style={styles.infoItem}>
-                        <Text style={styles.infoLabel}>AniList</Text>
-                        <TouchableOpacity 
-                          style={styles.infoLinkButton}
-                          onPress={() => Linking.openURL(`https://anilist.co/anime/${value}`)}
-                        >
-                          <Text style={styles.infoLinkButtonText}>View on AniList</Text>
-                          <MaterialIcons name="open-in-new" size={14} color="#f4511e" />
-                        </TouchableOpacity>
-                      </View>
-                    );
-                  }
+                  // Skip MAL and AniList IDs here, will render below
+                  if (key === 'MAL ID' || key === 'AniList ID') return null;
                   // Regular info items
                   return (
                     <View key={key} style={styles.infoItem}>
@@ -1113,6 +1075,25 @@ export default function AnimeDetails() {
                     </View>
                   );
                 })}
+              </View>
+              {/* MAL and AniList buttons below info grid */}
+              <View style={styles.externalLinksRow}>
+                {animeData?.malID && (
+                  <TouchableOpacity 
+                    style={[styles.externalButtonLarge, {alignSelf: 'flex-start'}]}
+                    onPress={() => Linking.openURL(`https://myanimelist.net/anime/${animeData.malID}`)}
+                  >
+                    <Text style={styles.externalButtonTextLarge}>MAL</Text>
+                  </TouchableOpacity>
+                )}
+                {animeData?.alID && (
+                  <TouchableOpacity 
+                    style={[styles.externalButtonLarge, {alignSelf: 'flex-end'}]}
+                    onPress={() => Linking.openURL(`https://anilist.co/anime/${animeData.alID}`)}
+                  >
+                    <Text style={styles.externalButtonTextLarge}>AniList</Text>
+                  </TouchableOpacity>
+                )}
               </View>
               {showMoreInfo && (
                 <TouchableOpacity style={styles.showLessButton} onPress={toggleMoreInfo}>
@@ -1238,7 +1219,7 @@ export default function AnimeDetails() {
     });
 
     const shimmerStyle = {
-      position: 'absolute',
+      position: 'absolute' as const,
       top: 0,
       left: 0,
       right: 0,
@@ -1320,7 +1301,7 @@ export default function AnimeDetails() {
           style={styles.retryButton}
           onPress={() => {
             setLoading(true);
-            fetchAnimeDetails();
+            fetchAnimeDetailsNew();
           }}
         >
           <Text style={styles.retryButtonText}>Retry</Text>
@@ -2019,4 +2000,28 @@ nextEpisodeText: {
   fontSize: 14,
   fontWeight: 'bold',
 },
+  externalLinksRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    marginTop: 8,
+    gap: 12,
+  },
+  externalButtonLarge: {
+    backgroundColor: '#f4511e',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    minWidth: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+  },
+  externalButtonTextLarge: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
 }); 
