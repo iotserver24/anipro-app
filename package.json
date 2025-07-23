@@ -94,7 +94,8 @@
     "subtitle": "^4.2.2-alpha.0",
     "vtt-to-json": "^0.1.1",
     "xmldom": "^0.6.0",
-    "zustand": "^5.0.3"
+    "zustand": "^5.0.3",
+    "@react-native-masked-view/masked-view": "0.3.2"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

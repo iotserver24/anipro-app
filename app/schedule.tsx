@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, Image } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import dayjs from 'dayjs';
 
 interface ScheduledAnime {
@@ -12,6 +13,8 @@ interface ScheduledAnime {
   airingTimestamp: number;
   secondsUntilAiring: number;
   episode: number;
+  bannerUrl: string | null;
+  bannerType: 'banner' | 'poster' | 'unknown';
 }
 
 export default function ScheduleScreen() {
@@ -24,11 +27,10 @@ export default function ScheduleScreen() {
     setLoading(true);
     setError(null);
     try {
-      const today = dayjs().format('YYYY-MM-DD');
-      const res = await fetch(`https://ani.anisurge.me/api/v2/hianime/schedule?date=${today}`);
+      const res = await fetch(`https://anisurge.me/api/schedule-cache`);
       const json = await res.json();
-      if (json.status === 200 && json.data && Array.isArray(json.data.scheduledAnimes)) {
-        setAnimes(json.data.scheduledAnimes);
+      if (json.success && Array.isArray(json.scheduledAnimes)) {
+        setAnimes(json.scheduledAnimes);
       } else {
         setError('Failed to load schedule.');
       }
@@ -52,28 +54,40 @@ export default function ScheduleScreen() {
   const renderAnime = ({ item }: { item: ScheduledAnime }) => {
     const airingTime = dayjs(item.airingTimestamp).format('HH:mm');
     const isAiringSoon = item.secondsUntilAiring > 0;
+    const showBanner = item.bannerUrl && (item.bannerType === 'banner' || item.bannerType === 'poster');
     return (
       <TouchableOpacity
         style={styles.animeCard}
         onPress={() => router.push(`/anime/${item.id}`)}
         activeOpacity={0.8}
       >
-        <View style={styles.timeContainer}>
-          <MaterialIcons name="schedule" size={20} color="#f4511e" />
-          <Text style={styles.timeText}>{airingTime}</Text>
-        </View>
-        <View style={styles.infoContainer}>
-          <Text style={styles.animeTitle}>{item.name}</Text>
-          <Text style={styles.japaneseTitle}>{item.jname}</Text>
-          <View style={styles.episodeRow}>
-            <MaterialIcons name="confirmation-number" size={16} color="#888" />
-            <Text style={styles.episodeText}>Episode {item.episode}</Text>
-            {isAiringSoon && (
-              <View style={styles.countdownContainer}>
-                <MaterialIcons name="timer" size={16} color="#4CAF50" />
-                <Text style={styles.countdownText}>{formatCountdown(item.secondsUntilAiring)}</Text>
-              </View>
-            )}
+        {showBanner && (
+          <>
+            <Image
+              source={{ uri: item.bannerUrl! }}
+              style={styles.bannerImage}
+              resizeMode="cover"
+              blurRadius={0}
+            />
+            <LinearGradient
+              colors={["rgba(18,18,18,0)", "#121212"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0.6, y: 0 }}
+              style={styles.bannerGradient}
+            />
+          </>
+        )}
+        <View style={styles.cardContent}>
+          <View style={styles.timeContainer}>
+            <MaterialIcons name="schedule" size={20} color="#f4511e" />
+            <Text style={styles.timeText}>{airingTime}</Text>
+          </View>
+          <View style={styles.infoContainer}>
+            <Text style={styles.animeTitle}>{item.name}</Text>
+            <View style={styles.episodeRow}>
+              <MaterialIcons name="confirmation-number" size={16} color="#888" />
+              <Text style={styles.episodeText}>Episode {item.episode}</Text>
+            </View>
           </View>
         </View>
       </TouchableOpacity>
@@ -130,14 +144,60 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   animeCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    position: 'relative',
+    flexDirection: 'column',
     backgroundColor: '#1a1a1a',
     borderRadius: 12,
     marginHorizontal: 16,
     marginVertical: 8,
-    padding: 16,
+    padding: 0,
     elevation: 2,
+    overflow: 'hidden',
+    minHeight: 110,
+  },
+  bannerContainer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+    flex: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    flexDirection: 'row',
+  },
+  bannerImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    opacity: 0.8,
+    borderRadius: 12,
+    zIndex: 0,
+  },
+  bannerGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    borderRadius: 12,
+    zIndex: 1,
+  },
+  cardContent: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 2,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 16,
+    width: '100%',
+    height: '100%',
   },
   timeContainer: {
     alignItems: 'center',
@@ -152,6 +212,7 @@ const styles = StyleSheet.create({
   },
   infoContainer: {
     flex: 1,
+    marginLeft: '30%',
   },
   animeTitle: {
     color: '#fff',
