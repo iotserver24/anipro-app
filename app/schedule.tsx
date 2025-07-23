@@ -73,17 +73,19 @@ export default function ScheduleScreen() {
               colors={["rgba(18,18,18,0)", "#121212"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 0.6, y: 0 }}
-              style={styles.bannerGradient}
+           style={styles.bannerGradient}
             />
           </>
         )}
         <View style={styles.cardContent}>
-          <View style={styles.timeContainer}>
-            <MaterialIcons name="schedule" size={20} color="#f4511e" />
-            <Text style={styles.timeText}>{airingTime}</Text>
+          <View style={styles.titleContainer}>
+            <Text style={styles.animeTitle} numberOfLines={2}>{item.name}</Text>
           </View>
-          <View style={styles.infoContainer}>
-            <Text style={styles.animeTitle}>{item.name}</Text>
+          <View style={styles.detailsContainer}>
+            <View style={styles.timeRow}>
+              <MaterialIcons name="schedule" size={18} color="#f4511e" style={{ marginRight: 4 }} />
+              <Text style={styles.timeText}>{airingTime}</Text>
+            </View>
             <View style={styles.episodeRow}>
               <MaterialIcons name="confirmation-number" size={16} color="#888" />
               <Text style={styles.episodeText}>Episode {item.episode}</Text>
@@ -194,10 +196,23 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 2,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     padding: 16,
     width: '100%',
     height: '100%',
+  },
+  titleContainer: {
+    flex: 0.6,
+    justifyContent: 'center',
+    paddingLeft: 8,
+    zIndex: 2,
+  },
+  detailsContainer: {
+    flex: 0.4,
+    justifyContent: 'center',
+    alignItems: 'flex-start',
+    paddingLeft: 12,
+    zIndex: 2,
   },
   timeContainer: {
     alignItems: 'center',
@@ -280,5 +295,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     marginTop: 40,
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
   },
 }); 
