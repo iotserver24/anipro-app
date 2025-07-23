@@ -94,7 +94,7 @@ export default function ScheduleScreen() {
               <Text style={styles.timeText}>{airingTime}</Text>
             </View>
             <View style={styles.episodeRow}>
-              <MaterialIcons name="confirmation-number" size={16} color="#888" />
+              <MaterialIcons name="confirmation-number" size={18} color="#888" />
               <Text style={styles.episodeTextSmall}>Episode {item.episode}</Text>
             </View>
             <View style={styles.countdownContainer}>
