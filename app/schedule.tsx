@@ -69,12 +69,8 @@ export default function ScheduleScreen() {
               resizeMode="cover"
               blurRadius={0}
             />
-            <LinearGradient
-              colors={["rgba(18,18,18,0)", "#121212"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 0.6, y: 0 }}
-           style={styles.bannerGradient}
-            />
+            <View style={styles.blackArea} pointerEvents="none" />
+            <View style={styles.chevronCut} pointerEvents="none" />
           </>
         )}
         <View style={styles.cardContent}>
@@ -212,6 +208,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'flex-start',
     paddingLeft: 12,
+    marginLeft: 16,
     zIndex: 2,
   },
   timeContainer: {
@@ -300,5 +297,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 2,
+  },
+  blackArea: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: '35%',
+    backgroundColor: '#1a1a1a',
+    zIndex: 1,
+  },
+  chevronCut: {
+    position: 'absolute',
+    right: '35%',
+    top: 0,
+    width: 0,
+    height: 0,
+    borderTopWidth: 110,
+    borderRightWidth: 35,
+    borderTopColor: 'transparent',
+    borderRightColor: '#1a1a1a',
+    zIndex: 2,
   },
 }); 
