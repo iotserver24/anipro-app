@@ -5,6 +5,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Linking from 'expo-linking';
 import { APP_CONFIG, getAppVersion, getAppVersionCode } from '../constants/appConfig';
+import { useTheme } from '../hooks/useTheme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
 import { useMyListStore } from '../store/myListStore';
@@ -382,6 +383,7 @@ interface DeviceInfo {
 }
 
 export default function AboutScreen() {
+  const { theme } = useTheme();
   const appVersion = getAppVersion();
   const [clearingCache, setClearingCache] = useState(false);
   const [imageReady, setImageReady] = useState(false);
@@ -943,7 +945,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
       
       <ScrollView 
         ref={scrollViewRef}
-        style={styles.container}
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
         {/* App Header */}
         {isLoading ? (
@@ -958,8 +960,8 @@ Architecture: ${deviceInfo.deviceArchitecture}
                   style={styles.appIcon}
                   resizeMode="contain"
                 />
-                <Text style={styles.appName}>{APP_CONFIG.APP_NAME}</Text>
-                <Text style={styles.appVersion}>Version {appVersion}</Text>
+                <Text style={[styles.appName, { color: theme.colors.text }]}>{APP_CONFIG.APP_NAME}</Text>
+                <Text style={[styles.appVersion, { color: theme.colors.textSecondary }]}>Version {appVersion}</Text>
               </View>
               <View style={styles.socialButtons}>
                 <TouchableOpacity 
@@ -994,8 +996,8 @@ Architecture: ${deviceInfo.deviceArchitecture}
                   style={styles.appIcon}
                   resizeMode="contain"
                 />
-                <Text style={styles.appName}>{APP_CONFIG.APP_NAME}</Text>
-                <Text style={styles.appVersion}>Version {appVersion}</Text>
+                <Text style={[styles.appName, { color: theme.colors.text }]}>{APP_CONFIG.APP_NAME}</Text>
+                <Text style={[styles.appVersion, { color: theme.colors.textSecondary }]}>Version {appVersion}</Text>
               </View>
               <View style={styles.socialButtons}>
                 <TouchableOpacity 
@@ -1389,7 +1391,6 @@ function SectionDivider() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
   },
   header: {
     borderBottomLeftRadius: 20,
@@ -1438,12 +1439,10 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#fff',
     marginBottom: 5,
   },
   appVersion: {
     fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
   },
   socialButtons: {
     position: 'absolute',

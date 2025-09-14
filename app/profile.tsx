@@ -28,6 +28,7 @@ import donationService, { DonationTier } from '../services/donationService';
 import { useMyListStore } from '../store/myListStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { WebView } from 'react-native-webview';
+import { useTheme } from '../hooks/useTheme';
 import * as Linking from 'expo-linking';
 import { API_BASE, ENDPOINTS } from '../constants/api';
 import LoadingModal from '../components/LoadingModal';
@@ -62,6 +63,7 @@ type UserDonation = {
 const APP_STORAGE_FOLDER_KEY = 'APP_STORAGE_FOLDER_URI';
 
 export default function ProfileScreen() {
+  const { theme, currentTheme, changeTheme } = useTheme();
   const [loading, setLoading] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -1193,7 +1195,7 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.avatarContainer}
@@ -1201,13 +1203,13 @@ export default function ProfileScreen() {
           disabled={!authenticated || updatingAvatar}
         >
           {updatingAvatar ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#f4511e" />
-              <Text style={styles.loadingText}>Updating avatar...</Text>
+            <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
+              <ActivityIndicator size="large" color={theme.colors.primary} />
+              <Text style={[styles.loadingText, { color: theme.colors.text }]}>Updating avatar...</Text>
             </View>
           ) : avatarLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#f4511e" />
+            <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
+              <ActivityIndicator size="small" color={theme.colors.primary} />
             </View>
           ) : (
             <>
@@ -1461,6 +1463,18 @@ export default function ProfileScreen() {
             <Text style={styles.buttonText}>Donate More</Text>
           </TouchableOpacity>
 
+          {/* Theme Settings Button */}
+          <TouchableOpacity 
+            style={styles.themeButton}
+            onPress={() => router.push('/theme-settings')}
+          >
+            <MaterialIcons name="palette" size={24} color="#fff" />
+            <Text style={styles.buttonText}>Change Theme</Text>
+            <View style={styles.themeIndicator}>
+              <Text style={styles.themeIndicatorText}>{currentTheme}</Text>
+            </View>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <MaterialIcons name="logout" size={24} color="#fff" />
             <Text style={styles.buttonText}>Logout</Text>
@@ -1569,13 +1583,11 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#121212',
   },
   header: {
     alignItems: 'center',
@@ -2141,5 +2153,31 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     marginBottom: 0,
+  },
+  themeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#6C5CE7',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  themeIndicator: {
+    marginLeft: 'auto',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  themeIndicatorText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'capitalize',
   },
 }); 

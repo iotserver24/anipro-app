@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useTheme } from '../hooks/useTheme';
 
 export type APIEpisode = {
   id: string;
@@ -28,49 +29,55 @@ const EpisodeItem = React.memo(({
   mode,
   animeTitle,
   onShare
-}: EpisodeItemProps) => (
+}: EpisodeItemProps) => {
+  const { theme } = useTheme();
+  
+  return (
   <TouchableOpacity
-    style={[styles.episodeCard, episode.isFiller && styles.fillerEpisodeCard]}
+    style={[
+      styles.episodeCard, 
+      { backgroundColor: theme.colors.surface },
+      episode.isFiller && [styles.fillerEpisodeCard, { borderLeftColor: theme.colors.primary }]
+    ]}
     onPress={onPress}
     onLongPress={onLongPress}
   >
     <View style={styles.episodeContent}>
       <View style={styles.episodeNumberContainer}>
-        <Text style={styles.episodeNumber}>{episode.number}</Text>
+        <Text style={[styles.episodeNumber, { color: theme.colors.text }]}>{episode.number}</Text>
       </View>
       <View style={styles.episodeInfo}>
-        <Text style={styles.episodeTitle} numberOfLines={1}>
+        <Text style={[styles.episodeTitle, { color: theme.colors.text }]} numberOfLines={1}>
           {episode.title}
         </Text>
         <View style={styles.episodeBadges}>
           {mode === 'dub' && episode.isDubbed && (
-            <Text style={styles.dubBadge}>DUB</Text>
+            <Text style={[styles.dubBadge, { color: theme.colors.accent }]}>DUB</Text>
           )}
           {episode.isFiller && (
-            <Text style={styles.fillerBadge}>FILLER</Text>
+            <Text style={[styles.fillerBadge, { color: theme.colors.primary }]}>FILLER</Text>
           )}
         </View>
       </View>
       <View style={styles.episodeActions}>
         <TouchableOpacity onPress={onShare} style={styles.episodeActionButton}>
-          <MaterialIcons name="share" size={20} color="#f4511e" />
+          <MaterialIcons name="share" size={20} color={theme.colors.primary} />
         </TouchableOpacity>
-        <MaterialIcons name="play-circle-outline" size={24} color="#f4511e" />
+        <MaterialIcons name="play-circle-outline" size={24} color={theme.colors.primary} />
       </View>
     </View>
   </TouchableOpacity>
-));
+  );
+});
 
 const styles = StyleSheet.create({
   episodeCard: {
-    backgroundColor: '#1a1a1a',
     borderRadius: 8,
     overflow: 'hidden',
     marginBottom: 8,
   },
   fillerEpisodeCard: {
     borderLeftWidth: 3,
-    borderLeftColor: '#f4511e',
   },
   episodeContent: {
     flexDirection: 'row',
@@ -87,7 +94,6 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   episodeNumber: {
-    color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -96,7 +102,6 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   episodeTitle: {
-    color: '#fff',
     fontSize: 14,
     marginBottom: 4,
   },
@@ -105,11 +110,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   fillerBadge: {
-    color: '#f4511e',
     fontSize: 12,
   },
   dubBadge: {
-    color: '#4CAF50',
     fontSize: 12,
     fontWeight: '600',
   },

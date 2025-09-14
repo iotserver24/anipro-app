@@ -14,6 +14,7 @@ import { logger } from '../utils/logger';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
 import Constants from 'expo-constants';
 import { APP_CONFIG, getAppVersion, getAppVersionCode } from '../constants/appConfig';
+import { useTheme } from '../hooks/useTheme';
 import UpdateModal from '../components/UpdateModal';
 import WhatsNewModal from '../components/WhatsNewModal';
 import { shouldShowWhatsNew, fetchWhatsNewInfo, WhatsNewInfo } from '../utils/whatsNewUtils';
@@ -223,6 +224,7 @@ const APP_STORAGE_FOLDER_KEY = 'APP_STORAGE_FOLDER_URI';
 const APP_STORAGE_FOLDER_SKIP_KEY = 'APP_STORAGE_FOLDER_SKIP';
 
 export default function Home() {
+  const { theme } = useTheme();
   const [recentAnime, setRecentAnime] = useState<AnimeItem[]>([]);
   const [trendingAnime, setTrendingAnime] = useState<AnimeItem[]>([]);
   const [newEpisodes, setNewEpisodes] = useState<AnimeItem[]>([]);
@@ -790,7 +792,8 @@ export default function Home() {
       <TouchableOpacity 
         style={[
           styles.trendingCard,
-          isCurrentItem && styles.trendingCardActive
+          { backgroundColor: theme.colors.surface },
+          isCurrentItem && [styles.trendingCardActive, { borderColor: theme.colors.primary }]
         ]}
         activeOpacity={0.9}
         onPress={() => router.push({
@@ -814,24 +817,24 @@ export default function Home() {
         <View style={styles.trendingContent}>
           {/* Title and metadata */}
           <View style={styles.trendingInfo}>
-            <Text style={styles.trendingTitle} numberOfLines={2}>{item.title}</Text>
+            <Text style={[styles.trendingTitle, { color: theme.colors.text }]} numberOfLines={2}>{item.title}</Text>
             
             {/* Japanese Title if available */}
             {item.japaneseTitle ? (
-              <Text style={styles.japaneseTitleText} numberOfLines={1}>{item.japaneseTitle}</Text>
+              <Text style={[styles.japaneseTitleText, { color: theme.colors.textSecondary }]} numberOfLines={1}>{item.japaneseTitle}</Text>
             ) : null}
             
             <View style={styles.trendingMeta}>
               {/* Type badge */}
               {item.type ? (
-                <View style={styles.typeBadge}>
-                  <Text style={styles.typeBadgeText}>{item.type}</Text>
+                <View style={[styles.typeBadge, { backgroundColor: theme.colors.primary }]}>
+                  <Text style={[styles.typeBadgeText, { color: theme.colors.text }]}>{item.type}</Text>
                 </View>
               ) : null}
               
               {/* Year */}
               {item.releaseDate ? (
-                <Text style={styles.yearText}>{item.releaseDate}</Text>
+                <Text style={[styles.yearText, { color: theme.colors.textSecondary }]}>{item.releaseDate}</Text>
               ) : null}
               
               {/* Episodes with Sub/Dub indicators */}
@@ -930,7 +933,7 @@ export default function Home() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <AuthModal 
         isVisible={showAuthModal}
         onClose={() => setShowAuthModal(false)}
@@ -1016,11 +1019,11 @@ export default function Home() {
         {/* Redesigned Trending Section */}
         <View style={styles.trendingSection}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Trending Now</Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Trending Now</Text>
           </View>
           
           {loading ? (
-            <ActivityIndicator size="large" color="#f4511e" />
+            <ActivityIndicator size="large" color={theme.colors.primary} />
           ) : trendingAnime && trendingAnime.length > 0 ? (
             <View>
               {/* Main carousel without dots */}
@@ -1078,9 +1081,9 @@ export default function Home() {
 
         {/* New Episodes Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>New Episodes</Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>New Episodes</Text>
           {loading ? (
-            <ActivityIndicator size="large" color="#f4511e" />
+            <ActivityIndicator size="large" color={theme.colors.primary} />
           ) : newEpisodes && newEpisodes.length > 0 ? (
             <FlatList
               data={newEpisodes}
@@ -1097,9 +1100,9 @@ export default function Home() {
 
         {/* Latest Completed Section */}
         <View style={[styles.section, { marginBottom: 16 }]}>
-          <Text style={styles.sectionTitle}>Latest Completed</Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Latest Completed</Text>
           {loading ? (
-            <ActivityIndicator size="large" color="#f4511e" />
+            <ActivityIndicator size="large" color={theme.colors.primary} />
           ) : latestCompleted && latestCompleted.length > 0 ? (
             <FlatList
               data={latestCompleted}
@@ -1116,9 +1119,9 @@ export default function Home() {
 
         {/* Popular Anime Section */}
         <View style={[styles.section, { marginBottom: 16 }]}>
-          <Text style={styles.sectionTitle}>Popular Anime</Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Popular Anime</Text>
           {loading ? (
-            <ActivityIndicator size="large" color="#f4511e" />
+            <ActivityIndicator size="large" color={theme.colors.primary} />
           ) : popularAnime && popularAnime.length > 0 ? (
             <FlatList
               data={popularAnime}
@@ -1135,9 +1138,9 @@ export default function Home() {
 
         {/* Most Favorite Section */}
         <View style={[styles.section, { marginBottom: 16 }]}>
-          <Text style={styles.sectionTitle}>Most Favorite</Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Most Favorite</Text>
           {loading ? (
-            <ActivityIndicator size="large" color="#f4511e" />
+            <ActivityIndicator size="large" color={theme.colors.primary} />
           ) : favoriteAnime && favoriteAnime.length > 0 ? (
             <FlatList
               data={favoriteAnime}
@@ -1166,7 +1169,6 @@ export default function Home() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
   },
   trendingSection: {
     paddingTop: 16,
@@ -1182,7 +1184,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#fff',
   },
   trendingListContainer: {
     paddingHorizontal: ITEM_MARGIN // Equal padding on both sides
@@ -1192,7 +1193,6 @@ const styles = StyleSheet.create({
     height: ITEM_WIDTH * 0.5625, // 16:9 aspect ratio
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#1a1a1a',
     elevation: 5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -1221,7 +1221,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   trendingTitle: {
-    color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 2,
@@ -1230,7 +1229,6 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
   },
   japaneseTitleText: {
-    color: '#ddd',
     fontSize: 12,
     fontStyle: 'italic',
     marginBottom: 6,
@@ -1242,19 +1240,16 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   typeBadge: {
-    backgroundColor: '#f4511e',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
     marginRight: 8,
   },
   typeBadgeText: {
-    color: '#fff',
     fontSize: 12,
     fontWeight: '600',
   },
   yearText: {
-    color: '#ccc',
     fontSize: 12,
     marginRight: 12,
   },
@@ -1311,7 +1306,6 @@ const styles = StyleSheet.create({
   trendingCardActive: {
     // Optional: Add a subtle indicator for the active card
     borderWidth: 2,
-    borderColor: '#f4511e',
   },
   listContainer: {
     paddingHorizontal: 16,

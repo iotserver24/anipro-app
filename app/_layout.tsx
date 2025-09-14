@@ -5,7 +5,8 @@ import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
 import { View, BackHandler, Alert, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { ThemeProvider, DarkTheme } from '@react-navigation/native';
+import { ThemeProvider as NavigationThemeProvider, DarkTheme } from '@react-navigation/native';
+import { ThemeProvider } from '../contexts/ThemeContext';
 import SearchBar from '../components/SearchBar';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -400,8 +401,9 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={DarkTheme}>
-      <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+    <ThemeProvider>
+      <NavigationThemeProvider value={DarkTheme}>
+        <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
         <StatusBar style="light" />
         <Stack 
           screenOptions={{ 
@@ -503,6 +505,7 @@ export default function RootLayout() {
           {!isVideoFullscreen && !isWatchPage && !isChatPage && <BottomTabBar />}
         </View>
       </View>
+      </NavigationThemeProvider>
     </ThemeProvider>
   );
 }
