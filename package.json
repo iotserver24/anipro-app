@@ -1,6 +1,6 @@
 {
   "name": "anisurge",
-  "version": "2.12.1",
+  "version": "2.26.5",
   "main": "index.ts",
   "scripts": {
     "start": "expo start --localhost",

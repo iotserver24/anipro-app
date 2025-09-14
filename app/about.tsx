@@ -806,7 +806,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
     const callbackUrl = Linking.createURL('profile/premium-success');
     
     // Create the payment URL with user information
-    const paymentUrl = `https://megavault.in/anime-premium.html?userId=${user.uid}&email=${encodeURIComponent(user.email || '')}&callback=${encodeURIComponent(callbackUrl)}`;
+    const paymentUrl = `https://mg.anishkumar.tech/anime-premium.html?userId=${user.uid}&email=${encodeURIComponent(user.email || '')}&callback=${encodeURIComponent(callbackUrl)}`;
     
     // Log the attempt
     logger.info('Premium', `Opening payment page for user: ${user.uid}`);
@@ -830,7 +830,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
     const callbackUrl = Linking.createURL('profile/donation-success');
     
     // Create the donation URL with user information
-    const donationUrl = `https://megavault.in/donate.html?userId=${user.uid}&email=${encodeURIComponent(user.email || '')}&callback=${encodeURIComponent(callbackUrl)}`;
+    const donationUrl = `https://mg.anishkumar.tech/donate.html?userId=${user.uid}&email=${encodeURIComponent(user.email || '')}&callback=${encodeURIComponent(callbackUrl)}`;
     
     // Log the attempt
     logger.info('Donation', `Opening donation page for user: ${user.uid}`);

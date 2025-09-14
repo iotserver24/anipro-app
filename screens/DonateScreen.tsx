@@ -68,7 +68,7 @@ const DonateScreen = () => {
   }
 
   // Create the donation URL with user data
-  const donationUrl = `https://megavault.in/donate.html?userId=${user.uid}&email=${encodeURIComponent(user.email || '')}&callback=${encodeURIComponent('anisurge://donation-success')}`;
+  const donationUrl = `https://mg.anishkumar.tech/donate.html?userId=${user.uid}&email=${encodeURIComponent(user.email || '')}&callback=${encodeURIComponent('anisurge://donation-success')}`;
 
   // Handle navigation state changes
   const handleNavigationStateChange = (navState: any) => {
