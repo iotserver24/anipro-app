@@ -139,12 +139,14 @@ export default function ThemeSettingsScreen() {
 
         {/* Custom Background Media Selector for Immersive Theme */}
         {currentTheme === 'immersive' && (
-          <BackgroundMediaSelector
-            onMediaSelected={setCustomBackgroundMedia}
-            onOpacityChange={updateCustomBackgroundOpacity}
-            currentMedia={customBackgroundMedia}
-            currentOpacity={customBackgroundMedia?.opacity || 0.3}
-          />
+          <View style={styles.backgroundSelectorContainer}>
+            <BackgroundMediaSelector
+              onMediaSelected={setCustomBackgroundMedia}
+              onOpacityChange={updateCustomBackgroundOpacity}
+              currentMedia={customBackgroundMedia}
+              currentOpacity={customBackgroundMedia?.opacity || 0.3}
+            />
+          </View>
         )}
 
         {/* Preview Controls */}
@@ -174,38 +176,6 @@ export default function ThemeSettingsScreen() {
           </View>
         )}
 
-        {/* Theme Info */}
-        <View style={[styles.infoSection, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.infoTitle, { color: theme.colors.text }]}>
-            Theme Features
-          </Text>
-          <View style={styles.infoList}>
-            <View style={styles.infoItem}>
-              <MaterialIcons name="palette" size={20} color={theme.colors.primary} />
-              <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
-                Custom color schemes for every mood
-              </Text>
-            </View>
-            <View style={styles.infoItem}>
-              <MaterialIcons name="image" size={20} color={theme.colors.primary} />
-              <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
-                Background images and videos support
-              </Text>
-            </View>
-            <View style={styles.infoItem}>
-              <MaterialIcons name="auto-mode" size={20} color={theme.colors.primary} />
-              <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
-                Automatic light/dark mode detection
-              </Text>
-            </View>
-            <View style={styles.infoItem}>
-              <MaterialIcons name="save" size={20} color={theme.colors.primary} />
-              <Text style={[styles.infoText, { color: theme.colors.textSecondary }]}>
-                Settings saved automatically
-              </Text>
-            </View>
-          </View>
-        </View>
       </ScrollView>
     </View>
   );
@@ -340,33 +310,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  infoSection: {
-    margin: 20,
-    marginTop: 40,
-    padding: 16,
-    borderRadius: 12,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  infoTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  infoList: {
-    gap: 12,
-  },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  infoText: {
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
+  backgroundSelectorContainer: {
+    marginHorizontal: 20,
+    marginTop: 20,
   },
 });

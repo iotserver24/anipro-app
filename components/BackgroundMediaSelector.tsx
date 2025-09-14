@@ -147,10 +147,10 @@ export default function BackgroundMediaSelector({ onMediaSelected, onOpacityChan
       {currentMedia?.uri && (
         <View style={styles.opacityContainer}>
           <Text style={[styles.opacityLabel, { color: theme.colors.text }]}>
-            Background Darkness: {Math.round(opacity * 100)}%
+            Background Opacity: {Math.round(opacity * 100)}%
           </Text>
           <View style={styles.sliderContainer}>
-            <Text style={[styles.sliderLabel, { color: theme.colors.textSecondary }]}>Light</Text>
+            <Text style={[styles.sliderLabel, { color: theme.colors.textSecondary }]}>dark</Text>
             <Slider
               style={styles.slider}
               minimumValue={0.1}
@@ -164,7 +164,7 @@ export default function BackgroundMediaSelector({ onMediaSelected, onOpacityChan
               maximumTrackTintColor={theme.colors.border}
               thumbStyle={{ backgroundColor: theme.colors.primary }}
             />
-            <Text style={[styles.sliderLabel, { color: theme.colors.textSecondary }]}>Dark</Text>
+            <Text style={[styles.sliderLabel, { color: theme.colors.textSecondary }]}>light</Text>
           </View>
         </View>
       )}
