@@ -2,6 +2,9 @@
 
 # dependencies
 node_modules/
+/anisurge-website/
+anisurge-website/
+/anisurge-website
 
 # Expo
 .expo/
