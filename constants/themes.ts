@@ -296,6 +296,58 @@ export const THEMES: Record<string, Theme> = {
       backgroundVideo: 'https://anisurge.me/api/backgrounds/anime-bg.mp4',
       backgroundOpacity: 0.1,
     }
+  },
+
+  // DEFAULT CUSTOM THEME TEMPLATE - MODIFY THIS ONE
+  custom: {
+    name: 'custom',
+    displayName: 'My Custom Theme',
+    isDark: true, // Change to false for light theme
+    statusBarStyle: 'light', // Change to 'dark' for light theme
+    colors: {
+      // Primary Colors - Change these to your brand colors
+      primary: '#3B82F6',        // Blue
+      secondary: '#1E40AF',      // Darker blue
+      accent: '#10B981',         // Green
+      
+      // Background Colors - Main app background
+      background: '#0F172A',     // Very dark blue
+      surface: '#1E293B',        // Slightly lighter
+      card: '#334155',           // Card background
+      overlay: 'rgba(0, 0, 0, 0.7)', // Modal overlays
+      
+      // Text Colors - All text in your app
+      text: '#F8FAFC',           // Main text (white)
+      textSecondary: '#CBD5E1',  // Secondary text (light gray)
+      textMuted: '#64748B',      // Muted text (gray)
+      textInverse: '#0F172A',    // Text on light backgrounds
+      
+      // Border & Divider Colors
+      border: '#475569',         // Borders
+      divider: '#334155',        // Dividers between sections
+      
+      // Status Colors - Success, warning, error messages
+      success: '#10B981',        // Green
+      warning: '#F59E0B',        // Orange
+      error: '#EF4444',          // Red
+      info: '#3B82F6',           // Blue
+      
+      // Interactive Colors - Buttons and clickable elements
+      button: '#3B82F6',         // Primary button color
+      buttonText: '#FFFFFF',     // Text on buttons
+      buttonSecondary: '#334155', // Secondary button color
+      buttonSecondaryText: '#F8FAFC', // Text on secondary buttons
+      
+      // Special Colors
+      shadow: '#000000',         // Drop shadows
+      placeholder: '#64748B',    // Input placeholders
+      disabled: '#475569',       // Disabled elements
+      
+      // Background Media (OPTIONAL) - Add custom backgrounds
+      // backgroundImage: 'https://your-domain.com/background.jpg',
+      // backgroundVideo: 'https://your-domain.com/background.mp4',
+      // backgroundOpacity: 0.2, // 0.0 = transparent, 1.0 = opaque
+    }
   }
 };
 

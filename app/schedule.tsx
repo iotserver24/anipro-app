@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, Image } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, Image, Linking } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { useTheme } from '../hooks/useTheme';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -43,10 +43,10 @@ export default function ScheduleScreen() {
       if (json.success && Array.isArray(json.scheduledAnimes)) {
         setAnimes(json.scheduledAnimes);
       } else {
-        setError('Failed to load schedule.');
+        setError('Schedule not yet available');
       }
     } catch (e) {
-      setError('Failed to load schedule.');
+      setError('Schedule not yet available');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -130,10 +130,21 @@ export default function ScheduleScreen() {
           <ActivityIndicator size="large" color="#f4511e" style={{ marginTop: 40 }} />
         ) : error ? (
           <View style={styles.centered}>
-            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.errorText}>Schedule not yet available</Text>
+            <Text style={styles.helpText}>
+              The schedule data hasn't been generated yet.{'\n'}
+              Please visit the schedule trigger to generate today's schedule.
+            </Text>
+            <TouchableOpacity 
+              style={styles.triggerButton} 
+              onPress={() => Linking.openURL('https://sc.anisurge.me/schedule-trigger')}
+            >
+              <MaterialIcons name="open-in-new" size={20} color="#fff" />
+              <Text style={styles.triggerText}>Open Schedule Trigger</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.retryButton} onPress={fetchSchedule}>
               <MaterialIcons name="refresh" size={20} color="#fff" />
-              <Text style={styles.retryText}>Retry</Text>
+              <Text style={styles.retryText}>Check Again</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -142,7 +153,21 @@ export default function ScheduleScreen() {
             keyExtractor={(item, idx) => item.id + '-' + item.episode + '-' + idx}
             renderItem={renderAnime}
             contentContainerStyle={animes.length === 0 ? styles.centered : undefined}
-            ListEmptyComponent={<Text style={styles.emptyText}>No scheduled anime for today.</Text>}
+            ListEmptyComponent={
+              <View style={styles.centered}>
+                <Text style={styles.emptyText}>No scheduled anime for today.</Text>
+                <Text style={styles.helpText}>
+                  If you expected anime to be scheduled, the data might not be generated yet.
+                </Text>
+                <TouchableOpacity 
+                  style={styles.triggerButton} 
+                  onPress={() => Linking.openURL('https://sc.anisurge.me/schedule-trigger')}
+                >
+                  <MaterialIcons name="open-in-new" size={20} color="#fff" />
+                  <Text style={styles.triggerText}>Check Schedule Trigger</Text>
+                </TouchableOpacity>
+              </View>
+            }
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f4511e" />}
           />
         )}
@@ -292,8 +317,32 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: '#f4511e',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  helpText: {
+    color: '#cccccc',
+    fontSize: 14,
+    marginBottom: 20,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  triggerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4CAF50',
+    borderRadius: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
+  triggerText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    marginLeft: 8,
     fontSize: 16,
-    marginBottom: 16,
   },
   retryButton: {
     flexDirection: 'row',
