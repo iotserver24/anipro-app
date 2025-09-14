@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, Image } from 'react-native';
 import { Stack, router } from 'expo-router';
+import { useTheme } from '../hooks/useTheme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import dayjs from 'dayjs';
@@ -18,6 +19,7 @@ interface ScheduledAnime {
 }
 
 export default function ScheduleScreen() {
+  const { theme, hasBackgroundMedia } = useTheme();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [animes, setAnimes] = useState<ScheduledAnime[]>([]);
@@ -119,11 +121,11 @@ export default function ScheduleScreen() {
       <Stack.Screen
         options={{
           title: 'Schedule',
-          headerStyle: { backgroundColor: '#1a1a1a' },
-          headerTintColor: '#fff',
+          headerStyle: { backgroundColor: theme.colors.surface },
+          headerTintColor: theme.colors.text,
         }}
       />
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
         {loading ? (
           <ActivityIndicator size="large" color="#f4511e" style={{ marginTop: 40 }} />
         ) : error ? (

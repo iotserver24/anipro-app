@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Alert, ActivityIndicator, RefreshControl } from 'react-native';
 import { useState, useEffect, useCallback } from 'react';
 import { router, useFocusEffect } from 'expo-router';
+import { useTheme } from '../hooks/useTheme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,6 +17,7 @@ type MyListAnime = {
 };
 
 export default function MyList() {
+  const { theme, hasBackgroundMedia } = useTheme();
   const { myList, removeAnime, initializeList, refreshIfNeeded, isLoading, clearList } = useMyListStore();
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -157,9 +159,9 @@ export default function MyList() {
   );
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>My List</Text>
+        <Text style={[styles.title, { color: theme.colors.text }]}>My List</Text>
         {myList.length > 0 && (
           <TouchableOpacity 
             style={styles.clearAllButton}

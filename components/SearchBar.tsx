@@ -1,8 +1,11 @@
 import { View, StyleSheet, TouchableWithoutFeedback } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useTheme } from '../hooks/useTheme';
 
 export default function SearchBar() {
+  const { theme } = useTheme();
+  
   const handleSearchPress = () => {
     router.push({
       pathname: "/search",
@@ -17,7 +20,7 @@ export default function SearchBar() {
           <Ionicons 
             name="search-outline"
             size={22}
-            color="rgba(255, 255, 255, 0.9)"
+            color={theme.colors.textSecondary}
           />
         </View>
       </TouchableWithoutFeedback>

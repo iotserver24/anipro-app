@@ -2,13 +2,15 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTheme } from '../hooks/useTheme';
 
 export default function BottomNav() {
+  const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
 
   return (
-    <View style={[styles.navBar, { paddingBottom: insets.bottom }]}>
+    <View style={[styles.navBar, { paddingBottom: insets.bottom, backgroundColor: theme.colors.surface }]}>
       <TouchableOpacity 
         style={styles.navItem}
         onPress={() => router.push('/')}
@@ -16,11 +18,11 @@ export default function BottomNav() {
         <Ionicons 
           name="home" 
           size={24} 
-          color={pathname === '/' ? '#f4511e' : '#fff'} 
+          color={pathname === '/' ? theme.colors.primary : theme.colors.textSecondary} 
         />
         <Text style={[
           styles.navText, 
-          pathname === '/' && { color: '#f4511e' }
+          { color: pathname === '/' ? theme.colors.primary : theme.colors.textSecondary }
         ]}>
           Home
         </Text>
@@ -33,11 +35,11 @@ export default function BottomNav() {
         <Ionicons 
           name="calendar" 
           size={24} 
-          color={pathname === '/schedule' ? '#f4511e' : '#fff'} 
+          color={pathname === '/schedule' ? theme.colors.primary : theme.colors.textSecondary} 
         />
         <Text style={[
           styles.navText,
-          pathname === '/schedule' && { color: '#f4511e' }
+          { color: pathname === '/schedule' ? theme.colors.primary : theme.colors.textSecondary }
         ]}>
           Schedule
         </Text>
@@ -50,11 +52,11 @@ export default function BottomNav() {
         <Ionicons 
           name="bookmark" 
           size={24} 
-          color={pathname === '/mylist' ? '#f4511e' : '#fff'} 
+          color={pathname === '/mylist' ? theme.colors.primary : theme.colors.textSecondary} 
         />
         <Text style={[
           styles.navText,
-          pathname === '/mylist' && { color: '#f4511e' }
+          { color: pathname === '/mylist' ? theme.colors.primary : theme.colors.textSecondary }
         ]}>
           My List
         </Text>
@@ -67,11 +69,11 @@ export default function BottomNav() {
         <Ionicons 
           name="play-circle" 
           size={24} 
-          color={pathname === '/continue' ? '#f4511e' : '#fff'} 
+          color={pathname === '/continue' ? theme.colors.primary : theme.colors.textSecondary} 
         />
         <Text style={[
           styles.navText,
-          pathname === '/continue' && { color: '#f4511e' }
+          { color: pathname === '/continue' ? theme.colors.primary : theme.colors.textSecondary }
         ]}>
           Continue
         </Text>

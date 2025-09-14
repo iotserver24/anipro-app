@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
+import { useTheme } from '../hooks/useTheme';
 import { MaterialIcons } from '@expo/vector-icons';
 import CommentSection from './CommentSection';
 
@@ -26,6 +27,7 @@ const CommentModal: React.FC<CommentModalProps> = ({
   animeId,
   animeTitle
 }) => {
+  const { theme } = useTheme();
   return (
     <Modal
       visible={visible}
@@ -34,12 +36,12 @@ const CommentModal: React.FC<CommentModalProps> = ({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <MaterialIcons name="close" size={28} color="#fff" />
+            <MaterialIcons name="close" size={28} color={theme.colors.text} />
           </TouchableOpacity>
-          <Text style={styles.title} numberOfLines={1}>
+          <Text style={[styles.title, { color: theme.colors.text }]} numberOfLines={1}>
             {animeTitle ? `Comments on ${animeTitle}` : 'Comments'}
           </Text>
           <View style={styles.placeholder} />

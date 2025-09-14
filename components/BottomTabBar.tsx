@@ -2,9 +2,10 @@ import React, { useCallback, memo, useState } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet, Platform, Animated } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
+import { useTheme } from '../hooks/useTheme';
 
 // Create a memoized tab component to prevent unnecessary re-renders
-const Tab = memo(({ path, name, icon, IconComponent, isActive, onPress }) => {
+const Tab = memo(({ path, name, icon, IconComponent, isActive, onPress, theme }) => {
   // Animation value for press feedback
   const [pressAnim] = useState(new Animated.Value(1));
   
@@ -43,10 +44,11 @@ const Tab = memo(({ path, name, icon, IconComponent, isActive, onPress }) => {
         <IconComponent
           name={icon}
           size={24}
-          color={isActive ? '#f4511e' : '#666'}
+          color={isActive ? theme.colors.primary : theme.colors.textSecondary}
         />
         <Text style={[
           styles.tabText,
+          { color: isActive ? theme.colors.primary : theme.colors.textSecondary },
           isActive && styles.activeTabText
         ]}>
           {name}
@@ -57,6 +59,7 @@ const Tab = memo(({ path, name, icon, IconComponent, isActive, onPress }) => {
 });
 
 function BottomTabBar() {
+  const { theme } = useTheme();
   const pathname = usePathname();
   const [searchPressAnim] = useState(new Animated.Value(1));
   
@@ -132,7 +135,7 @@ function BottomTabBar() {
   }, []);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border }]}>
       {/* Left tabs */}
       <View style={styles.sideContainer}>
         {leftTabs.map((tab) => (
@@ -144,6 +147,7 @@ function BottomTabBar() {
             IconComponent={tab.IconComponent}
             isActive={pathname === tab.path}
             onPress={() => navigateTo(tab.path)}
+            theme={theme}
           />
         ))}
       </View>
@@ -180,6 +184,7 @@ function BottomTabBar() {
             IconComponent={tab.IconComponent}
             isActive={pathname === tab.path}
             onPress={() => navigateTo(tab.path)}
+            theme={theme}
           />
         ))}
       </View>
@@ -193,9 +198,7 @@ export default memo(BottomTabBar);
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: '#1a1a1a',
     borderTopWidth: 1,
-    borderTopColor: '#222',
     height: 60,
     position: 'absolute',
     bottom: 0,
@@ -234,13 +237,11 @@ const styles = StyleSheet.create({
     }),
   },
   tabText: {
-    color: '#666',
     fontSize: 12,
     marginTop: 4,
     fontWeight: '500',
   },
   activeTabText: {
-    color: '#f4511e',
     fontWeight: 'bold',
   },
   searchButtonTouchable: {

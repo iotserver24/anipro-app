@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, TextInput, ScrollView, Platform, Modal } from 'react-native';
 import { useEffect, useState } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
+import { useTheme } from '../hooks/useTheme';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useMyListStore } from '../store/myListStore';
@@ -184,6 +185,7 @@ const GenreDropdown = ({ label, options, values, onChange, open, setOpen }: { la
 );
 
 export default function Search() {
+  const { theme, hasBackgroundMedia } = useTheme();
   const { query } = useLocalSearchParams();
   const [searchText, setSearchText] = useState(decodeURIComponent(query as string));
   const [results, setResults] = useState<SearchAnime[]>([]);
@@ -361,8 +363,8 @@ export default function Search() {
       transparent={false}
       onRequestClose={() => setFilterModalVisible(false)}
     >
-      <View style={styles.fullscreenModalOverlay}>
-        <View style={styles.fullscreenFilterPanel}>
+      <View style={[styles.fullscreenModalOverlay, { backgroundColor: theme.colors.background }]}>
+        <View style={[styles.fullscreenFilterPanel, { backgroundColor: theme.colors.background }]}>
           <ScrollView>
             <GenreDropdown
               label="Genres"
@@ -551,14 +553,14 @@ export default function Search() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.searchBarContainer}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color="#666" />
+    <View style={[styles.container, { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
+      <View style={[styles.searchBarContainer, { backgroundColor: theme.colors.surface }]}>
+        <View style={[styles.searchBar, { backgroundColor: theme.colors.surface }]}>
+          <Ionicons name="search" size={20} color={theme.colors.textSecondary} />
           <TextInput
-            style={styles.searchInput}
+            style={[styles.searchInput, { color: theme.colors.text }]}
             placeholder="Search anime..."
-            placeholderTextColor="#666"
+            placeholderTextColor={theme.colors.textSecondary}
             value={searchText}
             onChangeText={handleSearch}
             returnKeyType="search"
@@ -682,7 +684,7 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#222',
+    backgroundColor: 'transparent', // Will be overridden by theme
     borderRadius: 8,
     paddingHorizontal: 12,
     height: 44,

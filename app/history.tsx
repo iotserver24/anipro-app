@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Alert, TextInput, ActivityIndicator } from 'react-native';
 import { useEffect, useState, useCallback } from 'react';
 import { router } from 'expo-router';
+import { useTheme } from '../hooks/useTheme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useWatchHistoryStore, WatchHistoryItem } from '../store/watchHistoryStore';
@@ -9,6 +10,7 @@ import { auth } from '../services/firebase';
 import { syncService } from '../services/syncService';
 
 export default function History() {
+  const { theme, hasBackgroundMedia } = useTheme();
   // 1. Store hooks
   const { history, initializeHistory, clearHistory, removeFromHistory } = useWatchHistoryStore();
   
@@ -178,17 +180,17 @@ export default function History() {
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#f4511e" />
-        <Text style={styles.loadingText}>Loading watch history...</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
+        <ActivityIndicator size="large" color={theme.colors.primary} />
+        <Text style={[styles.loadingText, { color: theme.colors.text }]}>Loading watch history...</Text>
       </View>
     );
   }
 
   if (error) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>{error}</Text>
+      <View style={[styles.container, { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
+        <Text style={[styles.errorText, { color: theme.colors.text }]}>{error}</Text>
         <TouchableOpacity 
           style={styles.browseButton}
           onPress={() => router.push('/')}
@@ -200,9 +202,9 @@ export default function History() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Watch History</Text>
+        <Text style={[styles.title, { color: theme.colors.text }]}>Watch History</Text>
         <TouchableOpacity
           style={styles.clearButton}
           onPress={handleClearAll}

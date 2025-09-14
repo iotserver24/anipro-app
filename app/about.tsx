@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Share, Image, Alert, Platform, ImageBackground, NativeModules, ActivityIndicator, Modal, TextInput } from 'react-native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { useTheme } from '../hooks/useTheme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Linking from 'expo-linking';
@@ -56,6 +57,8 @@ interface FeedbackModalProps {
 }
 
 function FeedbackModal({ visible, onClose, onSubmit }: FeedbackModalProps) {
+  const { theme, hasBackgroundMedia } = useTheme();
+  const styles = createThemedStyles(theme, hasBackgroundMedia);
   const [feedbackType, setFeedbackType] = useState('general');
   const [message, setMessage] = useState('');
   const [email, setEmail] = useState('');
@@ -382,6 +385,8 @@ interface DeviceInfo {
 }
 
 export default function AboutScreen() {
+  const { theme, hasBackgroundMedia } = useTheme();
+  const styles = createThemedStyles(theme, hasBackgroundMedia);
   const appVersion = getAppVersion();
   const [clearingCache, setClearingCache] = useState(false);
   const [imageReady, setImageReady] = useState(false);
@@ -1035,6 +1040,24 @@ Architecture: ${deviceInfo.deviceArchitecture}
           </TouchableOpacity>
         </View>
 
+        {/* Theme Settings Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Appearance</Text>
+          <View style={styles.infoCard}>
+            <TouchableOpacity 
+              style={styles.profileButton}
+              onPress={() => router.push('/theme-settings')}
+            >
+              <MaterialIcons name="palette" size={24} color="#fff" />
+              <Text style={styles.profileButtonText}>Theme Settings</Text>
+              <MaterialIcons name="chevron-right" size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.sectionDescription}>
+              Customize your app's appearance with different themes and colors.
+            </Text>
+          </View>
+        </View>
+
         {/* User Account Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>User Account</Text>
@@ -1372,9 +1395,11 @@ interface InfoRowProps {
 }
 
 function InfoRow({ icon, label, value, isLink = false }: InfoRowProps) {
+  const { theme, hasBackgroundMedia } = useTheme();
+  const styles = createThemedStyles(theme, hasBackgroundMedia);
   return (
     <View style={styles.infoRow}>
-      <MaterialIcons name={icon} size={20} color="#f4511e" style={styles.infoIcon} />
+      <MaterialIcons name={icon} size={20} color={theme.colors.primary} style={styles.infoIcon} />
       <Text style={styles.infoLabel}>{label}</Text>
       <Text style={[styles.infoValue, isLink && styles.linkText]}>{value}</Text>
     </View>
@@ -1383,13 +1408,16 @@ function InfoRow({ icon, label, value, isLink = false }: InfoRowProps) {
 
 // Add this component after the InfoRow component
 function SectionDivider() {
+  const { theme, hasBackgroundMedia } = useTheme();
+  const styles = createThemedStyles(theme, hasBackgroundMedia);
   return <View style={styles.sectionDivider} />;
 }
 
-const styles = StyleSheet.create({
+// Create themed styles function
+const createThemedStyles = (theme: any, hasBackgroundMedia: boolean) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background,
   },
   header: {
     borderBottomLeftRadius: 20,
@@ -1491,42 +1519,18 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#fff',
+    color: theme.colors.text,
     marginBottom: 16,
   },
   infoCard: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: theme.colors.surface,
     borderRadius: 10,
     padding: 15,
     marginBottom: 10,
   },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  infoIcon: {
-    marginRight: 10,
-  },
-  infoLabel: {
-    flex: 1,
-    fontSize: 14,
-    color: '#ccc',
-  },
-  infoValue: {
-    fontSize: 14,
-    color: '#fff',
-    textAlign: 'right',
-    flex: 1,
-  },
-  linkText: {
-    color: '#f4511e',
-  },
   aboutText: {
     fontSize: 14,
-    color: '#ccc',
+    color: theme.colors.textSecondary,
     lineHeight: 20,
     marginBottom: 10,
   },
@@ -1557,13 +1561,43 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 12,
-    color: '#999',
+    color: theme.colors.textMuted,
     marginTop: 2,
   },
   sectionDivider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: theme.colors.border,
     marginVertical: 10,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  infoIcon: {
+    marginRight: 10,
+  },
+  infoLabel: {
+    flex: 1,
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+  },
+  infoValue: {
+    fontSize: 14,
+    color: theme.colors.text,
+    textAlign: 'right',
+    flex: 1,
+  },
+  linkText: {
+    color: theme.colors.primary,
+  },
+  sectionDescription: {
+    fontSize: 12,
+    color: theme.colors.textMuted,
+    marginTop: 8,
+    lineHeight: 16,
   },
   debugSection: {
     padding: 16,

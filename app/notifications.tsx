@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, Image, Modal, ScrollView, Dimensions, Platform } from 'react-native';
 import { Stack, router } from 'expo-router';
+import { useTheme } from '../hooks/useTheme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -53,6 +54,7 @@ Notifications.addNotificationResponseReceivedListener((response) => {
 });
 
 export default function NotificationsScreen() {
+  const { theme, hasBackgroundMedia } = useTheme();
   const insets = useSafeAreaInsets();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -461,16 +463,16 @@ export default function NotificationsScreen() {
         options={{
           title: 'Notifications',
           headerStyle: {
-            backgroundColor: '#1a1a1a',
+            backgroundColor: theme.colors.surface,
           },
-          headerTintColor: '#fff',
+          headerTintColor: theme.colors.text,
         }}
       />
       
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={[styles.container, { paddingTop: insets.top, backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
         {loading && !refreshing ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#f4511e" />
+            <ActivityIndicator size="large" color={theme.colors.primary} />
             <Text style={styles.loadingText}>Loading notifications...</Text>
           </View>
         ) : notifications.length === 0 ? (

@@ -1,10 +1,10 @@
 import React from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
-import { useTheme } from '@react-navigation/native';
+import { useTheme } from '../hooks/useTheme';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const AnimeCard = ({ anime, onPress, style, showTitle = false, showScore = false }) => {
-  const { colors } = useTheme();
+  const { theme } = useTheme();
 
   return (
     <TouchableOpacity 
@@ -23,13 +23,13 @@ const AnimeCard = ({ anime, onPress, style, showTitle = false, showScore = false
           colors={['transparent', 'rgba(0,0,0,0.8)']}
           style={styles.gradient}
         >
-          <Text style={styles.title} numberOfLines={2}>
+          <Text style={[styles.title, { color: theme.colors.text }]} numberOfLines={2}>
             {anime.english || anime.romaji || anime.native}
           </Text>
           
           {showScore && anime.averageScore && (
-            <View style={[styles.scoreContainer, { backgroundColor: colors.primary }]}>
-              <Text style={styles.score}>
+            <View style={[styles.scoreContainer, { backgroundColor: theme.colors.primary }]}>
+              <Text style={[styles.score, { color: theme.colors.text }]}>
                 {anime.averageScore / 10}
               </Text>
             </View>

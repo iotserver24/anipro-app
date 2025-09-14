@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, ScrollView, ToastAndroid, Platform, Modal, TextInput } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useTheme } from '../hooks/useTheme';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -18,6 +19,7 @@ const APP_STORAGE_FOLDER_KEY = 'APP_STORAGE_FOLDER_URI';
 const ANILIST_USERNAME_KEY = 'anilist_username';
 
 export default function ImportExportScreen() {
+  const { theme, hasBackgroundMedia } = useTheme();
   const [loadingModal, setLoadingModal] = useState({
     visible: false,
     title: '',
@@ -845,9 +847,9 @@ export default function ImportExportScreen() {
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={[styles.container, { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Watchlist Import/Export</Text>
+        <Text style={[styles.title, { color: theme.colors.text }]}>Watchlist Import/Export</Text>
       </View>
       <View style={styles.infoSection}>
         <Text style={styles.infoTitle}>How does this work?</Text>

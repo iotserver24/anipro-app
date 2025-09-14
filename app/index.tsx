@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshControl, ScrollView, Dimensions, Animated, ActivityIndicator, AppState, Alert, Linking, Platform, Share, ToastAndroid, Modal } from 'react-native';
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { router } from 'expo-router';
+import { useTheme } from '../hooks/useTheme';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, Ionicons, MaterialCommunityIcons, FontAwesome } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -223,6 +224,8 @@ const APP_STORAGE_FOLDER_KEY = 'APP_STORAGE_FOLDER_URI';
 const APP_STORAGE_FOLDER_SKIP_KEY = 'APP_STORAGE_FOLDER_SKIP';
 
 export default function Home() {
+  const { theme, hasBackgroundMedia } = useTheme();
+  const styles = createThemedStyles(theme);
   const [recentAnime, setRecentAnime] = useState<AnimeItem[]>([]);
   const [trendingAnime, setTrendingAnime] = useState<AnimeItem[]>([]);
   const [newEpisodes, setNewEpisodes] = useState<AnimeItem[]>([]);
@@ -930,7 +933,7 @@ export default function Home() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
       <AuthModal 
         isVisible={showAuthModal}
         onClose={() => setShowAuthModal(false)}
@@ -1163,10 +1166,11 @@ export default function Home() {
   );
 }
 
-const styles = StyleSheet.create({
+// Create themed styles function
+const createThemedStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: theme.colors.background,
   },
   trendingSection: {
     paddingTop: 16,
@@ -1182,7 +1186,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#fff',
+    color: theme.colors.text,
   },
   trendingListContainer: {
     paddingHorizontal: ITEM_MARGIN // Equal padding on both sides
@@ -1192,9 +1196,9 @@ const styles = StyleSheet.create({
     height: ITEM_WIDTH * 0.5625, // 16:9 aspect ratio
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#1a1a1a',
+    backgroundColor: theme.colors.surface,
     elevation: 5,
-    shadowColor: '#000',
+    shadowColor: theme.colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -1221,7 +1225,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   trendingTitle: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 2,
@@ -1230,7 +1234,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
   },
   japaneseTitleText: {
-    color: '#ddd',
+    color: theme.colors.textSecondary,
     fontSize: 12,
     fontStyle: 'italic',
     marginBottom: 6,
@@ -1242,19 +1246,19 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   typeBadge: {
-    backgroundColor: '#f4511e',
+    backgroundColor: theme.colors.primary,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
     marginRight: 8,
   },
   typeBadgeText: {
-    color: '#fff',
+    color: theme.colors.text,
     fontSize: 12,
     fontWeight: '600',
   },
   yearText: {
-    color: '#ccc',
+    color: theme.colors.textSecondary,
     fontSize: 12,
     marginRight: 12,
   },

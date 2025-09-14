@@ -2,17 +2,21 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Stack } from 'expo-router';
 import PublicChat from '../components/PublicChat';
+import { useTheme } from '../hooks/useTheme';
 
 const PublicChatScreen = () => {
+  const { theme } = useTheme();
+  const styles = createThemedStyles(theme);
+  
   return (
     <>
       <Stack.Screen
         options={{
           title: 'Public Chat',
           headerStyle: {
-            backgroundColor: '#1a1a1a',
+            backgroundColor: theme.colors.surface,
           },
-          headerTintColor: '#fff',
+          headerTintColor: theme.colors.text,
           headerTitleStyle: {
             fontWeight: 'bold',
           },
@@ -25,10 +29,11 @@ const PublicChatScreen = () => {
   );
 };
 
-const styles = StyleSheet.create({
+// Create themed styles function
+const createThemedStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: theme.colors.background,
   },
 });
 

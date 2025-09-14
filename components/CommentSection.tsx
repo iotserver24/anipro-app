@@ -16,6 +16,7 @@ import {
   ToastAndroid,
   Animated
 } from 'react-native';
+import { useTheme } from '../hooks/useTheme';
 import { Video } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
@@ -260,6 +261,7 @@ const CommentItem = ({
 };
 
 const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) => {
+  const { theme } = useTheme();
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -782,14 +784,14 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
 
   return (
     <KeyboardAvoidingView 
-      style={[styles.container, fullscreen && styles.fullscreenContainer]} 
+      style={[styles.container, { backgroundColor: theme.colors.background }, fullscreen && styles.fullscreenContainer]} 
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
     >
       {/* Comments header */}
       {!fullscreen && (
         <View style={styles.headerContainer}>
-          <Text style={styles.sectionTitle}>Comments</Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Comments</Text>
           <View style={styles.headerRight}>
             <Text style={styles.commentCount}>{comments.length} comments</Text>
           </View>

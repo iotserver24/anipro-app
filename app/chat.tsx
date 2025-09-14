@@ -18,6 +18,7 @@ import {
   ImageBackground
 } from 'react-native';
 import { Stack, useLocalSearchParams, router } from 'expo-router';
+import { useTheme } from '../hooks/useTheme';
 import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getCharacterById, Character } from '../constants/characters';

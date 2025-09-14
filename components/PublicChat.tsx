@@ -17,6 +17,7 @@ import {
   ScrollView,
   Linking,
 } from 'react-native';
+import { useTheme } from '../hooks/useTheme';
 import { FlashList } from '@shopify/flash-list';
 import { Video, ResizeMode } from 'expo-av';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -1222,6 +1223,7 @@ const CHAT_TUTORIAL_VERSION = '2'; // Increment this when you update the tutoria
 const ADMIN_USER_IDS = ["@R3AP3Redit","@merxy7697","@nyt92", /* add more admin users here */];
 
 const PublicChat = () => {
+  const { theme } = useTheme();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -2715,7 +2717,7 @@ const PublicChat = () => {
   }, []);
 
   return (
-    <View style={[styles.container, { paddingBottom: 60 }]}> 
+    <View style={[styles.container, { paddingBottom: 60, backgroundColor: theme.colors.background }]}> 
       <KeyboardAvoidingView 
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}

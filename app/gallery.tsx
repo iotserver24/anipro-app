@@ -1,6 +1,7 @@
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Alert, ActivityIndicator, Dimensions, RefreshControl, Modal, Animated, TextInput, PanResponder } from 'react-native';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useTheme } from '../hooks/useTheme';
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -496,6 +497,7 @@ const sortAndGroupItems = (items: GalleryItem[]) => {
 };
 
 export default function Gallery() {
+  const { theme, hasBackgroundMedia } = useTheme();
   const [selectedSection, setSelectedSection] = useState<GallerySection>('waifu');
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -929,14 +931,14 @@ export default function Gallery() {
   }, []);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
       <>
         {renderHeader()}
 
         {loading && !refreshing ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#f4511e" />
-            <Text style={styles.loadingText}>Loading content...</Text>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+            <Text style={[styles.loadingText, { color: theme.colors.text }]}>Loading content...</Text>
           </View>
         ) : error ? (
           <View style={styles.errorContainer}>

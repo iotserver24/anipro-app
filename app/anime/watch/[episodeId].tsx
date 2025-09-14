@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput, BackHandler, Platform, Linking, Modal, Alert, Animated, Image, Easing } from 'react-native';
 import { useLocalSearchParams, router, Stack, useNavigation } from 'expo-router';
+import { useTheme } from '../../../hooks/useTheme';
 import Video from 'react-native-video';
 import { MaterialIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
@@ -809,6 +810,7 @@ const DownloadQualityModal = React.memo(({ visible, onClose, downloadOptions }: 
 
 // Optimize the main WatchEpisode component
 export default function WatchEpisode() {
+  const { theme, hasBackgroundMedia } = useTheme();
   const { episodeId, animeId, episodeNumber, title, episodeTitle, category, resumeTime } = useLocalSearchParams();
   const categoryAsSubOrDub = (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub';
   const videoRef = useRef<VideoRef>(null);
@@ -2544,6 +2546,7 @@ export default function WatchEpisode() {
       }}>
         <View style={[
           styles.container,
+          { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background },
           isFullscreen && {
             ...styles.fullscreenContainer,
             position: 'absolute',

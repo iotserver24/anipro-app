@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, FlatList, Alert, TextInput, ActivityIndicator, Platform, Animated, SectionList, Share, Dimensions, ToastAndroid, Linking, Easing } from 'react-native';
 import { router, useLocalSearchParams, useRouter } from 'expo-router';
+import { useTheme } from '../../hooks/useTheme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as FileSystem from 'expo-file-system';
@@ -155,6 +156,7 @@ interface AnimeData {
 }
 
 export default function AnimeDetails() {
+  const { theme, hasBackgroundMedia } = useTheme();
   const { id } = useLocalSearchParams();
   const [animeData, setAnimeData] = useState<AnimeInfo | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1026,28 +1028,37 @@ export default function AnimeDetails() {
 
             {/* Synopsis */}
             <View style={styles.synopsisContainer}>
-              <Text style={styles.sectionTitle}>Synopsis</Text>
+              {/* Blur/Darken gradient overlay */}
+              <LinearGradient
+                colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.9)']}
+                style={styles.synopsisGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+              />
               
-              {/* Japanese Title */}
-              {animeData?.info.japaneseTitle && (
-                <Text style={styles.japaneseTitle}>{animeData.info.japaneseTitle}</Text>
-              )}
+              <View style={styles.synopsisContent}>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Synopsis</Text>
+                
+                {/* Japanese Title */}
+                {animeData?.info.japaneseTitle && (
+                  <Text style={[styles.japaneseTitle, { color: theme.colors.textSecondary }]}>{animeData.info.japaneseTitle}</Text>
+                )}
 
-              <Text style={styles.description} numberOfLines={showMoreInfo ? undefined : 3}>
-                {animeData?.info.description}
-              </Text>
+                <Text style={[styles.description, { color: theme.colors.text }]} numberOfLines={showMoreInfo ? undefined : 3}>
+                  {animeData?.info.description}
+                </Text>
+              </View>
               {!showMoreInfo && (
-                <LinearGradient
-                  colors={['transparent', '#121212']}
-                  style={styles.gradientOverlay}
-                >
-                  <View>
-                    <TouchableOpacity style={styles.moreInfoButton} onPress={toggleMoreInfo}>
-                      <Text style={styles.moreInfoText}>More Info</Text>
-                      <MaterialIcons name="keyboard-arrow-down" size={20} color="#f4511e" />
-                    </TouchableOpacity>
-                  </View>
-                </LinearGradient>
+                <View style={styles.moreInfoContainer}>
+                  <LinearGradient
+                    colors={['transparent', 'rgba(0,0,0,0.8)']}
+                    style={styles.gradientOverlay}
+                  />
+                  <TouchableOpacity style={styles.moreInfoButton} onPress={toggleMoreInfo}>
+                    <Text style={styles.moreInfoText}>More Info</Text>
+                    <MaterialIcons name="keyboard-arrow-down" size={20} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
 
@@ -1311,7 +1322,7 @@ export default function AnimeDetails() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
       {renderContent()}
       
       <DownloadOptionsModal
@@ -1456,6 +1467,22 @@ const styles = StyleSheet.create({
   synopsisContainer: {
     position: 'relative',
     marginBottom: 16,
+    marginHorizontal: 16,
+    padding: 16,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  synopsisGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1,
+  },
+  synopsisContent: {
+    position: 'relative',
+    zIndex: 2,
   },
   description: {
     color: '#ccc',
@@ -1464,27 +1491,35 @@ const styles = StyleSheet.create({
   },
   gradientOverlay: {
     position: 'absolute',
-    bottom: 0,
+    top: 0,
     left: 0,
     right: 0,
-    height: 80,
-    justifyContent: 'flex-end',
-    alignItems: 'center',
+    height: 60,
+    zIndex: 1,
+  },
+  moreInfoContainer: {
+    position: 'relative',
+    marginTop: 8,
   },
   moreInfoButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(18, 18, 18, 0.8)',
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderRadius: 20,
     marginBottom: 8,
+    zIndex: 2,
+    position: 'relative',
   },
   moreInfoText: {
     color: '#f4511e',
-    fontSize: 14,
-    fontWeight: '600',
-    marginRight: 4,
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginRight: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.8)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   moreInfoContent: {
     overflow: 'hidden',
@@ -1642,6 +1677,7 @@ const styles = StyleSheet.create({
     gap: 12,
     marginTop: 16,
     marginBottom: 16,
+    marginHorizontal: 16,
   },
   actionButton: {
     flex: 1,

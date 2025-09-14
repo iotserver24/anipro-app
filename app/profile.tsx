@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Image, ScrollView, ImageSourcePropType, ToastAndroid, Platform, TextInput } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
+import { useTheme } from '../hooks/useTheme';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -62,6 +63,8 @@ type UserDonation = {
 const APP_STORAGE_FOLDER_KEY = 'APP_STORAGE_FOLDER_URI';
 
 export default function ProfileScreen() {
+  const { theme, hasBackgroundMedia } = useTheme();
+  const styles = createThemedStyles(theme);
   const [loading, setLoading] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -1193,7 +1196,7 @@ export default function ProfileScreen() {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={[styles.container, { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.avatarContainer}
@@ -1566,22 +1569,23 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+// Create themed styles function
+const createThemedStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
+    backgroundColor: theme.colors.background,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#121212',
+    backgroundColor: theme.colors.background,
   },
   header: {
     alignItems: 'center',
     padding: 24,
     borderBottomWidth: 1,
-    borderBottomColor: '#222',
+    borderBottomColor: theme.colors.border,
   },
   avatarContainer: {
     width: 120,

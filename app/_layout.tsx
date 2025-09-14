@@ -3,9 +3,11 @@ import { Stack, router, usePathname } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { View, BackHandler, Alert, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, BackHandler, Alert, Text, StyleSheet, TouchableOpacity, Image, ImageBackground } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { ThemeProvider, DarkTheme } from '@react-navigation/native';
+import { ThemeProvider as NavigationThemeProvider, DarkTheme } from '@react-navigation/native';
+import { ThemeProvider } from '../contexts/ThemeContext';
+import { useTheme } from '../hooks/useTheme';
 import SearchBar from '../components/SearchBar';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
@@ -25,6 +27,7 @@ SplashScreen.preventAutoHideAsync();
 
 // Custom header component with profile avatar
 const HeaderRight = () => {
+  const { theme } = useTheme();
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
@@ -400,26 +403,48 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={DarkTheme}>
-      <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-        <StatusBar style="light" />
-        <Stack 
-          screenOptions={{ 
-            headerStyle: {
-              backgroundColor: '#1a1a1a',
-            },
-            headerTintColor: '#fff',
-            headerTitleStyle: {
-              fontWeight: 'bold',
-            },
-            contentStyle: {
-              backgroundColor: '#121212',
-              paddingBottom: isVideoFullscreen || isWatchPage || isChatPage ? 0 : 60,
-            },
-            animation: 'none',
-            animationDuration: 0,
-          }}
+    <ThemeProvider>
+      <ThemedLayout onLayoutRootView={onLayoutRootView} />
+    </ThemeProvider>
+  );
+}
+
+// Separate component that uses theme context
+function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
+  const { theme, statusBarStyle, hasBackgroundMedia, backgroundMedia } = useTheme();
+  const isVideoFullscreen = useGlobalStore(state => state.isVideoFullscreen);
+  const isWatchPage = useGlobalStore(state => state.isWatchPage);
+  const isChatPage = useGlobalStore(state => state.isChatPage);
+
+  return (
+    <NavigationThemeProvider value={DarkTheme}>
+      {hasBackgroundMedia && backgroundMedia.image ? (
+        <ImageBackground
+          source={{ uri: backgroundMedia.image }}
+          style={styles.backgroundImage}
+          resizeMode="cover"
         >
+          {/* Semi-transparent overlay for better content readability */}
+          <View style={[styles.backgroundOverlay, { opacity: 1 - backgroundMedia.opacity }]} />
+          <View style={styles.contentContainer} onLayout={onLayoutRootView}>
+            <StatusBar style={statusBarStyle} />
+            <Stack 
+              screenOptions={{ 
+                headerStyle: {
+                  backgroundColor: 'transparent',
+                },
+                headerTintColor: theme.colors.text,
+                headerTitleStyle: {
+                  fontWeight: 'bold',
+                },
+                contentStyle: {
+                  backgroundColor: 'transparent',
+                  paddingBottom: isVideoFullscreen || isWatchPage || isChatPage ? 0 : 60,
+                },
+                animation: 'none',
+                animationDuration: 0,
+              }}
+            >
           <Stack.Screen
             name="index"
             options={{
@@ -497,13 +522,105 @@ export default function RootLayout() {
               headerRight: () => <HeaderRight />,
             }}
           />
-        </Stack>
-        {/* Position the bottom tab bar with absolute positioning outside the Stack */}
-        <View style={styles.bottomTabContainer}>
-          {!isVideoFullscreen && !isWatchPage && !isChatPage && <BottomTabBar />}
+            </Stack>
+            {/* Position the bottom tab bar with absolute positioning outside the Stack */}
+            <View style={styles.bottomTabContainer}>
+              {!isVideoFullscreen && !isWatchPage && !isChatPage && <BottomTabBar />}
+            </View>
+          </View>
+        </ImageBackground>
+      ) : (
+        <View style={styles.contentContainer} onLayout={onLayoutRootView}>
+          <StatusBar style={statusBarStyle} />
+          <Stack 
+            screenOptions={{ 
+              headerStyle: {
+                backgroundColor: theme.colors.surface,
+              },
+              headerTintColor: theme.colors.text,
+              headerTitleStyle: {
+                fontWeight: 'bold',
+              },
+              contentStyle: {
+                backgroundColor: theme.colors.background,
+                paddingBottom: isVideoFullscreen || isWatchPage || isChatPage ? 0 : 60,
+              },
+              animation: 'none',
+              animationDuration: 0,
+            }}
+          >
+            <Stack.Screen
+              name="index"
+              options={{
+                title: 'AniSurge',
+                headerBackVisible: false, // Hide back button on home page
+                headerLeft: () => null, // Remove headerLeft completely
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="schedule"
+              options={{
+                title: 'Schedule',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="search"
+              options={{
+                title: 'Search',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="chat"
+              options={{
+                title: 'Chat',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="mylist"
+              options={{
+                title: 'My List',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="about"
+              options={{
+                title: 'About',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="profile"
+              options={{
+                title: 'Profile',
+                headerShown: true,
+              }}
+            />
+            <Stack.Screen
+              name="mentions"
+              options={{
+                title: 'Mentions',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+          </Stack>
+          {/* Position the bottom tab bar with absolute positioning outside the Stack */}
+          <View style={styles.bottomTabContainer}>
+            {!isVideoFullscreen && !isWatchPage && !isChatPage && <BottomTabBar />}
+          </View>
         </View>
-      </View>
-    </ThemeProvider>
+      )}
+    </NavigationThemeProvider>
   );
 }
 
@@ -569,5 +686,27 @@ const styles = StyleSheet.create({
     right: 0,
     height: 60,
     zIndex: 9999,
+  },
+  backgroundMediaContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: -1,
+  },
+  backgroundImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  backgroundOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)', // Base dark overlay
+  },
+  contentContainer: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
   },
 });

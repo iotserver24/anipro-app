@@ -10,6 +10,7 @@ import {
   RefreshControl,
   Alert,
 } from 'react-native';
+import { useTheme } from '../hooks/useTheme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { collection, query, where, orderBy, onSnapshot, writeBatch } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -29,6 +30,7 @@ interface MentionNotification {
 }
 
 export default function MentionsScreen() {
+  const { theme, hasBackgroundMedia } = useTheme();
   const [mentions, setMentions] = useState<MentionNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -240,15 +242,15 @@ export default function MentionsScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
       <View style={styles.header}>
         <TouchableOpacity 
           style={[styles.headerButton, isProcessing && styles.disabledButton]}
           onPress={handleMarkAllAsRead}
           disabled={isProcessing || mentions.length === 0}
         >
-          <MaterialIcons name="done-all" size={20} color="#fff" />
-          <Text style={styles.headerButtonText}>Mark All as Read</Text>
+          <MaterialIcons name="done-all" size={20} color={theme.colors.text} />
+          <Text style={[styles.headerButtonText, { color: theme.colors.text }]}>Mark All as Read</Text>
         </TouchableOpacity>
         
         <TouchableOpacity 
