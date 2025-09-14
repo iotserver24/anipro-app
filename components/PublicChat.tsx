@@ -28,7 +28,6 @@ import AuthModal from './AuthModal';
 import { AVATARS, getAvatarById } from '../constants/avatars';
 import UserProfileModal from './UserProfileModal';
 import AvatarDisplay from './AvatarDisplay';
-import { useTheme } from '../hooks/useTheme';
 import GifPicker from './GifPicker';
 import { API_BASE, ENDPOINTS } from '../constants/api';
 import { useRouter } from 'expo-router';
@@ -733,7 +732,7 @@ const GifMedia = memo(({ url, style }: { url: string; style: any }) => {
   if (url.endsWith('.mp4')) {
     return (
       <View style={[style, styles.gifMediaContainer]}>
-        {isLoading && <ActivityIndicator style={styles.gifLoader} color={theme.colors.primary} />}
+        {isLoading && <ActivityIndicator style={styles.gifLoader} color="#f4511e" />}
         <Video
           source={{ uri: url }}
           style={[style, !isLoading && styles.gifMediaContent]}
@@ -1223,7 +1222,6 @@ const CHAT_TUTORIAL_VERSION = '2'; // Increment this when you update the tutoria
 const ADMIN_USER_IDS = ["@R3AP3Redit","@merxy7697","@nyt92", /* add more admin users here */];
 
 const PublicChat = () => {
-  const { theme } = useTheme();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [messageText, setMessageText] = useState('');
   const [loading, setLoading] = useState(true);
@@ -2717,7 +2715,7 @@ const PublicChat = () => {
   }, []);
 
   return (
-    <View style={[styles.container, { paddingBottom: 60, backgroundColor: theme.colors.background }]}> 
+    <View style={[styles.container, { paddingBottom: 60 }]}> 
       <KeyboardAvoidingView 
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -2743,7 +2741,7 @@ const PublicChat = () => {
 
         <View style={styles.chatContainer}>
           {loading ? (
-            <ActivityIndicator size="large" color={theme.colors.primary} style={styles.loader} />
+            <ActivityIndicator size="large" color="#f4511e" style={styles.loader} />
           ) : (
             <>
               {/* Add mentions notification banner */}
@@ -2951,8 +2949,8 @@ const PublicChat = () => {
             </View>
             {isLoadingUsers ? (
               <View style={styles.mentionsLoadingContainer}>
-                <ActivityIndicator size="large" color={theme.colors.primary} />
-                <Text style={[styles.mentionsLoadingText, { color: theme.colors.text }]}>Loading users...</Text>
+                <ActivityIndicator size="large" color="#f4511e" />
+                <Text style={styles.mentionsLoadingText}>Loading users...</Text>
               </View>
             ) : userSuggestions.length > 0 ? (
               <FlatList
