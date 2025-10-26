@@ -19,9 +19,18 @@ interface BackgroundMediaSelectorProps {
   onOpacityChange: (opacity: number) => void;
   currentMedia?: { type: 'image' | 'video'; uri: string };
   currentOpacity?: number;
+  title?: string;
+  subtitle?: string;
 }
 
-export default function BackgroundMediaSelector({ onMediaSelected, onOpacityChange, currentMedia, currentOpacity = 0.3 }: BackgroundMediaSelectorProps) {
+export default function BackgroundMediaSelector({ 
+  onMediaSelected, 
+  onOpacityChange, 
+  currentMedia, 
+  currentOpacity = 0.3,
+  title = "Custom Background",
+  subtitle = "Choose a custom background image for your immersive experience"
+}: BackgroundMediaSelectorProps) {
   const { theme } = useTheme();
   const [isSelecting, setIsSelecting] = useState(false);
   const [opacity, setOpacity] = useState(currentOpacity);
@@ -153,7 +162,7 @@ export default function BackgroundMediaSelector({ onMediaSelected, onOpacityChan
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.surface }]}>
       <Text style={[styles.title, { color: theme.colors.text }]}>
-        Custom Background
+        {title}
       </Text>
       
       {currentMedia?.uri ? (
@@ -177,7 +186,7 @@ export default function BackgroundMediaSelector({ onMediaSelected, onOpacityChan
         </View>
       ) : (
         <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-          Choose a custom background image for your immersive experience
+          {subtitle}
         </Text>
       )}
 

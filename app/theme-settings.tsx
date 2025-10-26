@@ -26,7 +26,18 @@ import { themesApiService, ServerTheme } from '../services/themesApi';
 const { width } = Dimensions.get('window');
 
 export default function ThemeSettingsScreen() {
-  const { currentTheme, changeTheme, theme, customBackgroundMedia, setCustomBackgroundMedia, updateCustomBackgroundOpacity, hasBackgroundMedia } = useTheme();
+  const { 
+    currentTheme, 
+    changeTheme, 
+    theme, 
+    customBackgroundMedia, 
+    setCustomBackgroundMedia, 
+    updateCustomBackgroundOpacity, 
+    globalCustomBackground,
+    setGlobalCustomBackground,
+    updateGlobalCustomBackgroundOpacity,
+    hasBackgroundMedia 
+  } = useTheme();
   const [previewTheme, setPreviewTheme] = useState<string | null>(null);
   const [serverThemes, setServerThemes] = useState<ServerTheme[]>([]);
   const [loading, setLoading] = useState(false);
@@ -315,14 +326,44 @@ export default function ThemeSettingsScreen() {
           )}
         </View>
 
+        {/* Global Custom Background Media Selector */}
+        <View style={styles.backgroundSelectorContainer}>
+          <View style={[styles.sectionHeader, { marginBottom: 16 }]}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+              Global Custom Background
+            </Text>
+            <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>
+              Apply a custom background to all themes
+            </Text>
+          </View>
+          <BackgroundMediaSelector
+            onMediaSelected={setGlobalCustomBackground}
+            onOpacityChange={updateGlobalCustomBackgroundOpacity}
+            currentMedia={globalCustomBackground}
+            currentOpacity={globalCustomBackground?.opacity || 0.3}
+            title="Global Background"
+            subtitle="Apply this background to all themes"
+          />
+        </View>
+
         {/* Custom Background Media Selector for Immersive Theme */}
         {currentTheme === 'immersive' && (
           <View style={styles.backgroundSelectorContainer}>
+            <View style={[styles.sectionHeader, { marginBottom: 16 }]}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+                Immersive Theme Background
+              </Text>
+              <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>
+                Override global background for immersive theme only
+              </Text>
+            </View>
             <BackgroundMediaSelector
               onMediaSelected={setCustomBackgroundMedia}
               onOpacityChange={updateCustomBackgroundOpacity}
               currentMedia={customBackgroundMedia}
               currentOpacity={customBackgroundMedia?.opacity || 0.3}
+              title="Immersive Background"
+              subtitle="Override global background for immersive theme only"
             />
           </View>
         )}
