@@ -31,7 +31,6 @@ export default function ThemeSettingsScreen() {
   const [serverThemes, setServerThemes] = useState<ServerTheme[]>([]);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [showOnlineThemes, setShowOnlineThemes] = useState(false);
 
   const handleThemeSelect = async (themeName: string) => {
     try {
@@ -277,21 +276,6 @@ export default function ThemeSettingsScreen() {
           <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
             Select a theme that matches your style. Long press to preview.
           </Text>
-          
-          {/* Toggle for online themes */}
-          <TouchableOpacity
-            style={[styles.toggleButton, { backgroundColor: theme.colors.surface }]}
-            onPress={() => setShowOnlineThemes(!showOnlineThemes)}
-          >
-            <MaterialIcons 
-              name={showOnlineThemes ? "cloud_done" : "cloud_download"} 
-              size={20} 
-              color={theme.colors.primary} 
-            />
-            <Text style={[styles.toggleText, { color: theme.colors.text }]}>
-              {showOnlineThemes ? 'Hide Online Themes' : 'Show Online Themes'}
-            </Text>
-          </TouchableOpacity>
         </View>
 
         {/* Local Theme Grid */}
@@ -302,36 +286,34 @@ export default function ThemeSettingsScreen() {
         </View>
 
         {/* Online Themes Section */}
-        {showOnlineThemes && (
-          <View style={styles.onlineThemesSection}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-                Online Themes
-              </Text>
-              <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>
-                {loading ? 'Loading...' : `${serverThemes.length} themes available`}
+        <View style={styles.onlineThemesSection}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
+              Online Themes
+            </Text>
+            <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>
+              {loading ? 'Loading...' : `${serverThemes.length} themes available`}
+            </Text>
+          </View>
+
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>
+                Loading online themes...
               </Text>
             </View>
-
-            {loading ? (
-              <View style={styles.loadingContainer}>
-                <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>
-                  Loading online themes...
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.themeGrid}>
-                {serverThemes.map((serverTheme) => (
-                  <ServerThemePreview 
-                    key={serverTheme.id} 
-                    serverTheme={serverTheme} 
-                    onSelect={handleServerThemeSelect}
-                  />
-                ))}
-              </View>
-            )}
-          </View>
-        )}
+          ) : (
+            <View style={styles.themeGrid}>
+              {serverThemes.map((serverTheme) => (
+                <ServerThemePreview 
+                  key={serverTheme.id} 
+                  serverTheme={serverTheme} 
+                  onSelect={handleServerThemeSelect}
+                />
+              ))}
+            </View>
+          )}
+        </View>
 
         {/* Custom Background Media Selector for Immersive Theme */}
         {currentTheme === 'immersive' && (
@@ -509,19 +491,6 @@ const styles = StyleSheet.create({
   backgroundSelectorContainer: {
     marginHorizontal: 20,
     marginTop: 20,
-  },
-  toggleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 16,
-    gap: 8,
-  },
-  toggleText: {
-    fontSize: 14,
-    fontWeight: '500',
   },
   onlineThemesSection: {
     marginTop: 20,

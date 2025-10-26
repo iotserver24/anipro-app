@@ -7,6 +7,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
 import { THEMES, DEFAULT_THEME, getTheme, Theme } from '../constants/themes';
 
 interface CustomBackgroundMedia {
@@ -93,6 +94,36 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     loadTheme();
   }, []);
 
+  // Cleanup orphaned theme images on app start
+  const cleanupOrphanedImages = async () => {
+    try {
+      const documentDir = FileSystem.documentDirectory;
+      if (!documentDir) return;
+
+      const themesDir = documentDir + 'themes/';
+      const dirInfo = await FileSystem.getInfoAsync(themesDir);
+      
+      if (dirInfo.exists) {
+        const files = await FileSystem.readDirectoryAsync(themesDir);
+        const currentImageUri = customBackgroundMedia?.uri;
+        
+        // Delete files that are not the current custom background image
+        for (const file of files) {
+          const fileUri = themesDir + file;
+          if (fileUri !== currentImageUri) {
+            try {
+              await FileSystem.deleteAsync(fileUri, { idempotent: true });
+            } catch (error) {
+              console.error('Error deleting orphaned image:', error);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error during orphaned image cleanup:', error);
+    }
+  };
+
   const loadTheme = async () => {
     try {
       const savedTheme = await AsyncStorage.getItem('selectedTheme');
@@ -105,6 +136,9 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       if (savedCustomMedia) {
         setCustomBackgroundMediaState(JSON.parse(savedCustomMedia));
       }
+      
+      // Cleanup orphaned images after loading theme data
+      await cleanupOrphanedImages();
     } catch (error) {
       console.error('Error loading theme:', error);
     } finally {
@@ -125,10 +159,31 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
   const setCustomBackgroundMedia = async (media: CustomBackgroundMedia | null) => {
     try {
+      // Clean up old image file if it exists and we're setting a new one
+      if (media && customBackgroundMedia?.uri && customBackgroundMedia.uri !== media.uri) {
+        try {
+          // Only delete if it's a file URI (our copied image)
+          if (customBackgroundMedia.uri.startsWith('file://')) {
+            await FileSystem.deleteAsync(customBackgroundMedia.uri, { idempotent: true });
+          }
+        } catch (cleanupError) {
+          console.error('Error cleaning up old image:', cleanupError);
+          // Continue with setting new media even if cleanup fails
+        }
+      }
+
       if (media) {
         setCustomBackgroundMediaState(media);
         await AsyncStorage.setItem('customBackgroundMedia', JSON.stringify(media));
       } else {
+        // Clean up current image file when removing media
+        if (customBackgroundMedia?.uri && customBackgroundMedia.uri.startsWith('file://')) {
+          try {
+            await FileSystem.deleteAsync(customBackgroundMedia.uri, { idempotent: true });
+          } catch (cleanupError) {
+            console.error('Error cleaning up image on removal:', cleanupError);
+          }
+        }
         setCustomBackgroundMediaState(undefined);
         await AsyncStorage.removeItem('customBackgroundMedia');
       }

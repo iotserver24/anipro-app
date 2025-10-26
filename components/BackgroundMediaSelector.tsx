@@ -10,6 +10,7 @@ import {
 import Slider from '@react-native-community/slider';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
 
@@ -30,6 +31,47 @@ export default function BackgroundMediaSelector({ onMediaSelected, onOpacityChan
     return size <= maxSize;
   };
 
+  // Generate unique filename to prevent conflicts
+  const generateUniqueFilename = (originalUri: string): string => {
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+    const extension = originalUri.split('.').pop()?.toLowerCase() || 'jpg';
+    return `custom_theme_${timestamp}_${randomSuffix}.${extension}`;
+  };
+
+  // Copy image to app document directory for permanent storage
+  const copyImageToAppStorage = async (originalUri: string): Promise<string> => {
+    try {
+      // Ensure document directory exists
+      const documentDir = FileSystem.documentDirectory;
+      if (!documentDir) {
+        throw new Error('Document directory not available');
+      }
+
+      // Create themes subdirectory if it doesn't exist
+      const themesDir = documentDir + 'themes/';
+      const dirInfo = await FileSystem.getInfoAsync(themesDir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(themesDir, { intermediates: true });
+      }
+
+      // Generate unique filename
+      const filename = generateUniqueFilename(originalUri);
+      const destinationUri = themesDir + filename;
+
+      // Copy the image file
+      await FileSystem.copyAsync({
+        from: originalUri,
+        to: destinationUri,
+      });
+
+      return destinationUri;
+    } catch (error) {
+      console.error('Error copying image to app storage:', error);
+      throw error;
+    }
+  };
+
   const handleImagePicker = async () => {
     try {
       setIsSelecting(true);
@@ -42,18 +84,28 @@ export default function BackgroundMediaSelector({ onMediaSelected, onOpacityChan
 
       if (!result.canceled && result.assets[0]) {
         const asset = result.assets[0];
-        const fileSize = asset.fileSize || asset.size || 0;
+        const fileSize = asset.fileSize || 0;
         
         if (fileSize > 0 && !validateFileSize(fileSize, 'image')) {
           Alert.alert('File Too Large', 'Image must be under 4MB. Please choose a smaller image.');
           return;
         }
-        onMediaSelected({
-          type: 'image',
-          uri: asset.uri,
-          size: fileSize,
-          opacity: opacity,
-        });
+
+        try {
+          // Copy image to app storage for permanent access
+          const copiedUri = await copyImageToAppStorage(asset.uri);
+          console.log('Image copied successfully to:', copiedUri);
+          
+          onMediaSelected({
+            type: 'image',
+            uri: copiedUri, // Use the copied URI instead of original
+            size: fileSize,
+            opacity: opacity,
+          });
+        } catch (copyError) {
+          console.error('Failed to copy image:', copyError);
+          Alert.alert('Error', 'Failed to save image. Please try again.');
+        }
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to select image. Please try again.');
@@ -72,7 +124,19 @@ export default function BackgroundMediaSelector({ onMediaSelected, onOpacityChan
         {
           text: 'Remove',
           style: 'destructive',
-          onPress: () => onMediaSelected({ type: 'image', uri: '', size: 0 }),
+          onPress: async () => {
+            try {
+              // Clean up the copied image file if it exists
+              if (currentMedia?.uri && currentMedia.uri.startsWith('file://')) {
+                await FileSystem.deleteAsync(currentMedia.uri, { idempotent: true });
+              }
+              onMediaSelected({ type: 'image', uri: '', size: 0 });
+            } catch (error) {
+              console.error('Error removing image file:', error);
+              // Still remove from settings even if file deletion fails
+              onMediaSelected({ type: 'image', uri: '', size: 0 });
+            }
+          },
         },
       ]
     );
@@ -162,7 +226,6 @@ export default function BackgroundMediaSelector({ onMediaSelected, onOpacityChan
               }}
               minimumTrackTintColor={theme.colors.primary}
               maximumTrackTintColor={theme.colors.border}
-              thumbStyle={{ backgroundColor: theme.colors.primary }}
             />
             <Text style={[styles.sliderLabel, { color: theme.colors.textSecondary }]}>light</Text>
           </View>
