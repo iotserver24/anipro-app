@@ -5,7 +5,7 @@ import { useTheme } from '../../../hooks/useTheme';
 import Video from 'react-native-video';
 import { MaterialIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
-import { useWatchHistoryStore } from '../../../store/watchHistoryStore';
+import { useWatchHistoryStore, WatchHistoryItem } from '../../../store/watchHistoryStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
 import { animeAPI } from '../../../services/api';
 import VideoPlayer from '../../../components/VideoPlayer';
@@ -1417,7 +1417,7 @@ export default function WatchEpisode() {
 
       // Process subtitles from the API response (but skip if already processed by embedded servers)
       if (selectedServer === 'softSub' && sources.tracks && Array.isArray(sources.tracks)) {
-        const processedSubtitles = sources.tracks.map(track => ({
+        const processedSubtitles = sources.tracks.map((track: any) => ({
           title: track.lang || 'Unknown',
           language: track.lang || 'Unknown',
           lang: track.lang || 'Unknown', // Add lang property for VideoPlayer compatibility
@@ -1426,7 +1426,7 @@ export default function WatchEpisode() {
         console.log('Setting subtitles from tracks:', processedSubtitles);
         setSubtitles(processedSubtitles);
       } else if (sources.subtitles && Array.isArray(sources.subtitles) && selectedServer !== 'zen' && selectedServer !== 'softSub') {
-        const processedSubtitles = sources.subtitles.map(sub => ({
+        const processedSubtitles = sources.subtitles.map((sub: any) => ({
           title: sub.kind || 'Unknown',
           language: sub.kind || 'Unknown',
           lang: sub.kind || 'Unknown', // Add lang property for VideoPlayer compatibility
@@ -1442,7 +1442,7 @@ export default function WatchEpisode() {
       // Transform the sources data to match VideoResponse type
       const videoResponseData: VideoResponse = {
         headers: sources.headers || {},
-        sources: sources.sources.map(source => ({
+        sources: sources.sources.map((source: any) => ({
           url: source.url,
           isM3U8: source.isM3U8 || false
         })),
@@ -1545,7 +1545,7 @@ export default function WatchEpisode() {
       const processedData = {
         ...data,
         title: data.title,
-        coverImage: data.image || data.info?.image, // Map image to coverImage
+        coverImage: data.image || data.image, // Map image to coverImage
         description: data.description,
         type: data.type,
         status: data.status,
@@ -1554,9 +1554,9 @@ export default function WatchEpisode() {
       setAnimeInfo(processedData);
       
       // Fetch new server anime ID using AniList ID
-      if (data.alID) {
+      if ((data as any).alID) {
         try {
-          const response = await fetch(`https://www.anisurge.me/api/anime/${data.alID}`);
+          const response = await fetch(`https://www.anisurge.me/api/anime/${(data as any).alID}`);
           const newServerData = await response.json();
           if (newServerData && newServerData.id) {
             setNewServerAnimeId(newServerData.id);
@@ -1660,7 +1660,7 @@ export default function WatchEpisode() {
 
   // Memoize handlers
   const handleProgress = useMemo(() => 
-    debounce((data: VideoProgress) => {
+    debounce(async (data: VideoProgress) => {
       const newTime = data.currentTime;
       const newDuration = data.seekableDuration;
       
@@ -1693,10 +1693,10 @@ export default function WatchEpisode() {
           }
           
           // Ensure all fields are valid before saving
-          const historyItem = {
+          const historyItem: WatchHistoryItem = {
             id: actualAnimeId,
-            name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
-            img: animeInfo.image || animeInfo.info?.image || '',
+            name: animeInfo.title || 'Unknown Anime',
+            img: animeInfo.image || '',
             episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
             episodeNumber: Number(episodeNumber) || 0,
             timestamp: now,
@@ -1708,10 +1708,10 @@ export default function WatchEpisode() {
           };
           
           // Log the history item for debugging
-          logger.debug('Saving history item:', historyItem);
+          logger.debug('Saving history item:', JSON.stringify(historyItem));
           
           // Save progress to history
-          addToHistory(historyItem);
+          await (addToHistory as (item: WatchHistoryItem) => Promise<void>)(historyItem);
           
           // Update last progress values
           lastProgressUpdateRef.current = now;
@@ -1870,7 +1870,7 @@ export default function WatchEpisode() {
   }, [videoData?.outro]);
 
   // Create stable onProgress callback
-  const handleVideoProgress = useCallback((currentTime: number, videoDuration: number) => {
+  const handleVideoProgress = useCallback(async (currentTime: number, videoDuration: number) => {
     // Update local state
     setCurrentTime(currentTime);
     setDuration(videoDuration);
@@ -1884,10 +1884,10 @@ export default function WatchEpisode() {
           Math.abs(currentTime - lastProgressValueRef.current) > 5) {
         
         // Ensure all fields are valid before saving
-        const historyItem = {
+        const historyItem: WatchHistoryItem = {
           id: animeId as string,
-          name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
-          img: animeInfo.image || animeInfo.info?.image || '',
+          name: animeInfo.title || 'Unknown Anime',
+          img: animeInfo.image || '',
           episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
           episodeNumber: Number(episodeNumber) || 0,
           timestamp: now,
@@ -1899,10 +1899,10 @@ export default function WatchEpisode() {
         };
         
         // Log the history item for debugging
-        logger.debug('Saving history item:', historyItem);
+        logger.debug('Saving history item:', JSON.stringify(historyItem));
         
         // Save progress to history
-        addToHistory(historyItem);
+        await (addToHistory as (item: WatchHistoryItem) => Promise<void>)(historyItem);
         
         // Update last progress values
         lastProgressUpdateRef.current = now;
@@ -1914,9 +1914,9 @@ export default function WatchEpisode() {
   // Memoize video props
   const videoPlayerProps = useMemo(() => ({
     source: { 
-      uri: streamingUrl,
+      uri: streamingUrl || '',
       headers: videoHeaders,
-              isZenEmbedded: selectedServer === 'zen' || selectedServer === 'softSub', // Flag for embedded players (Zen and SoftSub)
+      isZenEmbedded: selectedServer === 'zen' || selectedServer === 'softSub', // Flag for embedded players (Zen and SoftSub)
       textTracks: subtitles.length > 0 ? subtitles
         .filter(track => {
           const langToCheck = track.lang || track.language || track.title || '';
@@ -2401,7 +2401,7 @@ export default function WatchEpisode() {
     if (router && router.setParams) {
       requestAnimationFrame(() => {
         router.setParams({
-          headerShown: !isFullscreen
+          headerShown: !isFullscreen ? 'true' : 'false'
         });
       });
     }
@@ -2416,76 +2416,6 @@ export default function WatchEpisode() {
           <Text style={styles.videoErrorText}>{error}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={onRetry}>
             <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  });
-
-  // Create a new component for server selection
-  const ServerSelector = React.memo(() => {
-    return (
-      <View style={styles.serverSelectorContainer}>
-        <Text style={styles.serverSelectorTitle}>Server</Text>
-        <View style={styles.serverButtonsContainer}>
-          <TouchableOpacity
-            style={[
-              styles.serverButton,
-              selectedServer === 'softSub' && styles.selectedServerButton,
-              isChangingServer && selectedServer === 'softSub' && styles.loadingServerButton
-            ]}
-            onPress={() => handleServerChange('softSub')}
-            disabled={isChangingServer || selectedServer === 'softSub'}
-          >
-            <Text style={[
-              styles.serverButtonText,
-              selectedServer === 'softSub' && styles.selectedServerButtonText
-            ]}>
-              SoftSub
-            </Text>
-            {isChangingServer && selectedServer === 'softSub' && (
-              <ActivityIndicator size="small" color="#fff" style={styles.serverButtonLoader} />
-            )}
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[
-              styles.serverButton,
-              selectedServer === 'zen' && styles.selectedServerButton,
-              isChangingServer && selectedServer === 'zen' && styles.loadingServerButton
-            ]}
-            onPress={() => handleServerChange('zen')}
-            disabled={isChangingServer || selectedServer === 'zen'}
-          >
-            <Text style={[
-              styles.serverButtonText,
-              selectedServer === 'zen' && styles.selectedServerButtonText
-            ]}>
-              Zen
-            </Text>
-            {isChangingServer && selectedServer === 'zen' && (
-              <ActivityIndicator size="small" color="#fff" style={styles.serverButtonLoader} />
-            )}
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[
-              styles.serverButton,
-              selectedServer === 'hardSub' && styles.selectedServerButton,
-              isChangingServer && selectedServer === 'hardSub' && styles.loadingServerButton
-            ]}
-            onPress={() => handleServerChange('hardSub')}
-            disabled={isChangingServer || selectedServer === 'hardSub'}
-          >
-            <Text style={[
-              styles.serverButtonText,
-              selectedServer === 'hardSub' && styles.selectedServerButtonText
-            ]}>
-              HardSub
-            </Text>
-            {isChangingServer && selectedServer === 'hardSub' && (
-              <ActivityIndicator size="small" color="#fff" style={styles.serverButtonLoader} />
-            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -2576,106 +2506,143 @@ export default function WatchEpisode() {
           
           {!isFullscreen && (
             <>
-              <EpisodeControls
-                currentEpisodeIndex={currentEpisodeIndex}
-                episodes={episodes}
-                onPrevious={handlePreviousEpisode}
-                onNext={handleNextEpisode}
-                onDownload={handleDownload}
-                onComments={handleShowComments}
-                downloadUrl={downloadUrl || newServerDownloadUrl}
-              />
-              
-              {/* Add Server Selector above anime info */}
-              <ServerSelector />
-              
-              <Pressable 
-                style={styles.animeInfoToggle}
-                onPress={() => setIsAnimeInfoVisible(!isAnimeInfoVisible)}
-              >
-                <View style={styles.animeInfoToggleContent}>
-                  <Text style={styles.animeInfoToggleText}>Anime Info</Text>
-                  <MaterialIcons 
-                    name={isAnimeInfoVisible ? "keyboard-arrow-up" : "keyboard-arrow-down"} 
-                    size={24} 
-                    color="#f4511e" 
-                  />
-                </View>
-              </Pressable>
+              {/* Clean Action Buttons - Replace "You are watching Episode X" */}
+              <View style={styles.actionButtonsContainer}>
+                <TouchableOpacity 
+                  style={[styles.actionButton, currentEpisodeIndex === 0 && styles.disabledButton]}
+                  onPress={handlePreviousEpisode}
+                  disabled={currentEpisodeIndex === 0}
+                >
+                  <MaterialIcons name="skip-previous" size={20} color={currentEpisodeIndex === 0 ? "#666" : "#fff"} />
+                </TouchableOpacity>
 
-              {isAnimeInfoVisible && (
-                <AnimeInfo 
-                  animeInfo={animeInfo} 
-                  onNavigateToAnime={() => {
-                    if (animeId) {
-                      router.push({
-                        pathname: "/anime/[id]",
-                        params: { id: animeId }
-                      });
-                    }
-                  }}
-                />
-              )}
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={handleDownload}
+                >
+                  <MaterialIcons name="file-download" size={20} color="#fff" />
+                </TouchableOpacity>
 
-              <ScrollView style={styles.controls}>
-                {/* Episodes */}
-                <View style={styles.episodeSection}>
-                  <Text style={styles.sectionTitle}>
-                    {categoryAsSubOrDub === 'dub' ? 'Dubbed Episodes' : 'Subbed Episodes'}
-                  </Text>
-                  
-                  {/* Search Bar */}
-                  <View style={styles.searchContainer}>
-                    <MaterialIcons name="search" size={24} color="#666" />
-                    <TextInput
-                      style={styles.searchInput}
-                      placeholder="Search episodes..."
-                      placeholderTextColor="#666"
-                      value={searchQuery}
-                      onChangeText={handleSearch}
-                    />
-                  </View>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={handleShowComments}
+                >
+                  <MaterialIcons name="comment" size={20} color="#fff" />
+                </TouchableOpacity>
 
-                  {/* Episode List */}
-                  <View style={styles.episodeListContainer}>
-                    <ScrollView
-                      ref={episodeListRef}
-                      style={styles.episodeList}
-                      contentContainerStyle={styles.episodeListContent}
-                      showsVerticalScrollIndicator={true}
-                      nestedScrollEnabled={true}
-                    >
-                      {filteredEpisodes.map((episode) => (
-                        <EpisodeItem
-                          key={episode.id}
-                          episode={episode}
-                          onPress={() => {
-                            router.push({
-                              pathname: "/anime/watch/[episodeId]",
-                              params: {
-                                episodeId: episode.id,
-                                animeId: animeId,
-                                episodeNumber: episode.number,
-                                title: episode.title || `Episode ${episode.number}`,
-                                category: category,
-                                resumeTime: "0" // Force start from beginning
-                              }
-                            });
-                          }}
-                          mode={categoryAsSubOrDub}
-                          isCurrentEpisode={episode.id === episodeId}
-                        />
-                      ))}
-                    </ScrollView>
-                  </View>
+                <TouchableOpacity 
+                  style={[styles.actionButton, currentEpisodeIndex === episodes.length - 1 && styles.disabledButton]}
+                  onPress={handleNextEpisode}
+                  disabled={currentEpisodeIndex === episodes.length - 1}
+                >
+                  <MaterialIcons name="skip-next" size={20} color={currentEpisodeIndex === episodes.length - 1 ? "#666" : "#fff"} />
+                </TouchableOpacity>
+              </View>
 
-                  <View style={styles.footerContainer}>
-                    <Text style={styles.footerText}>
-                      made with ❤️ by AniSurge Team
+              {/* Clean Server Selector */}
+              <View style={styles.serverSelectorClean}>
+                <Text style={styles.serverSelectorLabel}>Server:</Text>
+                <View style={styles.serverButtonsClean}>
+                  <TouchableOpacity
+                    style={[styles.serverButtonClean, selectedServer === 'softSub' && styles.selectedServerButtonClean]}
+                    onPress={() => handleServerChange('softSub')}
+                    disabled={isChangingServer}
+                  >
+                    <Text style={[styles.serverButtonTextClean, selectedServer === 'softSub' && styles.selectedServerTextClean]}>
+                      SoftSub
                     </Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.serverButtonClean, selectedServer === 'zen' && styles.selectedServerButtonClean]}
+                    onPress={() => handleServerChange('zen')}
+                    disabled={isChangingServer}
+                  >
+                    <Text style={[styles.serverButtonTextClean, selectedServer === 'zen' && styles.selectedServerTextClean]}>
+                      Zen
+                    </Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={[styles.serverButtonClean, selectedServer === 'hardSub' && styles.selectedServerButtonClean]}
+                    onPress={() => handleServerChange('hardSub')}
+                    disabled={isChangingServer}
+                  >
+                    <Text style={[styles.serverButtonTextClean, selectedServer === 'hardSub' && styles.selectedServerTextClean]}>
+                      HardSub
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Clean Episode Grid */}
+              <View style={styles.episodeGridContainer}>
+                <View style={styles.episodeGridHeader}>
+                  <Text style={styles.episodeGridTitle}>
+                    {categoryAsSubOrDub === 'dub' ? 'Dubbed' : 'Subbed'}
+                  </Text>
+                  <View style={styles.episodeGridControls}>
+                    <View style={styles.episodeRangeContainer}>
+                      <MaterialIcons name="list" size={16} color="#666" />
+                      <Text style={styles.episodeRangeText}>EPS: 1-{episodes.length}</Text>
+                      <MaterialIcons name="keyboard-arrow-down" size={16} color="#666" />
+                    </View>
+                    <View style={styles.episodeGridSearch}>
+                      <MaterialIcons name="search" size={16} color="#666" />
+                      <TextInput
+                        style={styles.episodeGridSearchInput}
+                        placeholder="Number of Ep"
+                        placeholderTextColor="#666"
+                        value={searchQuery}
+                        onChangeText={handleSearch}
+                      />
+                    </View>
                   </View>
                 </View>
-              </ScrollView>
+
+                <ScrollView 
+                  style={styles.episodeGridScroll}
+                  contentContainerStyle={styles.episodeGridContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  <View style={styles.episodeGrid}>
+                    {filteredEpisodes.map((episode) => (
+                      <TouchableOpacity
+                        key={episode.id}
+                        style={[
+                          styles.episodeGridItem,
+                          episode.id === episodeId && styles.currentEpisodeGridItem
+                        ]}
+                        onPress={() => {
+                          router.push({
+                            pathname: "/anime/watch/[episodeId]",
+                            params: {
+                              episodeId: episode.id,
+                              animeId: animeId,
+                              episodeNumber: episode.number,
+                              title: episode.title || `Episode ${episode.number}`,
+                              category: category,
+                              resumeTime: "0"
+                            }
+                          });
+                        }}
+                      >
+                        <Text style={[
+                          styles.episodeGridNumber,
+                          episode.id === episodeId && styles.currentEpisodeGridNumber
+                        ]}>
+                          {episode.number}
+                        </Text>
+                        {episode.id === episodeId && (
+                          <View style={styles.currentEpisodeIndicator}>
+                            <MaterialIcons name="play-arrow" size={12} color="#f4511e" />
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
             </>
           )}
         </View>
@@ -2810,21 +2777,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 12,
   },
-  serverButton: {
+  serverButtonOld: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     backgroundColor: '#333',
     borderRadius: 8,
     marginRight: 8,
   },
-  selectedButton: {
+  selectedButtonOld: {
     backgroundColor: '#f4511e',
   },
-  serverText: {
+  serverTextOld: {
     color: '#fff',
     fontSize: 14,
   },
-  selectedText: {
+  selectedTextOld: {
     color: '#fff',
     fontWeight: 'bold',
   },
@@ -2849,12 +2816,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
-  episodeList: {
+  episodeListOld: {
     backgroundColor: '#1a1a1a',
     borderRadius: 8,
     padding: 8,
   },
-  episodeListScroll: {  // Rename to avoid duplicate
+  episodeListScrollOld: {  // Rename to avoid duplicate
     flex: 1,
   },
   currentEpisodeItem: {
@@ -3016,24 +2983,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#f4511e11',
     borderColor: '#f4511e',
   },
-  episodeNumber: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
   currentEpisodeNumber: {
     color: '#f4511e',
     fontWeight: '700',
-  },
-  episodeInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  episodeTitle: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
-    opacity: 0.9,
   },
   currentEpisodeTitle: {
     color: '#fff',
@@ -3381,17 +3333,6 @@ const styles = StyleSheet.create({
     marginVertical: 16,
     fontSize: 16,
   },
-  retryButton: {
-    backgroundColor: '#f4511e',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  retryButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
   // Add styles for server selector
   serverSelectorContainer: {
     backgroundColor: '#1a1a1a',
@@ -3415,20 +3356,20 @@ const styles = StyleSheet.create({
     gap: 12,
     flexWrap: 'wrap',
   },
-  selectedServerButton: {
+  selectedServerButtonOld: {
     backgroundColor: '#f4511e',
   },
-  loadingServerButton: {
+  loadingServerButtonOld: {
     opacity: 0.7,
   },
-  serverButtonText: {
+  serverButtonTextOld: {
     color: '#999',
     fontWeight: '600',
   },
-  selectedServerButtonText: {
+  selectedServerButtonTextOld: {
     color: '#fff',
   },
-  serverButtonLoader: {
+  serverButtonLoaderOld: {
     marginLeft: 8,
   },
   qualityOptionsContainer: {
@@ -3458,5 +3399,170 @@ const styles = StyleSheet.create({
   modalFooterText: {
     color: '#999',
     fontSize: 14,
+  },
+  // New clean UI styles
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    marginHorizontal: 16,
+    marginVertical: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.22,
+    shadowRadius: 2.22,
+  },
+  actionButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    backgroundColor: '#2a2a2a',
+    minWidth: 40,
+  },
+  disabledButton: {
+    backgroundColor: '#1a1a1a',
+    opacity: 0.5,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  disabledText: {
+    color: '#666',
+  },
+  serverSelectorClean: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    marginHorizontal: 16,
+    marginBottom: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  serverSelectorLabel: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    marginRight: 12,
+  },
+  serverButtonsClean: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  serverButtonClean: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: '#2a2a2a',
+  },
+  selectedServerButtonClean: {
+    backgroundColor: '#f4511e',
+  },
+  serverButtonTextClean: {
+    color: '#999',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  selectedServerTextClean: {
+    color: '#fff',
+  },
+  episodeGridContainer: {
+    backgroundColor: '#1a1a1a',
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 12,
+    padding: 16,
+  },
+  episodeGridHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  episodeGridTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  episodeGridControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  episodeRangeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  episodeRangeText: {
+    color: '#666',
+    fontSize: 12,
+  },
+  episodeGridSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2a2a2a',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    width: 100,
+  },
+  episodeGridSearchInput: {
+    color: '#fff',
+    fontSize: 10,
+    paddingHorizontal: 4,
+    flex: 1,
+  },
+  episodeGridScroll: {
+    maxHeight: 200,
+  },
+  episodeGridContent: {
+    paddingBottom: 8,
+  },
+  episodeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  episodeGridItem: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    backgroundColor: '#2a2a2a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  currentEpisodeGridItem: {
+    backgroundColor: '#f4511e',
+  },
+  episodeGridNumber: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  currentEpisodeGridNumber: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+  currentEpisodeIndicator: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    width: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });

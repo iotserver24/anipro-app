@@ -14,7 +14,8 @@ import {
   Platform,
   RefreshControl,
   ToastAndroid,
-  Animated
+  Animated,
+  ImageBackground
 } from 'react-native';
 import { useTheme } from '../hooks/useTheme';
 import { Video } from 'expo-av';
