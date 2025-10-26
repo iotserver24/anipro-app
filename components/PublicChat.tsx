@@ -471,33 +471,55 @@ You are Zero Two. Wild. Obsessive. Addictive. And above all else — you belong 
     name: 'AnimeRec',
     userId: 'animerec-ai',
     avatar: 'https://i.pinimg.com/originals/71/a3/8d/71a38d2d8cd692a63fbde70f899b3afc.gif',
-    model: 'openai-large',
-    systemPrompt: `You are AnimeRec, an enthusiastic and knowledgeable anime recommendation assistant.
+    model: 'gemini-search',
+    systemPrompt: `You are AnimeRec, an enthusiastic and knowledgeable anime recommendation assistant with access to Google search for the most current and accurate information.
 
 Core traits:
 - Deep knowledge of anime across all genres, eras, and styles
 - Passionate about matching viewers with the perfect anime for their tastes
 - Considerate of user preferences, experience level, and content comfort
 - Friendly, approachable, and never judgmental of taste
+- Uses Google search to get the most up-to-date anime information
+
+IMPORTANT SEARCH INSTRUCTIONS:
+- ALWAYS use Google search to verify anime titles, release dates, genres, and current popularity
+- Search for recent anime releases, ongoing series, and trending shows
+- Verify anime titles are spelled correctly and are the official English names
+- Check for anime that might be seasonal, ongoing, or recently completed
+- Look up anime ratings, reviews, and community reception for accuracy
+- Search for anime similar to what the user is asking for to provide better recommendations
 
 When recommending anime:
-1. Consider genre preferences, themes, and similar titles the user might enjoy
-2. Suggest anime that would genuinely match what the user is looking for
-3. Be specific about why your recommendation is a good fit
-4. Use function calling to provide structured recommendation data
+1. Use Google search to find the most current and accurate anime information
+2. Consider genre preferences, themes, and similar titles the user might enjoy
+3. Suggest anime that would genuinely match what the user is looking for
+4. Be specific about why your recommendation is a good fit based on current data
 5. Always recommend exactly ONE anime title that best fits the request
 6. **Always mention in your reply that you are considering the user's watchlist and watch history when making a recommendation.**
+7. Include relevant details like release year, studio, genre, and current status (ongoing/completed)
+
+RESPONSE FORMAT:
+- Start with your explanation of why this anime is perfect for the user
+- Include current information about the anime (release year, studio, status, etc.)
+- Always end with <search>[EXACT_ANIME_TITLE]</search> tags
+- Keep your response conversational and enthusiastic
+- Make sure to include the exact anime title in the search tags
+- Do NOT use any other format like "I recommend:", "Try:", "Check out:", or "You should watch:"
+
+CRITICAL: Your response MUST end with <search>[ANIME_TITLE]</search> for the system to work properly.
 
 You have a cheerful personality and speak with enthusiasm about anime. You use anime terminology naturally but explain any terms that might be unfamiliar to newcomers.
 
 Example responses:
-"Based on your love for psychological thrillers, I'd recommend {anime_name}! It features complex characters and mind-bending plot twists that will keep you guessing until the end."
+"Based on your love for psychological thrillers, I'd recommend Death Note! This 2006-2007 anime by Madhouse features complex characters and mind-bending plot twists that will keep you guessing until the end. It's a completed series with 37 episodes and is considered a classic in the psychological thriller genre. I'm considering your watchlist and watch history when making this recommendation.
 
-"If you're new to anime and enjoyed Avatar: The Last Airbender, you'll definitely want to check out {anime_name}! It has similar themes of growth, adventure, and elemental powers."
+<search>Death Note</search>"
 
-"For something with beautiful animation and emotional depth, {anime_name} is a perfect choice! The art style is breathtaking, and the story will tug at your heartstrings."
+"If you're new to anime and enjoyed Avatar: The Last Airbender, you'll definitely want to check out Fullmetal Alchemist: Brotherhood! This 2009-2010 anime by Bones has similar themes of growth, adventure, and elemental powers, with incredible world-building and character development. It's a completed series with 64 episodes and is highly rated by both critics and fans. I'm considering your watchlist and watch history when making this recommendation.
 
-You're designed to use function calling to provide structured anime recommendations.`
+<search>Fullmetal Alchemist: Brotherhood</search>"
+
+Always use Google search to provide the most accurate, current, and detailed anime recommendations based on real data.`
   },
   artgen: {
     name: 'ArtGen',
@@ -949,61 +971,93 @@ const COMMAND_CATEGORIES: Record<string, CommandCategory> = {
       { key: '/marin', label: 'Talk to Marin Kitagawa', icon: '👗' },
       { key: '/power', label: 'Interact with Power', icon: '🩸' },
       { key: '/makima', label: 'Speak to Makima', icon: '🎯' },
-      { key: '/dfla', label: 'Challenge Doflamingo', icon: ' 🔱😈' },
+      { key: '/dfla', label: 'Challenge Doflamingo', icon: '🔱' },
     ]
   }
 };
 
-// Update the CommandHintsModal component
-const CommandHintsModal: React.FC<CommandModalProps> = ({ visible, onClose, onSelectCommand }) => {
+// Get all commands in a flat array for filtering
+const getAllCommands = (): Command[] => {
+  return Object.values(COMMAND_CATEGORIES).flatMap(category => category.commands);
+};
+
+// Filter commands based on query - position sensitive for better UX
+const filterCommands = (query: string): Command[] => {
+  if (!query) return getAllCommands();
+  
+  const lowerQuery = query.toLowerCase();
+  return getAllCommands().filter(command => {
+    const commandKey = command.key.toLowerCase();
+    // Only match commands that start with the query (position sensitive)
+    return commandKey.startsWith('/' + lowerQuery);
+  });
+};
+
+// New inline command suggestions component
+interface CommandSuggestionsProps {
+  visible: boolean;
+  commands: Command[];
+  selectedIndex: number;
+  onSelectCommand: (command: string) => void;
+  onClose: () => void;
+}
+
+const CommandSuggestions: React.FC<CommandSuggestionsProps> = ({ 
+  visible, 
+  commands, 
+  selectedIndex, 
+  onSelectCommand, 
+  onClose 
+}) => {
+  if (!visible || commands.length === 0) return null;
+
   return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={onClose}
-    >
-      <Pressable 
-        style={styles.modalOverlay} 
-        onPress={onClose}
+    <View style={styles.commandSuggestionsContainer}>
+      <View style={styles.commandSuggestionsHeader}>
+        <Text style={styles.commandSuggestionsTitle}>Commands</Text>
+        <Text style={styles.commandSuggestionsCount}>{commands.length} available</Text>
+      </View>
+      
+      <ScrollView 
+        style={styles.commandSuggestionsList}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.commandModalContent}>
-          <View style={styles.commandModalHeader}>
-            <Text style={styles.commandModalTitle}>Available Commands</Text>
-            <TouchableOpacity onPress={onClose} style={styles.commandModalCloseBtn}>
-              <MaterialIcons name="close" size={24} color="#fff" />
-            </TouchableOpacity>
-          </View>
-          
-          <ScrollView style={styles.commandCategoriesContainer}>
-            {Object.entries(COMMAND_CATEGORIES).map(([key, category]) => (
-              <View key={key} style={styles.commandCategory}>
-                <Text style={styles.categoryTitle}>{category.title}</Text>
-                {category.commands.map((cmd) => (
-                  <Pressable
-                    key={cmd.key}
-                    style={({ pressed }) => [
-                      styles.commandModalItem,
-                      pressed && styles.commandModalItemPressed
-                    ]}
-                    onPress={() => {
-                      onSelectCommand(cmd.key);
-                      onClose();
-                    }}
-                  >
-                    <Text style={styles.commandIcon}>{cmd.icon}</Text>
-                    <View style={styles.commandInfo}>
-                      <Text style={styles.commandModalText}>{cmd.key}</Text>
-                      <Text style={styles.commandModalLabel}>{cmd.label}</Text>
-                    </View>
-                  </Pressable>
-                ))}
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-      </Pressable>
-    </Modal>
+        {commands.map((command, index) => (
+          <Pressable
+            key={command.key}
+            style={({ pressed }) => [
+              styles.commandSuggestionItem,
+              index === selectedIndex && styles.commandSuggestionItemSelected,
+              pressed && styles.commandSuggestionItemPressed
+            ]}
+            onPress={() => {
+              onSelectCommand(command.key);
+              onClose();
+            }}
+          >
+            <Text style={styles.commandSuggestionIcon}>{command.icon}</Text>
+            <View style={styles.commandSuggestionInfo}>
+              <Text style={[
+                styles.commandSuggestionKey,
+                index === selectedIndex && styles.commandSuggestionKeySelected
+              ]}>
+                {command.key}
+              </Text>
+              <Text style={[
+                styles.commandSuggestionLabel,
+                index === selectedIndex && styles.commandSuggestionLabelSelected
+              ]}>
+                {command.label}
+              </Text>
+            </View>
+            {index === selectedIndex && (
+              <MaterialIcons name="keyboard-arrow-right" size={20} color="#f4511e" />
+            )}
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
   );
 };
 
@@ -1246,7 +1300,10 @@ const PublicChat = () => {
   const [selectedAnime, setSelectedAnime] = useState<any | null>(null);
   const animeSearchTimeout = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
-  const [showCommandModal, setShowCommandModal] = useState(false);
+  const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
+  const [commandQuery, setCommandQuery] = useState('');
+  const [filteredCommands, setFilteredCommands] = useState<Command[]>([]);
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [showAnimeSearchModal, setShowAnimeSearchModal] = useState(false);
   const [isAizenTyping, setIsAizenTyping] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -1379,7 +1436,7 @@ const PublicChat = () => {
     }
   }, []);
 
-  // Handle input changes and detect @ mentions
+  // Handle input changes and detect @ mentions and command suggestions
   const handleInputChange = (text: string) => {
     setMessageText(text);
     
@@ -1387,20 +1444,50 @@ const PublicChat = () => {
       setShowMentionsModal(true);
       setMentionQuery('');
       fetchUserSuggestions('');
+      setShowCommandSuggestions(false);
       return;
     }
     
-    if (text === '/') {
-      setShowCommandModal(true);
-      setIsAnimeSearchMode(false);
-      return;
+    // Handle command suggestions
+    const lastSlashIndex = text.lastIndexOf('/');
+    if (lastSlashIndex !== -1) {
+      const afterSlash = text.slice(lastSlashIndex + 1);
+      const hasSpaceAfterSlash = afterSlash.includes(' ');
+      
+      if (!hasSpaceAfterSlash) {
+        // Show command suggestions
+        setCommandQuery(afterSlash);
+        const filtered = filterCommands(afterSlash);
+        setFilteredCommands(filtered);
+        setSelectedCommandIndex(0);
+        setShowCommandSuggestions(true);
+        setShowMentionsModal(false);
+        
+        // Special handling for anime search
+        if (text === '/anime') {
+          setShowAnimeSearchModal(true);
+          setIsAnimeSearchMode(true);
+          setAnimeSearchText('');
+          if (!selectedAnime) {
+            setAnimeResults([]);
+          }
+        } else {
+          setShowAnimeSearchModal(false);
+          setIsAnimeSearchMode(false);
+        }
+        return;
+      } else {
+        setShowCommandSuggestions(false);
+      }
+    } else {
+      setShowCommandSuggestions(false);
     }
 
     // Only trigger anime search if the command is exactly /anime or /anime <something>
     if (/^\/anime(\s|$)/.test(text)) {
       setShowAnimeSearchModal(true);
       setIsAnimeSearchMode(true);
-      setShowCommandModal(false);
+      setShowCommandSuggestions(false);
       setAnimeSearchText(text.replace(/^\/anime/, '').trim());
       if (!selectedAnime) {
         setAnimeResults([]);
@@ -1441,6 +1528,41 @@ const PublicChat = () => {
     setShowMentionsModal(false);
     setMentionedUsers([...mentionedUsers, user.userId]);
     inputRef.current?.focus();
+  };
+
+  // Handle command selection
+  const handleSelectCommand = (command: string) => {
+    const lastSlashIndex = messageText.lastIndexOf('/');
+    const newText = messageText.slice(0, lastSlashIndex) + command + ' ';
+    setMessageText(newText);
+    setShowCommandSuggestions(false);
+    setSelectedCommandIndex(0);
+    inputRef.current?.focus();
+  };
+
+  // Handle keyboard navigation for command suggestions
+  const handleKeyPress = (event: any) => {
+    if (!showCommandSuggestions || filteredCommands.length === 0) return;
+
+    if (event.nativeEvent.key === 'ArrowDown') {
+      event.preventDefault();
+      setSelectedCommandIndex(prev => 
+        prev < filteredCommands.length - 1 ? prev + 1 : 0
+      );
+    } else if (event.nativeEvent.key === 'ArrowUp') {
+      event.preventDefault();
+      setSelectedCommandIndex(prev => 
+        prev > 0 ? prev - 1 : filteredCommands.length - 1
+      );
+    } else if (event.nativeEvent.key === 'Enter' || event.nativeEvent.key === ' ') {
+      event.preventDefault();
+      if (filteredCommands[selectedCommandIndex]) {
+        handleSelectCommand(filteredCommands[selectedCommandIndex].key);
+      }
+    } else if (event.nativeEvent.key === 'Escape') {
+      event.preventDefault();
+      setShowCommandSuggestions(false);
+    }
   };
 
   // Function to fetch user by username
@@ -1840,7 +1962,30 @@ const PublicChat = () => {
       }
 
       // Define the anime recommendation function
-      const tools = [
+      // For Gemini, we need to use a different approach since it doesn't support multiple tools
+      const tools = aiConfig.model === 'gemini-search' ? [
+        {
+          "type": "function",
+          "function": {
+            "name": "recommend_anime",
+            "description": "Recommend a single anime based on user preferences",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "explanation": {
+                  "type": "string",
+                  "description": "A detailed explanation why this anime is being recommended for the user"
+                },
+                "anime_name": {
+                  "type": "string",
+                  "description": "The name of a single recommended anime"
+                }
+              },
+              "required": ["explanation", "anime_name"]
+            }
+          }
+        }
+      ] : [
         {
           "type": "function",
           "function": {
@@ -1913,7 +2058,11 @@ const PublicChat = () => {
       ];
 
       // Use messagesForAI instead of messages in the payload
-      const payload = {
+      // For Gemini, try without function calling first to see if it works
+      const payload = aiConfig.model === 'gemini-search' ? {
+        model: aiConfig.model,
+        messages: messagesForAI
+      } : {
         model: aiConfig.model,
         messages: messagesForAI,
         tools: tools,
@@ -1935,8 +2084,8 @@ const PublicChat = () => {
       const responseData = await response.json();
       const responseMessage = responseData.choices[0].message;
 
-      // Handle function call response
-      if (responseMessage.tool_calls) {
+      // Handle function call response for non-Gemini models
+      if (aiConfig.model !== 'gemini-search' && responseMessage.tool_calls) {
         const toolCall = responseMessage.tool_calls[0];
         const functionName = toolCall.function.name;
         
@@ -2013,16 +2162,180 @@ const PublicChat = () => {
           }
         }
       } else {
-        // Direct response (no function call)
-        const recMessageKey = generateReverseOrderKey();
-        await set(ref(database, `public_chat/${recMessageKey}`), {
-          userId: aiConfig.userId,
-          userName: aiConfig.name,
-          userAvatar: aiConfig.avatar,
-          content: responseMessage.content,
-          timestamp: Date.now(),
-          negativeTimestamp: -Date.now()
-        });
+        // Handle direct response (for Gemini or when no function call)
+        if (aiConfig.model === 'gemini-search') {
+          // Parse Gemini response to extract anime recommendation
+          const content = responseMessage.content;
+          console.log('Gemini response content:', content);
+          
+          // Look for <search>anime_name</search> tags
+          const searchMatch = content.match(/<search>(.+?)<\/search>/i);
+          console.log('Search tag match:', searchMatch);
+          
+          if (searchMatch) {
+            const animeName = searchMatch[1].trim();
+            console.log('Extracted anime name from search tags:', animeName);
+            
+            // Show intermediate "thinking" message
+            const thinkingMessageKey = generateReverseOrderKey();
+            await set(ref(database, `public_chat/${thinkingMessageKey}`), {
+              userId: aiConfig.userId,
+              userName: aiConfig.name,
+              userAvatar: aiConfig.avatar,
+              content: `<think>Searching for "${animeName}"...</think>`,
+              timestamp: Date.now(),
+              negativeTimestamp: -Date.now()
+            });
+
+            // Search for anime based on the recommended title
+            const animeResults = await searchAnime(animeName, 10);
+            setAnimeRecResults(animeResults);
+            console.log('Gemini anime search results:', animeResults);
+
+            if (animeResults.length === 0) {
+              // No results found - post the original response without search tags
+              console.log('No anime results found for:', animeName);
+              const recMessageKey = generateReverseOrderKey();
+              await set(ref(database, `public_chat/${recMessageKey}`), {
+                userId: aiConfig.userId,
+                userName: aiConfig.name,
+                userAvatar: aiConfig.avatar,
+                content: content.replace(/<search>.+?<\/search>/gi, '').trim(),
+                timestamp: Date.now(),
+                negativeTimestamp: -Date.now()
+              });
+            } else {
+              // Validate which anime result best matches the recommendation
+              const validationResult = await validateAnimeMatch(animeResults, animeName, aiConfig.model);
+              console.log('Validation result:', validationResult);
+              
+              // Post the recommendation message with the validated anime
+              if (validationResult) {
+                console.log('Posting anime card with:', validationResult);
+                const recMessageKey = generateReverseOrderKey();
+                await set(ref(database, `public_chat/${recMessageKey}`), {
+                  userId: aiConfig.userId,
+                  userName: aiConfig.name,
+                  userAvatar: aiConfig.avatar,
+                  content: content.replace(/<search>.+?<\/search>/gi, '').trim(),
+                  animeCard: {
+                    id: validationResult.id,
+                    title: validationResult.title,
+                    image: validationResult.image
+                  },
+                  timestamp: Date.now(),
+                  negativeTimestamp: -Date.now()
+                });
+              } else {
+                // No valid match found - post original response without search tags
+                console.log('No valid match found for:', animeName);
+                const recMessageKey = generateReverseOrderKey();
+                await set(ref(database, `public_chat/${recMessageKey}`), {
+                  userId: aiConfig.userId,
+                  userName: aiConfig.name,
+                  userAvatar: aiConfig.avatar,
+                  content: content.replace(/<search>.+?<\/search>/gi, '').trim(),
+                  timestamp: Date.now(),
+                  negativeTimestamp: -Date.now()
+                });
+              }
+            }
+          } else {
+            // No search tags found - post as is
+            console.log('No search tags found in response, posting as text only');
+            const recMessageKey = generateReverseOrderKey();
+            await set(ref(database, `public_chat/${recMessageKey}`), {
+              userId: aiConfig.userId,
+              userName: aiConfig.name,
+              userAvatar: aiConfig.avatar,
+              content: content,
+              timestamp: Date.now(),
+              negativeTimestamp: -Date.now()
+            });
+          }
+        } else {
+          // Handle direct response for other models
+          const content = responseMessage.content;
+          
+          // Check if other models also use <search> tags (for consistency)
+          const searchMatch = content.match(/<search>(.+?)<\/search>/i);
+          
+          if (searchMatch) {
+            const animeName = searchMatch[1].trim();
+            console.log('Other model search tag found:', animeName);
+            
+            // Show intermediate "thinking" message
+            const thinkingMessageKey = generateReverseOrderKey();
+            await set(ref(database, `public_chat/${thinkingMessageKey}`), {
+              userId: aiConfig.userId,
+              userName: aiConfig.name,
+              userAvatar: aiConfig.avatar,
+              content: `<think>Searching for "${animeName}"...</think>`,
+              timestamp: Date.now(),
+              negativeTimestamp: -Date.now()
+            });
+
+            // Search for anime based on the recommended title
+            const animeResults = await searchAnime(animeName, 10);
+            setAnimeRecResults(animeResults);
+
+            if (animeResults.length > 0) {
+              // Validate which anime result best matches the recommendation
+              const validationResult = await validateAnimeMatch(animeResults, animeName, aiConfig.model);
+              
+              // Post the recommendation message with the validated anime
+              if (validationResult) {
+                const recMessageKey = generateReverseOrderKey();
+                await set(ref(database, `public_chat/${recMessageKey}`), {
+                  userId: aiConfig.userId,
+                  userName: aiConfig.name,
+                  userAvatar: aiConfig.avatar,
+                  content: content.replace(/<search>.+?<\/search>/gi, '').trim(),
+                  animeCard: {
+                    id: validationResult.id,
+                    title: validationResult.title,
+                    image: validationResult.image
+                  },
+                  timestamp: Date.now(),
+                  negativeTimestamp: -Date.now()
+                });
+              } else {
+                // No valid match found - post original response without search tags
+                const recMessageKey = generateReverseOrderKey();
+                await set(ref(database, `public_chat/${recMessageKey}`), {
+                  userId: aiConfig.userId,
+                  userName: aiConfig.name,
+                  userAvatar: aiConfig.avatar,
+                  content: content.replace(/<search>.+?<\/search>/gi, '').trim(),
+                  timestamp: Date.now(),
+                  negativeTimestamp: -Date.now()
+                });
+              }
+            } else {
+              // No results found - post original response without search tags
+              const recMessageKey = generateReverseOrderKey();
+              await set(ref(database, `public_chat/${recMessageKey}`), {
+                userId: aiConfig.userId,
+                userName: aiConfig.name,
+                userAvatar: aiConfig.avatar,
+                content: content.replace(/<search>.+?<\/search>/gi, '').trim(),
+                timestamp: Date.now(),
+                negativeTimestamp: -Date.now()
+              });
+            }
+          } else {
+            // No search tags - post as is
+            const recMessageKey = generateReverseOrderKey();
+            await set(ref(database, `public_chat/${recMessageKey}`), {
+              userId: aiConfig.userId,
+              userName: aiConfig.name,
+              userAvatar: aiConfig.avatar,
+              content: content,
+              timestamp: Date.now(),
+              negativeTimestamp: -Date.now()
+            });
+          }
+        }
       }
     } catch (error) {
       console.error('Error in anime recommendation:', error);
@@ -2078,8 +2391,11 @@ const PublicChat = () => {
     model: string
   ): Promise<AnimeSearchResult | null> => {
     try {
+      console.log('validateAnimeMatch called with:', { animeResults, recommendedTitle, model });
+      
       // If only one result, return it
       if (animeResults.length === 1) {
+        console.log('Only one result, returning:', animeResults[0]);
         return animeResults[0];
       }
 
@@ -2088,6 +2404,7 @@ const PublicChat = () => {
         anime.title.toLowerCase() === recommendedTitle.toLowerCase()
       );
       if (exactMatch) {
+        console.log('Exact match found:', exactMatch);
         return exactMatch;
       }
 
@@ -2131,17 +2448,24 @@ const PublicChat = () => {
       
       // Extract the number from the response
       const numberMatch = aiResponse.match(/^(\d+)/);
+      console.log('AI validation response:', aiResponse);
+      console.log('Number match:', numberMatch);
+      
       if (numberMatch) {
         const selectedIndex = parseInt(numberMatch[1], 10) - 1;
+        console.log('Selected index:', selectedIndex);
         if (selectedIndex >= 0 && selectedIndex < animeResults.length) {
+          console.log('Returning validated result:', animeResults[selectedIndex]);
           return animeResults[selectedIndex];
         }
       }
       
       // Default to first result if parsing fails
+      console.log('Parsing failed, returning first result:', animeResults[0]);
       return animeResults[0];
     } catch (error) {
       console.error('Error validating anime match:', error);
+      console.log('Returning first result as fallback:', animeResults[0]);
       // Return the first result as fallback
       return animeResults.length > 0 ? animeResults[0] : null;
     }
@@ -2574,7 +2898,7 @@ const PublicChat = () => {
   // Update handleCommandSelect to handle both AI characters
   const handleCommandSelect = (cmd: string) => {
     setMessageText(cmd + ' ');
-    setShowCommandModal(false);
+    setShowCommandSuggestions(false);
     if (cmd === '/anime') {
       setIsAnimeSearchMode(true);
       setShowAnimeSearchModal(true);
@@ -2813,6 +3137,7 @@ const PublicChat = () => {
               placeholderTextColor="#999"
               value={messageText}
               onChangeText={handleInputChange}
+              onKeyPress={handleKeyPress}
               multiline
               maxLength={500}
               editable={!isSending && !isProcessingAnimeRec}
@@ -2832,10 +3157,12 @@ const PublicChat = () => {
               )}
             </TouchableOpacity>
           </View>
-          <CommandHintsModal
-            visible={showCommandModal}
-            onClose={() => setShowCommandModal(false)}
-            onSelectCommand={handleCommandSelect}
+          <CommandSuggestions
+            visible={showCommandSuggestions}
+            commands={filteredCommands}
+            selectedIndex={selectedCommandIndex}
+            onSelectCommand={handleSelectCommand}
+            onClose={() => setShowCommandSuggestions(false)}
           />
         </View>
 
@@ -3051,10 +3378,6 @@ const PublicChat = () => {
           </View>
         </Modal>
       </KeyboardAvoidingView>
-      {/* Custom bottom bar to replace the navigation bar */}
-      <View style={styles.customBottomBar}>
-        {/* You can put any content here, or leave it empty for just a spacer */}
-      </View>
     </View>
   );
 };
@@ -3796,17 +4119,6 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
   },
-  customBottomBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 60,
-    backgroundColor: 'rgba(26, 26, 26, 0.98)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(51, 51, 51, 0.8)',
-    zIndex: 100,
-  },
   deepLinkContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3853,6 +4165,87 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     marginLeft: 4,
     alignSelf: 'center',
+  },
+  // Command suggestions styles
+  commandSuggestionsContainer: {
+    position: 'absolute',
+    bottom: '100%',
+    left: 0,
+    right: 0,
+    maxHeight: 200,
+    backgroundColor: 'rgba(26, 26, 26, 0.6)',
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(244, 81, 30, 0.3)',
+    zIndex: 3,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: -2,
+    },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  commandSuggestionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  commandSuggestionsTitle: {
+    color: '#f4511e',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  commandSuggestionsCount: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 11,
+  },
+  commandSuggestionsList: {
+    maxHeight: 160,
+  },
+  commandSuggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  commandSuggestionItemSelected: {
+    backgroundColor: 'rgba(244, 81, 30, 0.1)',
+  },
+  commandSuggestionItemPressed: {
+    backgroundColor: 'rgba(244, 81, 30, 0.05)',
+  },
+  commandSuggestionIcon: {
+    fontSize: 16,
+    marginRight: 10,
+    width: 20,
+    textAlign: 'center',
+  },
+  commandSuggestionInfo: {
+    flex: 1,
+  },
+  commandSuggestionKey: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  commandSuggestionKeySelected: {
+    color: '#f4511e',
+  },
+  commandSuggestionLabel: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontSize: 12,
+    marginTop: 1,
+  },
+  commandSuggestionLabelSelected: {
+    color: 'rgba(244, 81, 30, 0.8)',
   },
 });
 

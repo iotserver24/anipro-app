@@ -2,7 +2,7 @@
   "expo": {
     "name": "AniSurge",
     "slug": "anisurge",
-    "version": "2.26.5",
+    "version": "2.26.6",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",

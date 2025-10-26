@@ -386,6 +386,17 @@ export default function RootLayout() {
   const pathname = usePathname();
   const isWatchPage = pathname?.includes('/anime/watch/');
   const isChatPage = pathname?.includes('/chat');
+  
+  // Update global store with current page states
+  const setIsVideoFullscreenGlobal = useGlobalStore(state => state.setIsVideoFullscreen);
+  const setIsWatchPageGlobal = useGlobalStore(state => state.setIsWatchPage);
+  const setIsChatPageGlobal = useGlobalStore(state => state.setIsChatPage);
+  
+  useEffect(() => {
+    setIsVideoFullscreenGlobal(isVideoFullscreen);
+    setIsWatchPageGlobal(isWatchPage);
+    setIsChatPageGlobal(isChatPage);
+  }, [isVideoFullscreen, isWatchPage, isChatPage, setIsVideoFullscreenGlobal, setIsWatchPageGlobal, setIsChatPageGlobal]);
 
   useEffect(() => {
     const subscription = ScreenOrientation.addOrientationChangeListener((event) => {
