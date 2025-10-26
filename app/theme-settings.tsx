@@ -5,7 +5,7 @@
  * It will be integrated into the about page.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -21,6 +21,7 @@ import { useTheme } from '../hooks/useTheme';
 import { THEMES, Theme } from '../constants/themes';
 import { MaterialIcons } from '@expo/vector-icons';
 import BackgroundMediaSelector from '../components/BackgroundMediaSelector';
+import Slider from '@react-native-community/slider';
 // import { themesApiService, ServerTheme } from '../services/themesApi'; // COMMENTED OUT - ONLINE THEMES DISABLED
 
 const { width } = Dimensions.get('window');
@@ -39,6 +40,42 @@ export default function ThemeSettingsScreen() {
     hasBackgroundMedia 
   } = useTheme();
   const [previewTheme, setPreviewTheme] = useState<string | null>(null);
+  
+  // Debounced opacity state for smooth slider performance
+  const [localOpacity, setLocalOpacity] = useState(globalCustomBackground?.opacity || 0.3);
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Debounced opacity update function
+  const debouncedOpacityUpdate = useCallback((opacity: number) => {
+    // Update local state immediately for UI responsiveness
+    setLocalOpacity(opacity);
+    
+    // Clear existing timeout
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+    
+    // Debounce the actual state update
+    debounceTimeoutRef.current = setTimeout(() => {
+      updateGlobalCustomBackgroundOpacity(opacity);
+    }, 50); // 50ms debounce for smooth performance
+  }, [updateGlobalCustomBackgroundOpacity]);
+  
+  // Update local opacity when global opacity changes
+  useEffect(() => {
+    if (globalCustomBackground?.opacity !== undefined) {
+      setLocalOpacity(globalCustomBackground.opacity);
+    }
+  }, [globalCustomBackground?.opacity]);
+  
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
+    };
+  }, []);
   // const [serverThemes, setServerThemes] = useState<ServerTheme[]>([]); // COMMENTED OUT - ONLINE THEMES DISABLED
   // const [loading, setLoading] = useState(false); // COMMENTED OUT - ONLINE THEMES DISABLED
   // const [refreshing, setRefreshing] = useState(false); // COMMENTED OUT - ONLINE THEMES DISABLED
@@ -338,14 +375,42 @@ export default function ThemeSettingsScreen() {
               Apply a custom background to all themes
             </Text>
           </View>
-          <BackgroundMediaSelector
-            onMediaSelected={setGlobalCustomBackground}
-            onOpacityChange={updateGlobalCustomBackgroundOpacity}
-            currentMedia={globalCustomBackground}
-            currentOpacity={globalCustomBackground?.opacity || 0.3}
-            title="Global Background"
-            subtitle="Apply this background to all themes"
-          />
+            <BackgroundMediaSelector
+              onMediaSelected={setGlobalCustomBackground}
+              onOpacityChange={updateGlobalCustomBackgroundOpacity}
+              currentMedia={globalCustomBackground}
+              currentOpacity={globalCustomBackground?.opacity || 0.3}
+              title="Global Background"
+              subtitle="Apply this background to all themes"
+            />
+            
+            {/* Background Image Opacity Slider */}
+            {globalCustomBackground && (
+              <View style={styles.opacitySliderContainer}>
+                <View style={styles.opacitySliderHeader}>
+                  <Text style={[styles.opacitySliderLabel, { color: theme.colors.text }]}>
+                    Background Opacity: {Math.round(localOpacity * 100)}%
+                  </Text>
+                </View>
+                <View style={styles.opacitySliderWrapper}>
+                  <Text style={[styles.opacitySliderText, { color: theme.colors.textSecondary }]}>
+                    Dark
+                  </Text>
+                  <Slider
+                    style={styles.opacitySlider}
+                    minimumValue={0.1}
+                    maximumValue={1.0}
+                    value={localOpacity}
+                    onValueChange={debouncedOpacityUpdate}
+                    minimumTrackTintColor={theme.colors.primary}
+                    maximumTrackTintColor={theme.colors.border}
+                  />
+                  <Text style={[styles.opacitySliderText, { color: theme.colors.textSecondary }]}>
+                    Light
+                  </Text>
+                </View>
+              </View>
+            )}
         </View>
 
         {/* Custom Background Media Selector for Immersive Theme - REMOVED SINCE IMMERSIVE THEME IS COMMENTED OUT */}
@@ -536,6 +601,39 @@ const styles = StyleSheet.create({
   backgroundSelectorContainer: {
     marginHorizontal: 20,
     marginTop: 20,
+  },
+  opacitySliderContainer: {
+    marginTop: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  opacitySliderHeader: {
+    marginBottom: 12,
+  },
+  opacitySliderLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  opacitySliderWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  opacitySliderText: {
+    fontSize: 14,
+    fontWeight: '500',
+    minWidth: 40,
+    textAlign: 'center',
+  },
+  opacitySlider: {
+    flex: 1,
+    height: 40,
+    marginHorizontal: 16,
   },
   onlineThemesSection: {
     marginTop: 20,

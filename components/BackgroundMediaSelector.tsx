@@ -7,7 +7,6 @@ import {
   Alert,
   Platform,
 } from 'react-native';
-import Slider from '@react-native-community/slider';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
@@ -215,31 +214,6 @@ export default function BackgroundMediaSelector({
           Selecting media...
         </Text>
       )}
-
-      {/* Opacity Control */}
-      {currentMedia?.uri && (
-        <View style={styles.opacityContainer}>
-          <Text style={[styles.opacityLabel, { color: theme.colors.text }]}>
-            Background Opacity: {Math.round(opacity * 100)}%
-          </Text>
-          <View style={styles.sliderContainer}>
-            <Text style={[styles.sliderLabel, { color: theme.colors.textSecondary }]}>dark</Text>
-            <Slider
-              style={styles.slider}
-              minimumValue={0.1}
-              maximumValue={0.9}
-              value={opacity}
-              onValueChange={(value) => {
-                setOpacity(value);
-                onOpacityChange(value);
-              }}
-              minimumTrackTintColor={theme.colors.primary}
-              maximumTrackTintColor={theme.colors.border}
-            />
-            <Text style={[styles.sliderLabel, { color: theme.colors.textSecondary }]}>light</Text>
-          </View>
-        </View>
-      )}
     </View>
   );
 }
@@ -315,32 +289,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     fontSize: 12,
-  },
-  opacityContainer: {
-    marginTop: 16,
-    padding: 12,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    borderRadius: 8,
-  },
-  opacityLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  sliderContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  slider: {
-    flex: 1,
-    height: 40,
-  },
-  sliderLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    minWidth: 30,
-    textAlign: 'center',
   },
 });
