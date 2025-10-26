@@ -21,7 +21,7 @@ import { useTheme } from '../hooks/useTheme';
 import { THEMES, Theme } from '../constants/themes';
 import { MaterialIcons } from '@expo/vector-icons';
 import BackgroundMediaSelector from '../components/BackgroundMediaSelector';
-import { themesApiService, ServerTheme } from '../services/themesApi';
+// import { themesApiService, ServerTheme } from '../services/themesApi'; // COMMENTED OUT - ONLINE THEMES DISABLED
 
 const { width } = Dimensions.get('window');
 
@@ -39,9 +39,9 @@ export default function ThemeSettingsScreen() {
     hasBackgroundMedia 
   } = useTheme();
   const [previewTheme, setPreviewTheme] = useState<string | null>(null);
-  const [serverThemes, setServerThemes] = useState<ServerTheme[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  // const [serverThemes, setServerThemes] = useState<ServerTheme[]>([]); // COMMENTED OUT - ONLINE THEMES DISABLED
+  // const [loading, setLoading] = useState(false); // COMMENTED OUT - ONLINE THEMES DISABLED
+  // const [refreshing, setRefreshing] = useState(false); // COMMENTED OUT - ONLINE THEMES DISABLED
 
   const handleThemeSelect = async (themeName: string) => {
     try {
@@ -61,7 +61,8 @@ export default function ThemeSettingsScreen() {
     setPreviewTheme(null);
   };
 
-  // Fetch themes from server
+  // Fetch themes from server - COMMENTED OUT - ONLINE THEMES DISABLED
+  /*
   const fetchServerThemes = async () => {
     try {
       setLoading(true);
@@ -74,20 +75,22 @@ export default function ThemeSettingsScreen() {
       setLoading(false);
     }
   };
+  */
 
-  // Handle refresh
+  // Handle refresh - COMMENTED OUT - ONLINE THEMES DISABLED
+  /*
   const handleRefresh = async () => {
     setRefreshing(true);
     await fetchServerThemes();
     setRefreshing(false);
   };
 
-  // Load themes on component mount
+  // Load themes on component mount - COMMENTED OUT - ONLINE THEMES DISABLED
   useEffect(() => {
     fetchServerThemes();
   }, []);
 
-  // Download and apply server theme
+  // Download and apply server theme - COMMENTED OUT - ONLINE THEMES DISABLED
   const handleServerThemeSelect = async (serverTheme: ServerTheme) => {
     try {
       // Convert server theme to local format
@@ -110,6 +113,7 @@ export default function ThemeSettingsScreen() {
       Alert.alert('Error', 'Failed to apply theme. Please try again.');
     }
   };
+  */
 
   const ThemePreview = ({ themeName, themeData }: { themeName: string; themeData: Theme }) => {
     const isSelected = currentTheme === themeName;
@@ -130,13 +134,15 @@ export default function ThemeSettingsScreen() {
         onLongPress={() => handlePreview(themeName)}
         activeOpacity={0.7}
       >
-        {/* Theme Preview Colors */}
+        {/* Theme Preview Colors - REMOVED TO SAVE SPACE */}
+        {/* 
         <View style={styles.colorPreviewContainer}>
           <View style={[styles.colorPreview, { backgroundColor: displayTheme.colors.primary }]} />
           <View style={[styles.colorPreview, { backgroundColor: displayTheme.colors.secondary }]} />
           <View style={[styles.colorPreview, { backgroundColor: displayTheme.colors.accent }]} />
           <View style={[styles.colorPreview, { backgroundColor: displayTheme.colors.success }]} />
         </View>
+        */}
 
         {/* Theme Name */}
         <Text style={[styles.themeName, { color: displayTheme.colors.text }]}>
@@ -183,101 +189,95 @@ export default function ThemeSettingsScreen() {
     );
   };
 
-  const ServerThemePreview = ({ serverTheme, onSelect }: { serverTheme: ServerTheme; onSelect: (theme: ServerTheme) => void }) => {
-    const isSelected = currentTheme === serverTheme.id;
-    const isPreviewing = previewTheme === serverTheme.id;
-    const displayTheme = isPreviewing ? themesApiService.convertServerThemeToLocal(serverTheme) : theme;
-
-    return (
-      <TouchableOpacity
-        style={[
-          styles.themeCard,
-          { backgroundColor: displayTheme.colors.surface },
-          isSelected && { borderColor: displayTheme.colors.primary, borderWidth: 2 },
-        ]}
-        onPress={() => onSelect(serverTheme)}
-        onLongPress={() => handlePreview(serverTheme.id)}
-        activeOpacity={0.8}
-      >
-        {/* Color Preview */}
-        <View style={styles.colorPreviewContainer}>
-          <View
-            style={[
-              styles.colorPreview,
-              { backgroundColor: displayTheme.colors.primary },
-            ]}
-          />
-          <View
-            style={[
-              styles.colorPreview,
-              { backgroundColor: displayTheme.colors.secondary },
-            ]}
-          />
-          <View
-            style={[
-              styles.colorPreview,
-              { backgroundColor: displayTheme.colors.accent },
-            ]}
-          />
-        </View>
-
-        {/* Theme Name */}
-        <Text style={[styles.themeName, { color: displayTheme.colors.text }]}>
-          {serverTheme.displayName}
-        </Text>
-
-        {/* Category Badge */}
-        <View style={[styles.themeTypeBadge, { backgroundColor: displayTheme.colors.primary + '20' }]}>
-          <Text style={[styles.themeTypeText, { color: displayTheme.colors.primary }]}>
-            {serverTheme.category}
-          </Text>
-        </View>
-
-        {/* Premium Badge */}
-        {serverTheme.isPremium && (
-          <View style={[styles.premiumBadge, { backgroundColor: displayTheme.colors.warning }]}>
-            <Text style={[styles.premiumText, { color: displayTheme.colors.textInverse }]}>
-              Premium
-            </Text>
-          </View>
-        )}
-
-        {/* Selected Indicator */}
-        {isSelected && (
-          <View style={[styles.selectedIndicator, { backgroundColor: displayTheme.colors.primary }]}>
-            <MaterialIcons name="check" size={16} color="#fff" />
-          </View>
-        )}
-
-        {/* Preview Indicator */}
-        {isPreviewing && (
-          <View style={[styles.previewIndicator, { backgroundColor: displayTheme.colors.primary }]}>
-            <Text style={[styles.previewText, { color: displayTheme.colors.textInverse }]}>
-              Preview
-            </Text>
-          </View>
-        )}
-
-        {/* Download Count */}
-        <Text style={[styles.downloadCount, { color: displayTheme.colors.textSecondary }]}>
-          {serverTheme.downloadCount} downloads
-        </Text>
-      </TouchableOpacity>
-    );
-  };
+  // ServerThemePreview component - COMMENTED OUT - ONLINE THEMES DISABLED
+  // const ServerThemePreview = ({ serverTheme, onSelect }: { serverTheme: ServerTheme; onSelect: (theme: ServerTheme) => void }) => {
+  //   const isSelected = currentTheme === serverTheme.id;
+  //   const isPreviewing = previewTheme === serverTheme.id;
+  //   const displayTheme = isPreviewing ? themesApiService.convertServerThemeToLocal(serverTheme) : theme;
+  //
+  //   return (
+  //     <TouchableOpacity
+  //       style={[
+  //         styles.themeCard,
+  //         { backgroundColor: displayTheme.colors.surface },
+  //         isSelected && { borderColor: displayTheme.colors.primary, borderWidth: 2 },
+  //       ]}
+  //       onPress={() => onSelect(serverTheme)}
+  //       onLongPress={() => handlePreview(serverTheme.id)}
+  //       activeOpacity={0.8}
+  //     >
+  //       {/* Color Preview */}
+  //       <View style={styles.colorPreviewContainer}>
+  //         <View
+  //           style={[
+  //             styles.colorPreview,
+  //             { backgroundColor: displayTheme.colors.primary },
+  //           ]}
+  //         />
+  //         <View
+  //           style={[
+  //             styles.colorPreview,
+  //             { backgroundColor: displayTheme.colors.secondary },
+  //           ]}
+  //         />
+  //         <View
+  //           style={[
+  //             styles.colorPreview,
+  //             { backgroundColor: displayTheme.colors.accent },
+  //           ]}
+  //         />
+  //       </View>
+  //
+  //       {/* Theme Name */}
+  //       <Text style={[styles.themeName, { color: displayTheme.colors.text }]}>
+  //         {serverTheme.displayName}
+  //       </Text>
+  //
+  //       {/* Category Badge */}
+  //       <View style={[styles.themeTypeBadge, { backgroundColor: displayTheme.colors.primary + '20' }]}>
+  //         <Text style={[styles.themeTypeText, { color: displayTheme.colors.primary }]}>
+  //           {serverTheme.category}
+  //         </Text>
+  //       </View>
+  //
+  //       {/* Premium Badge */}
+  //       {serverTheme.isPremium && (
+  //         <View style={[styles.premiumBadge, { backgroundColor: displayTheme.colors.warning }]}>
+  //           <Text style={[styles.premiumText, { color: displayTheme.colors.textInverse }]}>
+  //             Premium
+  //           </Text>
+  //         </View>
+  //       )}
+  //
+  //       {/* Selected Indicator */}
+  //       {isSelected && (
+  //         <View style={[styles.selectedIndicator, { backgroundColor: displayTheme.colors.primary }]}>
+  //           <MaterialIcons name="check" size={16} color="#fff" />
+  //         </View>
+  //       )}
+  //
+  //       {/* Preview Indicator */}
+  //       {isPreviewing && (
+  //         <View style={[styles.previewIndicator, { backgroundColor: displayTheme.colors.primary }]}>
+  //           <Text style={[styles.previewText, { color: displayTheme.colors.textInverse }]}>
+  //             Preview
+  //           </Text>
+  //         </View>
+  //       )}
+  //
+  //       {/* Download Count */}
+  //       <Text style={[styles.downloadCount, { color: displayTheme.colors.textSecondary }]}>
+  //         {serverTheme.downloadCount} downloads
+  //       </Text>
+  //     </TouchableOpacity>
+  //   );
+  // };
 
   return (
     <View style={[styles.container, { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
       <ScrollView 
         style={styles.scrollView} 
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            tintColor={theme.colors.primary}
-          />
-        }
       >
         {/* Header */}
         <View style={styles.header}>
@@ -290,13 +290,14 @@ export default function ThemeSettingsScreen() {
         </View>
 
         {/* Local Theme Grid */}
-        <View style={styles.themeGrid}>
+        <View style={[styles.themeGrid, { marginBottom: -20 }]}>
           {Object.entries(THEMES).map(([key, themeData]) => (
             <ThemePreview key={key} themeName={key} themeData={themeData} />
           ))}
         </View>
 
-        {/* Online Themes Section */}
+        {/* Online Themes Section - COMMENTED OUT FOR NOW */}
+        {/* 
         <View style={styles.onlineThemesSection}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
@@ -325,9 +326,10 @@ export default function ThemeSettingsScreen() {
             </View>
           )}
         </View>
+        */}
 
         {/* Global Custom Background Media Selector */}
-        <View style={styles.backgroundSelectorContainer}>
+        <View style={[styles.backgroundSelectorContainer, { marginTop: -300 }]}>
           <View style={[styles.sectionHeader, { marginBottom: 16 }]}>
             <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
               Global Custom Background
@@ -346,7 +348,8 @@ export default function ThemeSettingsScreen() {
           />
         </View>
 
-        {/* Custom Background Media Selector for Immersive Theme */}
+        {/* Custom Background Media Selector for Immersive Theme - REMOVED SINCE IMMERSIVE THEME IS COMMENTED OUT */}
+        {/* 
         {currentTheme === 'immersive' && (
           <View style={styles.backgroundSelectorContainer}>
             <View style={[styles.sectionHeader, { marginBottom: 16 }]}>
@@ -367,6 +370,7 @@ export default function ThemeSettingsScreen() {
             />
           </View>
         )}
+        */}
 
         {/* Preview Controls */}
         {previewTheme && (
@@ -440,19 +444,19 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     position: 'relative',
   },
-  colorPreviewContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
-  },
-  colorPreview: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-  },
+  // colorPreviewContainer: {
+  //   flexDirection: 'row',
+  //   flexWrap: 'wrap',
+  //   gap: 8,
+  //   marginBottom: 12,
+  // },
+  // colorPreview: {
+  //   width: 24,
+  //   height: 24,
+  //   borderRadius: 12,
+  //   borderWidth: 1,
+  //   borderColor: 'rgba(255, 255, 255, 0.2)',
+  // },
   themeName: {
     fontSize: 18,
     fontWeight: 'bold',

@@ -67,31 +67,24 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   // Get current theme object
   const theme = getTheme(currentTheme);
   
-  // Check if current theme has background media (including custom media for immersive theme and global custom background)
+  // Check if current theme has background media (including global custom background)
   const hasBackgroundMedia = !!(
     theme.colors.backgroundImage || 
     theme.colors.backgroundVideo || 
-    (currentTheme === 'immersive' && customBackgroundMedia?.uri) ||
     globalCustomBackground?.uri
   );
   
-  // Get background media info (prioritize global custom background, then immersive custom media, then theme defaults)
+  // Get background media info (prioritize global custom background, then theme defaults)
   const backgroundMedia = {
     image: globalCustomBackground?.type === 'image' 
       ? globalCustomBackground.uri 
-      : (currentTheme === 'immersive' && customBackgroundMedia?.type === 'image' 
-        ? customBackgroundMedia.uri 
-        : theme.colors.backgroundImage),
+      : theme.colors.backgroundImage,
     video: globalCustomBackground?.type === 'video' 
       ? globalCustomBackground.uri 
-      : (currentTheme === 'immersive' && customBackgroundMedia?.type === 'video' 
-        ? customBackgroundMedia.uri 
-        : theme.colors.backgroundVideo),
+      : theme.colors.backgroundVideo,
     opacity: globalCustomBackground?.opacity !== undefined
       ? globalCustomBackground.opacity
-      : (currentTheme === 'immersive' && customBackgroundMedia?.opacity !== undefined
-        ? customBackgroundMedia.opacity
-        : theme.colors.backgroundOpacity || 1),
+      : theme.colors.backgroundOpacity || 1,
   };
 
   // Debug logging (commented out for production)
@@ -118,13 +111,12 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       
       if (dirInfo.exists) {
         const files = await FileSystem.readDirectoryAsync(themesDir);
-        const currentImmersiveImageUri = customBackgroundMedia?.uri;
         const currentGlobalImageUri = globalCustomBackground?.uri;
         
-        // Delete files that are not the current custom background images
+        // Delete files that are not the current global custom background image
         for (const file of files) {
           const fileUri = themesDir + file;
-          if (fileUri !== currentImmersiveImageUri && fileUri !== currentGlobalImageUri) {
+          if (fileUri !== currentGlobalImageUri) {
             try {
               await FileSystem.deleteAsync(fileUri, { idempotent: true });
             } catch (error) {
@@ -145,11 +137,11 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
         setCurrentTheme(savedTheme);
       }
       
-      // Load custom background media for immersive theme
-      const savedCustomMedia = await AsyncStorage.getItem('customBackgroundMedia');
-      if (savedCustomMedia) {
-        setCustomBackgroundMediaState(JSON.parse(savedCustomMedia));
-      }
+      // Load custom background media for immersive theme - COMMENTED OUT SINCE IMMERSIVE THEME IS REMOVED
+      // const savedCustomMedia = await AsyncStorage.getItem('customBackgroundMedia');
+      // if (savedCustomMedia) {
+      //   setCustomBackgroundMediaState(JSON.parse(savedCustomMedia));
+      // }
       
       // Load global custom background media
       const savedGlobalCustomMedia = await AsyncStorage.getItem('globalCustomBackground');
