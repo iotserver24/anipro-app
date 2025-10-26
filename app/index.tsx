@@ -871,7 +871,7 @@ export default function Home() {
     );
   };
 
-  const renderAnimeCard = ({ item }: { item: AnimeItem }) => (
+  const renderAnimeCard = useCallback(({ item }: { item: AnimeItem }) => (
     <View style={styles.animeCardContainer}>
       <TouchableOpacity 
         style={styles.animeCard}
@@ -913,7 +913,7 @@ export default function Home() {
         />
       </TouchableOpacity>
     </View>
-  );
+  ), [isBookmarked, addAnime, removeAnime]);
 
   const handleChooseFolder = async () => {
     const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
@@ -1055,6 +1055,10 @@ export default function Home() {
                   paddingHorizontal: ITEM_MARGIN - (ITEM_SPACING / 2) // Adjust for item spacing
                 }}
                 initialScrollIndex={0}
+                windowSize={5}
+                maxToRenderPerBatch={3}
+                initialNumToRender={2}
+                removeClippedSubviews={true}
                 onScrollToIndexFailed={(info) => {
                   const wait = new Promise(resolve => setTimeout(resolve, 500));
                   wait.then(() => {
@@ -1092,6 +1096,15 @@ export default function Home() {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.listContainer}
+              windowSize={10}
+              maxToRenderPerBatch={5}
+              initialNumToRender={3}
+              removeClippedSubviews={true}
+              getItemLayout={(data, index) => ({
+                length: 150 + 12, // item width + margin
+                offset: (150 + 12) * index,
+                index,
+              })}
             />
           ) : (
             <Text style={styles.noDataText}>No new episodes available</Text>
@@ -1111,6 +1124,15 @@ export default function Home() {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.listContainer}
+              windowSize={10}
+              maxToRenderPerBatch={5}
+              initialNumToRender={3}
+              removeClippedSubviews={true}
+              getItemLayout={(data, index) => ({
+                length: 150 + 12, // item width + margin
+                offset: (150 + 12) * index,
+                index,
+              })}
             />
           ) : (
             <Text style={styles.noDataText}>No completed anime available</Text>
@@ -1130,6 +1152,15 @@ export default function Home() {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.listContainer}
+              windowSize={10}
+              maxToRenderPerBatch={5}
+              initialNumToRender={3}
+              removeClippedSubviews={true}
+              getItemLayout={(data, index) => ({
+                length: 150 + 12, // item width + margin
+                offset: (150 + 12) * index,
+                index,
+              })}
             />
           ) : (
             <Text style={styles.noDataText}>No popular anime available</Text>
@@ -1149,6 +1180,15 @@ export default function Home() {
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.listContainer}
+              windowSize={10}
+              maxToRenderPerBatch={5}
+              initialNumToRender={3}
+              removeClippedSubviews={true}
+              getItemLayout={(data, index) => ({
+                length: 150 + 12, // item width + margin
+                offset: (150 + 12) * index,
+                index,
+              })}
             />
           ) : (
             <Text style={styles.noDataText}>No favorite anime available</Text>

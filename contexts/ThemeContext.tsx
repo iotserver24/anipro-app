@@ -8,6 +8,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
+import { Alert } from 'react-native';
 import { THEMES, DEFAULT_THEME, getTheme, Theme } from '../constants/themes';
 
 interface CustomBackgroundMedia {
@@ -218,6 +219,22 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
   const setGlobalCustomBackground = async (media: CustomBackgroundMedia | null) => {
     try {
+      // Validate image URI if it's a file URI
+      if (media?.uri && media.uri.startsWith('file://')) {
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(media.uri);
+          if (!fileInfo.exists) {
+            console.error('Global background image file does not exist:', media.uri);
+            Alert.alert('Error', 'Background image file is missing. Please select a new image.');
+            return;
+          }
+        } catch (validationError) {
+          console.error('Error validating global background image:', validationError);
+          Alert.alert('Error', 'Background image is not accessible. Please select a new image.');
+          return;
+        }
+      }
+
       // Clean up old global image file if it exists and we're setting a new one
       if (media && globalCustomBackground?.uri && globalCustomBackground.uri !== media.uri) {
         try {

@@ -206,12 +206,160 @@ export default function ProfileScreen() {
     }
   }, [userData?.birthdate]);
 
+  // Generate unique filename for avatar caching
+  const generateAvatarFilename = (avatarId: string, originalUrl: string): string => {
+    // Extract extension from URL, handling various formats
+    const urlParts = originalUrl.split('.');
+    const extension = urlParts.length > 1 ? urlParts.pop()?.toLowerCase() : 'jpg';
+    
+    // Handle common avatar formats
+    const validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'webm'];
+    const finalExtension = validExtensions.includes(extension || '') ? extension : 'jpg';
+    
+    return `avatar_${avatarId}_${Date.now()}.${finalExtension}`;
+  };
+
+  // Cache avatar media to local storage (supports images, gifs, videos)
+  const cacheAvatarImage = async (avatarId: string, mediaUrl: string): Promise<string> => {
+    try {
+      const documentDir = FileSystem.documentDirectory;
+      if (!documentDir) {
+        throw new Error('Document directory not available');
+      }
+
+      // Create avatars subdirectory if it doesn't exist
+      const avatarsDir = documentDir + 'avatars/';
+      const dirInfo = await FileSystem.getInfoAsync(avatarsDir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(avatarsDir, { intermediates: true });
+      }
+
+      // Generate unique filename with proper extension
+      const filename = generateAvatarFilename(avatarId, mediaUrl);
+      const destinationUri = avatarsDir + filename;
+
+      console.log(`Caching avatar: ${mediaUrl} -> ${destinationUri}`);
+
+      // Download and cache the media file
+      const downloadResult = await FileSystem.downloadAsync(mediaUrl, destinationUri);
+      
+      if (downloadResult.status === 200) {
+        // Validate the downloaded file exists and has content
+        const fileInfo = await FileSystem.getInfoAsync(destinationUri);
+        if (fileInfo.exists && fileInfo.size && fileInfo.size > 0) {
+          console.log(`Avatar cached successfully: ${destinationUri} (${fileInfo.size} bytes)`);
+          return destinationUri;
+        } else {
+          throw new Error('Downloaded file is empty or invalid');
+        }
+      } else {
+        throw new Error(`Download failed with status: ${downloadResult.status}`);
+      }
+    } catch (error) {
+      console.error('Error caching avatar:', error);
+      throw error;
+    }
+  };
+
+  // Validate cached avatar exists and is not corrupted
+  const validateCachedAvatar = async (uri: string): Promise<boolean> => {
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      
+      // Check if file exists and has content
+      if (!fileInfo.exists || !fileInfo.size || fileInfo.size === 0) {
+        console.log('Cached avatar is missing or empty:', uri);
+        return false;
+      }
+      
+      // Additional validation for different file types
+      const extension = uri.split('.').pop()?.toLowerCase();
+      
+      // For video files, we might want to do additional checks
+      if (extension === 'mp4' || extension === 'webm') {
+        // Basic size check for videos (should be larger than a few KB)
+        if (fileInfo.size < 1024) {
+          console.log('Cached video avatar seems too small:', uri, fileInfo.size);
+          return false;
+        }
+      }
+      
+      console.log('Cached avatar validation passed:', uri, fileInfo.size, 'bytes');
+      return true;
+    } catch (error) {
+      console.error('Error validating cached avatar:', error);
+      return false;
+    }
+  };
+
+  // Clean up old avatar files
+  const cleanupOldAvatars = async (currentAvatarUri: string) => {
+    try {
+      const documentDir = FileSystem.documentDirectory;
+      if (!documentDir) return;
+
+      const avatarsDir = documentDir + 'avatars/';
+      const dirInfo = await FileSystem.getInfoAsync(avatarsDir);
+      
+      if (dirInfo.exists) {
+        const files = await FileSystem.readDirectoryAsync(avatarsDir);
+        
+        // Delete files that are not the current avatar
+        for (const file of files) {
+          const fileUri = avatarsDir + file;
+          if (fileUri !== currentAvatarUri) {
+            try {
+              await FileSystem.deleteAsync(fileUri, { idempotent: true });
+            } catch (error) {
+              console.error('Error deleting old avatar:', error);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error during avatar cleanup:', error);
+    }
+  };
+
   const fetchAvatarUrl = async (avatarId: string) => {
     setAvatarLoading(true);
     try {
-      // Use the helper function to get the avatar URL
-      const url = await getAvatarById(avatarId);
-      setAvatarUrl(url);
+      // Check if we have a cached version first
+      const cachedAvatarKey = `cached_avatar_${avatarId}`;
+      const cachedAvatarUri = await AsyncStorage.getItem(cachedAvatarKey);
+      
+      if (cachedAvatarUri) {
+        // Validate cached avatar still exists
+        const isValid = await validateCachedAvatar(cachedAvatarUri);
+        if (isValid) {
+          console.log('Using cached avatar:', cachedAvatarUri);
+          setAvatarUrl(cachedAvatarUri);
+          return;
+        } else {
+          // Remove invalid cache entry
+          await AsyncStorage.removeItem(cachedAvatarKey);
+        }
+      }
+
+      // Get the original URL
+      const originalUrl = await getAvatarById(avatarId);
+      
+      // Cache the avatar media locally (supports images, gifs, videos)
+      try {
+        const cachedUri = await cacheAvatarImage(avatarId, originalUrl);
+        
+        // Save the cached URI to AsyncStorage
+        await AsyncStorage.setItem(cachedAvatarKey, cachedUri);
+        
+        // Clean up old avatars
+        await cleanupOldAvatars(cachedUri);
+        
+        setAvatarUrl(cachedUri);
+        console.log('Avatar cached and set:', cachedUri);
+      } catch (cacheError) {
+        console.warn('Failed to cache avatar, using original URL:', cacheError);
+        setAvatarUrl(originalUrl);
+      }
     } catch (error) {
       console.warn('Error fetching avatar:', error);
       // Fallback to default
@@ -262,6 +410,13 @@ export default function ProfileScreen() {
   const handleLogout = async () => {
     try {
       setLoading(true);
+      
+      // Clear avatar cache on logout
+      if (userData?.avatarId) {
+        const cachedAvatarKey = `cached_avatar_${userData.avatarId}`;
+        await AsyncStorage.removeItem(cachedAvatarKey);
+      }
+      
       await signOut();
       setAuthenticated(false);
       setUserData(null);
@@ -289,6 +444,12 @@ export default function ProfileScreen() {
       setUpdatingAvatar(true);
       setShowAvatarModal(false); // Close modal immediately to show loading state
       
+      // Clear old avatar cache if changing avatars
+      if (userData?.avatarId && userData.avatarId !== avatar.id) {
+        const oldCachedAvatarKey = `cached_avatar_${userData.avatarId}`;
+        await AsyncStorage.removeItem(oldCachedAvatarKey);
+      }
+      
       // Update the avatar
       const success = await updateUserAvatar(avatar.id);
       
@@ -297,7 +458,7 @@ export default function ProfileScreen() {
         if (userData) {
           setUserData({ ...userData, avatarId: avatar.id });
         }
-        // Fetch the new avatar URL
+        // Fetch the new avatar URL (this will cache it)
         await fetchAvatarUrl(avatar.id);
         
         // Show success message

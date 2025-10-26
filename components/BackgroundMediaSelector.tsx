@@ -47,7 +47,7 @@ export default function BackgroundMediaSelector({
     return `custom_theme_${timestamp}_${randomSuffix}.${extension}`;
   };
 
-  // Copy image to app document directory for permanent storage
+  // Copy image to app document directory for permanent storage with validation
   const copyImageToAppStorage = async (originalUri: string): Promise<string> => {
     try {
       // Ensure document directory exists
@@ -73,10 +73,28 @@ export default function BackgroundMediaSelector({
         to: destinationUri,
       });
 
+      // Validate the copied file exists and is accessible
+      const copiedFileInfo = await FileSystem.getInfoAsync(destinationUri);
+      if (!copiedFileInfo.exists) {
+        throw new Error('Failed to verify copied file');
+      }
+
+      console.log('Image successfully copied and validated:', destinationUri);
       return destinationUri;
     } catch (error) {
       console.error('Error copying image to app storage:', error);
       throw error;
+    }
+  };
+
+  // Validate image URI is accessible
+  const validateImageUri = async (uri: string): Promise<boolean> => {
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      return fileInfo.exists;
+    } catch (error) {
+      console.error('Error validating image URI:', error);
+      return false;
     }
   };
 
@@ -103,6 +121,12 @@ export default function BackgroundMediaSelector({
           // Copy image to app storage for permanent access
           const copiedUri = await copyImageToAppStorage(asset.uri);
           console.log('Image copied successfully to:', copiedUri);
+          
+          // Validate the copied URI is accessible
+          const isValid = await validateImageUri(copiedUri);
+          if (!isValid) {
+            throw new Error('Copied image is not accessible');
+          }
           
           onMediaSelected({
             type: 'image',

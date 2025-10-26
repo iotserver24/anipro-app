@@ -22,6 +22,8 @@ import { getAvatarById, DEFAULT_AVATARS } from '../constants/avatars';
 import { Tabs } from 'expo-router';
 import { NativeStackNavigationOptions } from '@react-navigation/native-stack';
 import AvatarDisplay from '../components/AvatarDisplay';
+import * as FileSystem from 'expo-file-system';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 // Make sure SplashScreen is prevented from auto-hiding
 SplashScreen.preventAutoHideAsync();
 
@@ -32,95 +34,260 @@ const HeaderRight = () => {
   const [loading, setLoading] = useState(true);
   const [isPremium, setIsPremium] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [isFetching, setIsFetching] = useState(false);
   const user = getCurrentUser();
 
-  // Function to fetch user avatar
+  // Generate unique filename for avatar caching
+  const generateAvatarFilename = (avatarId: string, originalUrl: string): string => {
+    // Extract extension from URL, handling various formats
+    const urlParts = originalUrl.split('.');
+    const extension = urlParts.length > 1 ? urlParts.pop()?.toLowerCase() : 'jpg';
+    
+    // Handle common avatar formats
+    const validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'webm'];
+    const finalExtension = validExtensions.includes(extension || '') ? extension : 'jpg';
+    
+    return `header_avatar_${avatarId}_${Date.now()}.${finalExtension}`;
+  };
+
+  // Cache avatar media to local storage (supports images, gifs, videos)
+  const cacheAvatarImage = async (avatarId: string, mediaUrl: string): Promise<string> => {
+    try {
+      const documentDir = FileSystem.documentDirectory;
+      if (!documentDir) {
+        throw new Error('Document directory not available');
+      }
+
+      // Create avatars subdirectory if it doesn't exist
+      const avatarsDir = documentDir + 'avatars/';
+      const dirInfo = await FileSystem.getInfoAsync(avatarsDir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(avatarsDir, { intermediates: true });
+      }
+
+      // Generate unique filename with proper extension
+      const filename = generateAvatarFilename(avatarId, mediaUrl);
+      const destinationUri = avatarsDir + filename;
+
+      console.log(`[Header Avatar] Caching avatar: ${mediaUrl} -> ${destinationUri}`);
+
+      // Download and cache the media file
+      const downloadResult = await FileSystem.downloadAsync(mediaUrl, destinationUri);
+      
+      if (downloadResult.status === 200) {
+        // Validate the downloaded file exists and has content
+        const fileInfo = await FileSystem.getInfoAsync(destinationUri);
+        if (fileInfo.exists && fileInfo.size && fileInfo.size > 0) {
+          console.log(`[Header Avatar] Avatar cached successfully: ${destinationUri} (${fileInfo.size} bytes)`);
+          return destinationUri;
+        } else {
+          throw new Error('Downloaded file is empty or invalid');
+        }
+      } else {
+        throw new Error(`Download failed with status: ${downloadResult.status}`);
+      }
+    } catch (error) {
+      console.error('[Header Avatar] Error caching avatar:', error);
+      throw error;
+    }
+  };
+
+  // Validate cached avatar exists and is not corrupted
+  const validateCachedAvatar = async (uri: string): Promise<boolean> => {
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      
+      // Check if file exists and has content
+      if (!fileInfo.exists || !fileInfo.size || fileInfo.size === 0) {
+        console.log('[Header Avatar] Cached avatar is missing or empty:', uri);
+        return false;
+      }
+      
+      // Additional validation for different file types
+      const extension = uri.split('.').pop()?.toLowerCase();
+      
+      // For video files, we might want to do additional checks
+      if (extension === 'mp4' || extension === 'webm') {
+        // Basic size check for videos (should be larger than a few KB)
+        if (fileInfo.size < 1024) {
+          console.log('[Header Avatar] Cached video avatar seems too small:', uri, fileInfo.size);
+          return false;
+        }
+      }
+      
+      console.log('[Header Avatar] Cached avatar validation passed:', uri, fileInfo.size, 'bytes');
+      return true;
+    } catch (error) {
+      console.error('[Header Avatar] Error validating cached avatar:', error);
+      return false;
+    }
+  };
+
+  // Clean up old avatar files and duplicates
+  const cleanupOldAvatars = async (currentAvatarUri: string, avatarId: string) => {
+    try {
+      const documentDir = FileSystem.documentDirectory;
+      if (!documentDir) return;
+
+      const avatarsDir = documentDir + 'avatars/';
+      const dirInfo = await FileSystem.getInfoAsync(avatarsDir);
+      
+      if (dirInfo.exists) {
+        const files = await FileSystem.readDirectoryAsync(avatarsDir);
+        
+        // Delete files that are not the current avatar
+        for (const file of files) {
+          const fileUri = avatarsDir + file;
+          
+          // Keep current avatar, delete everything else
+          if (fileUri !== currentAvatarUri) {
+            try {
+              await FileSystem.deleteAsync(fileUri, { idempotent: true });
+              console.log('[Header Avatar] Cleaned up old avatar:', file);
+            } catch (error) {
+              console.error('[Header Avatar] Error deleting old avatar:', error);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[Header Avatar] Error during avatar cleanup:', error);
+    }
+  };
+
+  // Function to fetch user avatar with caching
   const fetchUserAvatar = async () => {
     try {
       if (!initialized) {
-        console.log('[Avatar] Waiting for auth initialization...');
+        console.log('[Header Avatar] Waiting for auth initialization...');
         return;
       }
 
+      // Prevent multiple simultaneous fetches
+      if (isFetching) {
+        console.log('[Header Avatar] Already fetching avatar, skipping...');
+        return;
+      }
+
+      setIsFetching(true);
       setLoading(true);
       
       if (!user) {
-        console.log('[Avatar] No user found, using default avatar');
+        console.log('[Header Avatar] No user found, using default avatar');
         setAvatarUrl(DEFAULT_AVATARS[0].url);
         return;
       }
 
-      console.log('[Avatar] Fetching avatar for user:', user.uid);
+      console.log('[Header Avatar] Fetching avatar for user:', user.uid);
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       
       if (!userDoc.exists()) {
-        console.log('[Avatar] User document not found, using default avatar');
+        console.log('[Header Avatar] User document not found, using default avatar');
         setAvatarUrl(DEFAULT_AVATARS[0].url);
         return;
       }
 
       const userData = userDoc.data();
-      console.log('[Avatar] User data:', userData);
+      console.log('[Header Avatar] User data:', userData);
+
+      // Check premium status first
+      const isPremiumUser = userData.isPremium || false;
+      const donationAmount = userData.donationAmount || userData.premiumAmount || 0;
+      setIsPremium(isPremiumUser || donationAmount > 0);
 
       // Try each avatar source in order of preference
       let finalAvatarUrl = null;
+      let avatarId = null;
 
       // 1. Try avatarId first
       if (userData.avatarId) {
+        avatarId = userData.avatarId;
+        
+        // Check if we have a cached version first
+        const cachedAvatarKey = `cached_header_avatar_${avatarId}`;
+        const cachedAvatarUri = await AsyncStorage.getItem(cachedAvatarKey);
+        
+        if (cachedAvatarUri) {
+          // Validate cached avatar still exists
+          const isValid = await validateCachedAvatar(cachedAvatarUri);
+          if (isValid) {
+            console.log('[Header Avatar] Using cached avatar:', cachedAvatarUri);
+            setAvatarUrl(cachedAvatarUri);
+            return;
+          } else {
+            // Remove invalid cache entry
+            await AsyncStorage.removeItem(cachedAvatarKey);
+          }
+        }
+
         try {
-          console.log('[Avatar] Attempting to fetch avatar by ID:', userData.avatarId);
-          finalAvatarUrl = await getAvatarById(userData.avatarId);
-          console.log('[Avatar] Successfully fetched avatar by ID:', finalAvatarUrl);
+          console.log('[Header Avatar] Attempting to fetch avatar by ID:', avatarId);
+          finalAvatarUrl = await getAvatarById(avatarId);
+          console.log('[Header Avatar] Successfully fetched avatar by ID:', finalAvatarUrl);
+          
+          // Cache the avatar image locally
+          try {
+            const cachedUri = await cacheAvatarImage(avatarId, finalAvatarUrl);
+            
+            // Save the cached URI to AsyncStorage
+            await AsyncStorage.setItem(cachedAvatarKey, cachedUri);
+            
+            // Clean up old avatars
+            await cleanupOldAvatars(cachedUri, avatarId);
+            
+            setAvatarUrl(cachedUri);
+            console.log('[Header Avatar] Avatar cached and set:', cachedUri);
+            return;
+          } catch (cacheError) {
+            console.warn('[Header Avatar] Failed to cache avatar, using original URL:', cacheError);
+            setAvatarUrl(finalAvatarUrl);
+            return;
+          }
         } catch (error) {
-          console.error('[Avatar] Error fetching avatar by ID:', error);
+          console.error('[Header Avatar] Error fetching avatar by ID:', error);
         }
       }
 
       // 2. Try direct avatarUrl if avatarId failed
       if (!finalAvatarUrl && userData.avatarUrl) {
-        console.log('[Avatar] Using direct avatarUrl:', userData.avatarUrl);
+        console.log('[Header Avatar] Using direct avatarUrl:', userData.avatarUrl);
         finalAvatarUrl = userData.avatarUrl;
       }
 
       // 3. Try legacy avatar field if avatarUrl failed
       if (!finalAvatarUrl && userData.avatar) {
-        console.log('[Avatar] Using legacy avatar field:', userData.avatar);
+        console.log('[Header Avatar] Using legacy avatar field:', userData.avatar);
         finalAvatarUrl = userData.avatar;
       }
 
       // 4. Try user's photoURL if all else failed
       if (!finalAvatarUrl && user.photoURL) {
-        console.log('[Avatar] Using user photoURL:', user.photoURL);
+        console.log('[Header Avatar] Using user photoURL:', user.photoURL);
         finalAvatarUrl = user.photoURL;
       }
 
       // 5. Fall back to default if nothing worked
       if (!finalAvatarUrl) {
-        console.log('[Avatar] No avatar found, using default');
+        console.log('[Header Avatar] No avatar found, using default');
         finalAvatarUrl = DEFAULT_AVATARS[0].url;
       }
 
       // Set the final avatar URL
       setAvatarUrl(finalAvatarUrl);
 
-      // Check premium status
-      const isPremiumUser = userData.isPremium || false;
-      const donationAmount = userData.donationAmount || userData.premiumAmount || 0;
-      setIsPremium(isPremiumUser || donationAmount > 0);
-      console.log('[Avatar] Premium status:', isPremiumUser || donationAmount > 0);
-
     } catch (error) {
-      console.error('[Avatar] Error in fetchUserAvatar:', error);
+      console.error('[Header Avatar] Error in fetchUserAvatar:', error);
       setAvatarUrl(DEFAULT_AVATARS[0].url);
     } finally {
       setLoading(false);
+      setIsFetching(false);
     }
   };
 
   // Listen for auth initialization
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log('[Avatar] Auth state changed:', user ? 'User logged in' : 'No user');
+      console.log('[Header Avatar] Auth state changed:', user ? 'User logged in' : 'No user');
       setInitialized(true);
     });
 
@@ -129,16 +296,16 @@ const HeaderRight = () => {
 
   // Fetch avatar when component mounts and auth is initialized
   useEffect(() => {
-    if (initialized) {
-      console.log('[Avatar] Auth initialized, fetching avatar');
+    if (initialized && !isFetching) {
+      console.log('[Header Avatar] Auth initialized, fetching avatar');
       fetchUserAvatar();
     }
   }, [initialized]); // Depend on initialized state
 
   // Fetch avatar when user changes
   useEffect(() => {
-    if (initialized && user) {
-      console.log('[Avatar] User changed, fetching new avatar');
+    if (initialized && user && !isFetching) {
+      console.log('[Header Avatar] User changed, fetching new avatar');
       fetchUserAvatar();
     }
   }, [user?.uid, initialized]); // Depend on both user ID and initialized state
@@ -166,8 +333,8 @@ const HeaderRight = () => {
               style={styles.avatarImage}
               isPremium={isPremium}
               onError={() => {
-                console.error('[Avatar] Error loading avatar');
-                console.log('[Avatar] Falling back to default avatar');
+                console.error('[Header Avatar] Error loading avatar');
+                console.log('[Header Avatar] Falling back to default avatar');
                 setAvatarUrl(DEFAULT_AVATARS[0].url);
               }}
             />
@@ -178,8 +345,8 @@ const HeaderRight = () => {
               style={styles.avatarImage}
               isPremium={isPremium}
               onError={() => {
-                console.error('[Avatar] Error loading avatar');
-                console.log('[Avatar] Falling back to default avatar');
+                console.error('[Header Avatar] Error loading avatar');
+                console.log('[Header Avatar] Falling back to default avatar');
                 setAvatarUrl(DEFAULT_AVATARS[0].url);
               }}
             />
@@ -490,7 +657,7 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
             name="anime/watch/[episodeId]"
             options={({ route }) => ({
               title: 'Watch',
-              headerShown: route.params?.headerShown !== false,
+              headerShown: (route.params as any)?.headerShown !== false,
               presentation: 'card',
             })}
           />

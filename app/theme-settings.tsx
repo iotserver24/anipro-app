@@ -16,6 +16,7 @@ import {
   Dimensions,
   Alert,
   RefreshControl,
+  Animated,
 } from 'react-native';
 import { useTheme } from '../hooks/useTheme';
 import { THEMES, Theme } from '../constants/themes';
@@ -41,38 +42,47 @@ export default function ThemeSettingsScreen() {
   } = useTheme();
   const [previewTheme, setPreviewTheme] = useState<string | null>(null);
   
-  // Debounced opacity state for smooth slider performance
+  // Instant opacity handling with native driver
   const [localOpacity, setLocalOpacity] = useState(globalCustomBackground?.opacity || 0.3);
-  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const opacityAnimatedValue = useRef(new Animated.Value(globalCustomBackground?.opacity || 0.3)).current;
+  const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Debounced opacity update function
-  const debouncedOpacityUpdate = useCallback((opacity: number) => {
-    // Update local state immediately for UI responsiveness
+  // Instant opacity update - runs on UI thread
+  const handleInstantOpacityChange = useCallback((opacity: number) => {
+    // Update local state immediately
     setLocalOpacity(opacity);
     
-    // Clear existing timeout
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
+    // Animate opacity instantly on native thread
+    Animated.timing(opacityAnimatedValue, {
+      toValue: opacity,
+      duration: 0, // Instant
+      useNativeDriver: true, // Runs on UI thread
+    }).start();
+    
+    // Batch the actual state update to reduce JS thread load
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
     }
     
-    // Debounce the actual state update
-    debounceTimeoutRef.current = setTimeout(() => {
+    updateTimeoutRef.current = setTimeout(() => {
       updateGlobalCustomBackgroundOpacity(opacity);
-    }, 50); // 50ms debounce for smooth performance
-  }, [updateGlobalCustomBackgroundOpacity]);
+    }, 100); // Longer timeout to reduce updates
+  }, [updateGlobalCustomBackgroundOpacity, opacityAnimatedValue]);
   
   // Update local opacity when global opacity changes
   useEffect(() => {
     if (globalCustomBackground?.opacity !== undefined) {
-      setLocalOpacity(globalCustomBackground.opacity);
+      const newOpacity = globalCustomBackground.opacity;
+      setLocalOpacity(newOpacity);
+      opacityAnimatedValue.setValue(newOpacity);
     }
-  }, [globalCustomBackground?.opacity]);
+  }, [globalCustomBackground?.opacity, opacityAnimatedValue]);
   
   // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
-      if (debounceTimeoutRef.current) {
-        clearTimeout(debounceTimeoutRef.current);
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
       }
     };
   }, []);
@@ -401,7 +411,7 @@ export default function ThemeSettingsScreen() {
                     minimumValue={0.1}
                     maximumValue={1.0}
                     value={localOpacity}
-                    onValueChange={debouncedOpacityUpdate}
+                    onValueChange={handleInstantOpacityChange}
                     minimumTrackTintColor={theme.colors.primary}
                     maximumTrackTintColor={theme.colors.border}
                   />
