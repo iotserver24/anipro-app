@@ -530,24 +530,7 @@ export default function RootLayout() {
     return () => backHandler.remove();
   }, []);
 
-  useEffect(() => {
-    const lockOrientation = async () => {
-      try {
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
-      } catch (error) {
-        console.error('Failed to lock orientation:', error);
-      }
-    };
-
-    lockOrientation();
-
-    return () => {
-      // Cleanup
-      ScreenOrientation.unlockAsync().catch(error => {
-        console.error('Failed to unlock orientation:', error);
-      });
-    };
-  }, []);
+  // Removed orientation lock to allow app to respect device orientation
 
   const [isVideoFullscreen, setIsVideoFullscreen] = useState(false);
   const pathname = usePathname();
@@ -568,13 +551,19 @@ export default function RootLayout() {
   useEffect(() => {
     const subscription = ScreenOrientation.addOrientationChangeListener((event) => {
       const isLandscape = event.orientationInfo.orientation >= 3; // 3 and 4 are landscape orientations
-      setIsVideoFullscreen(isLandscape);
+      // Only set video fullscreen if we're actually on a watch page
+      if (isWatchPage) {
+        setIsVideoFullscreen(isLandscape);
+      } else {
+        // If not on watch page, don't hide the bottom nav bar
+        setIsVideoFullscreen(false);
+      }
     });
 
     return () => {
       ScreenOrientation.removeOrientationChangeListener(subscription);
     };
-  }, []);
+  }, [isWatchPage]);
 
   if (!fontsLoaded && !fontError) {
     return null;
@@ -615,10 +604,10 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
                 headerTitleStyle: {
                   fontWeight: 'bold',
                 },
-                contentStyle: {
-                  backgroundColor: 'transparent',
-                  paddingBottom: isVideoFullscreen || isWatchPage || isChatPage ? 0 : 60,
-                },
+              contentStyle: {
+                backgroundColor: 'transparent',
+                paddingBottom: isVideoFullscreen || isChatPage ? 0 : 60,
+              },
                 animation: 'none',
                 animationDuration: 0,
               }}
@@ -703,7 +692,7 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
             </Stack>
             {/* Position the bottom tab bar with absolute positioning outside the Stack */}
             <View style={styles.bottomTabContainer}>
-              {!isVideoFullscreen && !isWatchPage && !isChatPage && <BottomTabBar />}
+              {!isVideoFullscreen && !isChatPage && <BottomTabBar />}
             </View>
           </View>
         </ImageBackground>
@@ -721,7 +710,7 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
               },
               contentStyle: {
                 backgroundColor: theme.colors.background,
-                paddingBottom: isVideoFullscreen || isWatchPage || isChatPage ? 0 : 60,
+                paddingBottom: isVideoFullscreen || isChatPage ? 0 : 60,
               },
               animation: 'none',
               animationDuration: 0,
@@ -794,7 +783,7 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
           </Stack>
           {/* Position the bottom tab bar with absolute positioning outside the Stack */}
           <View style={styles.bottomTabContainer}>
-            {!isVideoFullscreen && !isWatchPage && !isChatPage && <BottomTabBar />}
+            {!isVideoFullscreen && !isChatPage && <BottomTabBar />}
           </View>
         </View>
       )}

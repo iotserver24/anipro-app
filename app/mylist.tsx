@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, Alert, Activ
 import { useState, useEffect, useCallback } from 'react';
 import { router, useFocusEffect } from 'expo-router';
 import { useTheme } from '../hooks/useTheme';
+import { useResponsive } from '../hooks/useResponsive';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -18,6 +19,8 @@ type MyListAnime = {
 
 export default function MyList() {
   const { theme, hasBackgroundMedia } = useTheme();
+  const responsive = useResponsive();
+  const styles = createResponsiveStyles(responsive);
   const { myList, removeAnime, initializeList, refreshIfNeeded, isLoading, clearList } = useMyListStore();
   const [initialLoading, setInitialLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -192,7 +195,7 @@ export default function MyList() {
           data={myList}
           renderItem={renderAnimeCard}
           keyExtractor={(item) => item.id}
-          numColumns={2}
+          numColumns={responsive.isLandscape ? 3 : 2}
           contentContainerStyle={styles.listContainer}
           refreshControl={
             <RefreshControl 
@@ -208,7 +211,7 @@ export default function MyList() {
   );
 }
 
-const styles = StyleSheet.create({
+const createResponsiveStyles = (responsive: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#121212',
@@ -217,10 +220,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    padding: responsive.isLandscape ? 20 : 16,
   },
   title: {
-    fontSize: 24,
+    fontSize: responsive.isLandscape ? 28 : 24,
     fontWeight: 'bold',
     color: '#fff',
   },
@@ -228,15 +231,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(244, 81, 30, 0.1)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: responsive.isLandscape ? 16 : 12,
+    paddingVertical: responsive.isLandscape ? 8 : 6,
+    borderRadius: responsive.isLandscape ? 10 : 8,
   },
   clearAllText: {
     color: '#f4511e',
-    fontSize: 14,
+    fontSize: responsive.isLandscape ? 16 : 14,
     fontWeight: '600',
-    marginLeft: 4,
+    marginLeft: responsive.isLandscape ? 6 : 4,
   },
   centerContainer: {
     flex: 1,
@@ -245,32 +248,37 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: '#666',
-    fontSize: 16,
-    marginTop: 16,
+    fontSize: responsive.isLandscape ? 18 : 16,
+    marginTop: responsive.isLandscape ? 20 : 16,
   },
   browseButton: {
-    marginTop: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    marginTop: responsive.isLandscape ? 20 : 16,
+    paddingHorizontal: responsive.isLandscape ? 24 : 20,
+    paddingVertical: responsive.isLandscape ? 12 : 10,
     backgroundColor: '#f4511e',
-    borderRadius: 8,
+    borderRadius: responsive.isLandscape ? 10 : 8,
   },
   browseButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: responsive.isLandscape ? 18 : 16,
     fontWeight: 'bold',
   },
   listContainer: {
-    padding: 8,
-    paddingBottom: 80,
+    padding: responsive.isLandscape ? 12 : 8,
+    paddingBottom: responsive.isLandscape ? 100 : 80,
   },
   animeCard: {
     flex: 1,
-    margin: 8,
-    height: 200,
-    borderRadius: 12,
+    margin: responsive.isLandscape ? 6 : 8,
+    height: responsive.isLandscape ? 180 : 200,
+    borderRadius: responsive.isLandscape ? 10 : 12,
     overflow: 'hidden',
     backgroundColor: '#1a1a1a',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
   animeImage: {
     width: '100%',
@@ -283,12 +291,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: '50%',
-    padding: 12,
+    padding: responsive.isLandscape ? 10 : 12,
     justifyContent: 'space-between',
   },
   animeName: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: responsive.isLandscape ? 12 : 14,
     fontWeight: 'bold',
   },
   removeButton: {

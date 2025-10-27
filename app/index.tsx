@@ -2,6 +2,7 @@ import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, RefreshContr
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { router } from 'expo-router';
 import { useTheme } from '../hooks/useTheme';
+import { useResponsive } from '../hooks/useResponsive';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialIcons, Ionicons, MaterialCommunityIcons, FontAwesome } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,17 +29,13 @@ import AuthModal from '../components/AuthModal';
 import { auth } from '../services/firebase';
 import * as FileSystem from 'expo-file-system';
 
-const { width } = Dimensions.get('window');
-const ITEM_WIDTH = width * 0.85;
-const ITEM_SPACING = 10;
-const ITEM_MARGIN = (width - ITEM_WIDTH) / 2;
+// Remove static dimensions - will be calculated dynamically
 
 const CACHE_KEYS = {
   TRENDING_RECENT: 'home_trending_recent_cache',
   NEW_EPISODES: 'home_new_episodes_cache',
   NEW_RELEASES: 'home_new_releases_cache',
   POPULAR: 'home_popular_cache',
-  FAVORITE: 'home_favorite_cache',
   LATEST_COMPLETED: 'home_latest_completed_cache'
 };
 
@@ -225,7 +222,8 @@ const APP_STORAGE_FOLDER_SKIP_KEY = 'APP_STORAGE_FOLDER_SKIP';
 
 export default function Home() {
   const { theme, hasBackgroundMedia } = useTheme();
-  const styles = createThemedStyles(theme);
+  const responsive = useResponsive();
+  const styles = createThemedStyles(theme, responsive);
   const [recentAnime, setRecentAnime] = useState<AnimeItem[]>([]);
   const [trendingAnime, setTrendingAnime] = useState<AnimeItem[]>([]);
   const [newEpisodes, setNewEpisodes] = useState<AnimeItem[]>([]);
@@ -248,7 +246,6 @@ export default function Home() {
   const [notificationCount, setNotificationCount] = useState(0);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [hasShownAuthPrompt, setHasShownAuthPrompt] = useState(false);
-  const [favoriteAnime, setFavoriteAnime] = useState<AnimeItem[]>([]);
   const [latestCompleted, setLatestCompleted] = useState<AnimeItem[]>([]);
   const [showStorageModal, setShowStorageModal] = useState(false);
   const [betaUpdatesEnabled, setBetaUpdatesEnabled] = useState(false);
@@ -260,11 +257,10 @@ export default function Home() {
 
       if (!bypassCache) {
         // Try loading from cache first
-        const [trendingRecentCache, newEpisodesCache, popularCache, favoriteCache, completedCache] = await Promise.all([
+        const [trendingRecentCache, newEpisodesCache, popularCache, completedCache] = await Promise.all([
           AsyncStorage.getItem(CACHE_KEYS.TRENDING_RECENT),
           AsyncStorage.getItem(CACHE_KEYS.NEW_EPISODES),
           AsyncStorage.getItem(CACHE_KEYS.POPULAR),
-          AsyncStorage.getItem(CACHE_KEYS.FAVORITE),
           AsyncStorage.getItem(CACHE_KEYS.LATEST_COMPLETED)
         ]);
 
@@ -272,7 +268,6 @@ export default function Home() {
         let needFetchTrending = true;
         let needFetchNewEpisodes = true;
         let needFetchPopular = true;
-        let needFetchFavorite = true;
         let needFetchCompleted = true;
 
         if (trendingRecentCache) {
@@ -299,14 +294,6 @@ export default function Home() {
           }
         }
 
-        if (favoriteCache) {
-          const { timestamp, data } = JSON.parse(favoriteCache);
-          if (isNewEpisodesCacheValid(timestamp)) {
-            setFavoriteAnime(data);
-            needFetchFavorite = false;
-          }
-        }
-
         if (completedCache) {
           const { timestamp, data } = JSON.parse(completedCache);
           if (isNewEpisodesCacheValid(timestamp)) {
@@ -317,7 +304,7 @@ export default function Home() {
 
         // Check if we have all data from cache
         if (!needFetchTrending && !needFetchNewEpisodes && 
-            !needFetchPopular && !needFetchFavorite && !needFetchCompleted) {
+            !needFetchPopular && !needFetchCompleted) {
           setLoading(false);
           setRefreshing(false);
           return;
@@ -328,7 +315,6 @@ export default function Home() {
         if (needFetchTrending) fetchPromises.push(fetchTrendingAndRecent());
         if (needFetchNewEpisodes) fetchPromises.push(fetchNewEpisodes());
         if (needFetchPopular) fetchPromises.push(fetchPopularAnime());
-        if (needFetchFavorite) fetchPromises.push(fetchFavoriteAnime());
         if (needFetchCompleted) fetchPromises.push(fetchLatestCompleted());
 
         await Promise.all(fetchPromises);
@@ -342,7 +328,6 @@ export default function Home() {
         fetchTrendingAndRecent(),
         fetchNewEpisodes(),
         fetchPopularAnime(),
-        fetchFavoriteAnime(),
         fetchLatestCompleted()
       ]);
 
@@ -424,22 +409,6 @@ export default function Home() {
     }
   };
 
-  const fetchFavoriteAnime = async () => {
-    try {
-      const favorite = await animeAPI.getFavoriteAnime();
-      const mappedFavorite = favorite?.map(mapToAnimeItem) || [];
-      setFavoriteAnime(mappedFavorite);
-
-      // Cache the data
-      const cacheData = {
-        timestamp: Date.now(),
-        data: mappedFavorite
-      };
-      await AsyncStorage.setItem(CACHE_KEYS.FAVORITE, JSON.stringify(cacheData));
-    } catch (error) {
-      logger.error('Error fetching favorite anime:', String(error));
-    }
-  };
 
   const fetchLatestCompleted = async () => {
     try {
@@ -723,7 +692,6 @@ export default function Home() {
         AsyncStorage.removeItem(CACHE_KEYS.TRENDING_RECENT),
         AsyncStorage.removeItem(CACHE_KEYS.NEW_EPISODES),
         AsyncStorage.removeItem(CACHE_KEYS.POPULAR),
-        AsyncStorage.removeItem(CACHE_KEYS.FAVORITE),
         AsyncStorage.removeItem(CACHE_KEYS.LATEST_COMPLETED)
       ]);
       // Fetch fresh data
@@ -738,6 +706,9 @@ export default function Home() {
   const goToNextSlide = useCallback(() => {
     if (!trendingAnime.length) return;
 
+    const ITEM_WIDTH = responsive.isLandscape ? responsive.width * 0.4 : responsive.width * 0.85;
+    const ITEM_SPACING = responsive.isLandscape ? 20 : 10;
+
     const nextIndex = (currentIndex + 1) % trendingAnime.length;
     if (flatListRef.current) {
       if (nextIndex === 0) {
@@ -750,7 +721,7 @@ export default function Home() {
       }
       setCurrentIndex(nextIndex);
     }
-  }, [currentIndex, trendingAnime.length]);
+  }, [currentIndex, trendingAnime.length, responsive]);
 
   // Setup auto sliding
   useEffect(() => {
@@ -771,6 +742,9 @@ export default function Home() {
   const handleScrollEnd = useCallback((event: any) => {
     if (!trendingAnime.length) return;
     
+    const ITEM_WIDTH = responsive.isLandscape ? responsive.width * 0.4 : responsive.width * 0.85;
+    const ITEM_SPACING = responsive.isLandscape ? 20 : 10;
+    
     const offsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(offsetX / (ITEM_WIDTH + ITEM_SPACING));
     
@@ -783,7 +757,7 @@ export default function Home() {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(goToNextSlide, 4000);
     }
-  }, [trendingAnime.length, goToNextSlide]);
+  }, [trendingAnime.length, goToNextSlide, responsive]);
 
   // Completely redesigned trending item renderer
   const renderTrendingItem = ({ item, index }: { item: AnimeItem; index: number }) => {
@@ -1030,29 +1004,40 @@ export default function Home() {
               <FlatList
                 ref={flatListRef}
                 data={trendingAnime}
-                renderItem={({ item, index }) => (
-                  <View style={{ 
-                    width: ITEM_WIDTH,
-                    marginHorizontal: ITEM_SPACING / 2, // Half spacing on each side
-                  }}>
-                    {renderTrendingItem({ item, index })}
-                  </View>
-                )}
+                renderItem={({ item, index }) => {
+                  const ITEM_WIDTH = responsive.isLandscape ? responsive.width * 0.4 : responsive.width * 0.85;
+                  const ITEM_SPACING = responsive.isLandscape ? 20 : 10;
+                  
+                  return (
+                    <View style={{ 
+                      width: ITEM_WIDTH,
+                      marginHorizontal: ITEM_SPACING / 2, // Half spacing on each side
+                    }}>
+                      {renderTrendingItem({ item, index })}
+                    </View>
+                  );
+                }}
                 keyExtractor={(item) => item.id}
                 horizontal
                 pagingEnabled={false}
                 showsHorizontalScrollIndicator={false}
-                snapToInterval={ITEM_WIDTH + ITEM_SPACING} // Include spacing in snap calculation
+                snapToInterval={responsive.isLandscape ? responsive.width * 0.4 + 20 : responsive.width * 0.85 + 10}
                 decelerationRate="fast"
                 snapToAlignment="center"
                 onMomentumScrollEnd={handleScrollEnd}
-                getItemLayout={(data, index) => ({
-                  length: ITEM_WIDTH + ITEM_SPACING,
-                  offset: (ITEM_WIDTH + ITEM_SPACING) * index,
-                  index,
-                })}
+                getItemLayout={(data, index) => {
+                  const ITEM_WIDTH = responsive.isLandscape ? responsive.width * 0.4 : responsive.width * 0.85;
+                  const ITEM_SPACING = responsive.isLandscape ? 20 : 10;
+                  return {
+                    length: ITEM_WIDTH + ITEM_SPACING,
+                    offset: (ITEM_WIDTH + ITEM_SPACING) * index,
+                    index,
+                  };
+                }}
                 contentContainerStyle={{
-                  paddingHorizontal: ITEM_MARGIN - (ITEM_SPACING / 2) // Adjust for item spacing
+                  paddingHorizontal: responsive.isLandscape ? 
+                    (responsive.width - responsive.width * 0.4) / 2 - 10 : 
+                    (responsive.width - responsive.width * 0.85) / 2 - 5
                 }}
                 initialScrollIndex={0}
                 windowSize={5}
@@ -1167,34 +1152,6 @@ export default function Home() {
           )}
         </View>
 
-        {/* Most Favorite Section */}
-        <View style={[styles.section, { marginBottom: 16 }]}>
-          <Text style={styles.sectionTitle}>Most Favorite</Text>
-          {loading ? (
-            <ActivityIndicator size="large" color="#f4511e" />
-          ) : favoriteAnime && favoriteAnime.length > 0 ? (
-            <FlatList
-              data={favoriteAnime}
-              renderItem={renderAnimeCard}
-              keyExtractor={(item) => item.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.listContainer}
-              windowSize={10}
-              maxToRenderPerBatch={5}
-              initialNumToRender={3}
-              removeClippedSubviews={true}
-              getItemLayout={(data, index) => ({
-                length: 150 + 12, // item width + margin
-                offset: (150 + 12) * index,
-                index,
-              })}
-            />
-          ) : (
-            <Text style={styles.noDataText}>No favorite anime available</Text>
-          )}
-        </View>
-
         {/* Footer */}
         <View style={styles.footer}>
           <Text style={styles.footerText}>
@@ -1207,7 +1164,7 @@ export default function Home() {
 }
 
 // Create themed styles function
-const createThemedStyles = (theme: any) => StyleSheet.create({
+const createThemedStyles = (theme: any, responsive: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
@@ -1229,11 +1186,13 @@ const createThemedStyles = (theme: any) => StyleSheet.create({
     color: theme.colors.text,
   },
   trendingListContainer: {
-    paddingHorizontal: ITEM_MARGIN // Equal padding on both sides
+    paddingHorizontal: responsive.isLandscape ? 
+      (responsive.width - responsive.width * 0.4) / 2 : 
+      (responsive.width - responsive.width * 0.85) / 2
   },
   trendingCard: {
-    width: ITEM_WIDTH,
-    height: ITEM_WIDTH * 0.5625, // 16:9 aspect ratio
+    width: responsive.isLandscape ? responsive.width * 0.4 : responsive.width * 0.85,
+    height: responsive.isLandscape ? responsive.width * 0.4 * 0.5625 : responsive.width * 0.85 * 0.5625, // 16:9 aspect ratio
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: theme.colors.surface,
@@ -1364,9 +1323,9 @@ const createThemedStyles = (theme: any) => StyleSheet.create({
     position: 'relative',
   },
   animeCard: {
-    width: 150,
-    height: 225,
-    marginRight: 12,
+    width: responsive.isLandscape ? 120 : 150,
+    height: responsive.isLandscape ? 180 : 225,
+    marginRight: responsive.isLandscape ? 8 : 12,
     borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: '#1a1a1a',

@@ -15,12 +15,14 @@ import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { logger } from '../utils/logger';
 import { FALLBACK_IMAGE } from '../store/watchHistoryStore';
 import { formatDistanceToNow } from 'date-fns';
+import { useResponsive } from '../hooks/useResponsive';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = width * 0.35;
 
 export const ContinueWatching = () => {
   const { history, removeFromHistory } = useWatchHistoryStore();
+  const responsive = useResponsive();
+  const styles = createResponsiveStyles(responsive);
 
   if (!history || history.length === 0) {
     return null;
@@ -184,29 +186,34 @@ export const ContinueWatching = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createResponsiveStyles = (responsive: any) => StyleSheet.create({
   container: {
-    marginVertical: 10,
-    marginBottom: 20,
+    marginVertical: responsive.isLandscape ? 8 : 10,
+    marginBottom: responsive.isLandscape ? 16 : 20,
   },
   title: {
-    fontSize: 18,
+    fontSize: responsive.isLandscape ? 16 : 18,
     fontWeight: 'bold',
     color: '#fff',
-    marginLeft: 10,
-    marginBottom: 10,
+    marginLeft: responsive.isLandscape ? 8 : 10,
+    marginBottom: responsive.isLandscape ? 8 : 10,
   },
   card: {
-    width: CARD_WIDTH,
-    marginLeft: 10,
+    width: responsive.isLandscape ? 120 : 150,
+    marginLeft: responsive.isLandscape ? 8 : 12,
     marginBottom: 5,
     backgroundColor: '#1a1a1a',
-    borderRadius: 8,
+    borderRadius: 12,
     overflow: 'hidden',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
   image: {
     width: '100%',
-    height: CARD_WIDTH * 1.5,
+    height: responsive.isLandscape ? 180 : 225,
     backgroundColor: '#2a2a2a', // Add background color for when image is loading
   },
   progressBar: {
@@ -219,48 +226,55 @@ const styles = StyleSheet.create({
     backgroundColor: '#f4511e',
   },
   info: {
-    padding: 8,
+    padding: responsive.isLandscape ? 8 : 12,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.8)',
   },
   animeName: {
     color: '#fff',
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: responsive.isLandscape ? 12 : 14,
+    fontWeight: '600',
+    marginBottom: responsive.isLandscape ? 2 : 4,
   },
   episodeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 2,
+    marginTop: responsive.isLandscape ? 1 : 2,
   },
   episodeText: {
-    color: '#999',
-    fontSize: 12,
+    color: '#ccc',
+    fontSize: responsive.isLandscape ? 10 : 12,
+    fontWeight: '500',
   },
   typeIndicator: {
     backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 4,
-    padding: 4,
+    borderRadius: responsive.isLandscape ? 3 : 4,
+    padding: responsive.isLandscape ? 2 : 4,
   },
   headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingRight: 10,
-    marginBottom: 10,
+    paddingRight: responsive.isLandscape ? 8 : 10,
+    marginBottom: responsive.isLandscape ? 8 : 10,
   },
   removeButton: {
     position: 'absolute',
-    top: 8,
-    right: 8,
+    top: responsive.isLandscape ? 6 : 8,
+    right: responsive.isLandscape ? 6 : 8,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 12,
-    padding: 4,
+    borderRadius: responsive.isLandscape ? 10 : 12,
+    padding: responsive.isLandscape ? 3 : 4,
     zIndex: 2,
   },
   lastWatchedText: {
     color: '#999',
-    fontSize: 10,
-    marginTop: 2,
+    fontSize: responsive.isLandscape ? 8 : 10,
+    marginTop: responsive.isLandscape ? 1 : 2,
   },
   seeMoreButton: {
     flexDirection: 'row',
@@ -268,7 +282,7 @@ const styles = StyleSheet.create({
   },
   seeMoreText: {
     color: '#f4511e',
-    fontSize: 16,
+    fontSize: responsive.isLandscape ? 14 : 16,
     marginRight: 4,
   },
 }); 
