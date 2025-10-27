@@ -251,89 +251,83 @@ export default function Home() {
   const [betaUpdatesEnabled, setBetaUpdatesEnabled] = useState(false);
   const [betaChecked, setBetaChecked] = useState(false);
 
+  // Optimized fetch function - prioritize trending for immediate display
   const fetchAnime = async (bypassCache: boolean = false) => {
     try {
       setLoading(true);
 
       if (!bypassCache) {
-        // Try loading from cache first
-        const [trendingRecentCache, newEpisodesCache, popularCache, completedCache] = await Promise.all([
-          AsyncStorage.getItem(CACHE_KEYS.TRENDING_RECENT),
-          AsyncStorage.getItem(CACHE_KEYS.NEW_EPISODES),
-          AsyncStorage.getItem(CACHE_KEYS.POPULAR),
-          AsyncStorage.getItem(CACHE_KEYS.LATEST_COMPLETED)
-        ]);
-
-        // Process each cache
-        let needFetchTrending = true;
-        let needFetchNewEpisodes = true;
-        let needFetchPopular = true;
-        let needFetchCompleted = true;
-
+        // Try loading from cache first - prioritize trending for immediate display
+        const trendingRecentCache = await AsyncStorage.getItem(CACHE_KEYS.TRENDING_RECENT);
+        
         if (trendingRecentCache) {
           const { timestamp, data } = JSON.parse(trendingRecentCache);
           if (isTrendingRecentCacheValid(timestamp)) {
             setTrendingAnime(data.trending);
-            needFetchTrending = false;
+            setRecentAnime(data.recent);
+            setLoading(false); // Show trending immediately
+            setRefreshing(false);
+            
+            // Load other sections in background
+            Promise.all([
+              AsyncStorage.getItem(CACHE_KEYS.NEW_EPISODES),
+              AsyncStorage.getItem(CACHE_KEYS.POPULAR),
+              AsyncStorage.getItem(CACHE_KEYS.LATEST_COMPLETED)
+            ]).then(([newEpisodesCache, popularCache, completedCache]) => {
+              if (newEpisodesCache) {
+                const { timestamp, data } = JSON.parse(newEpisodesCache);
+                if (isNewEpisodesCacheValid(timestamp)) {
+                  setNewEpisodes(data);
+                } else {
+                  fetchNewEpisodes();
+                }
+              } else {
+                fetchNewEpisodes();
+              }
+
+              if (popularCache) {
+                const { timestamp, data } = JSON.parse(popularCache);
+                if (isNewEpisodesCacheValid(timestamp)) {
+                  setPopularAnime(data);
+                } else {
+                  fetchPopularAnime();
+                }
+              } else {
+                fetchPopularAnime();
+              }
+
+              if (completedCache) {
+                const { timestamp, data } = JSON.parse(completedCache);
+                if (isNewEpisodesCacheValid(timestamp)) {
+                  setLatestCompleted(data);
+                } else {
+                  fetchLatestCompleted();
+                }
+              } else {
+                fetchLatestCompleted();
+              }
+            });
+            return;
           }
         }
-
-        if (newEpisodesCache) {
-          const { timestamp, data } = JSON.parse(newEpisodesCache);
-          if (isNewEpisodesCacheValid(timestamp)) {
-            setNewEpisodes(data);
-            needFetchNewEpisodes = false;
-          }
-        }
-
-        if (popularCache) {
-          const { timestamp, data } = JSON.parse(popularCache);
-          if (isNewEpisodesCacheValid(timestamp)) {
-            setPopularAnime(data);
-            needFetchPopular = false;
-          }
-        }
-
-        if (completedCache) {
-          const { timestamp, data } = JSON.parse(completedCache);
-          if (isNewEpisodesCacheValid(timestamp)) {
-            setLatestCompleted(data);
-            needFetchCompleted = false;
-          }
-        }
-
-        // Check if we have all data from cache
-        if (!needFetchTrending && !needFetchNewEpisodes && 
-            !needFetchPopular && !needFetchCompleted) {
-          setLoading(false);
-          setRefreshing(false);
-          return;
-        }
-
-        // Fetch only what we need
-        const fetchPromises = [];
-        if (needFetchTrending) fetchPromises.push(fetchTrendingAndRecent());
-        if (needFetchNewEpisodes) fetchPromises.push(fetchNewEpisodes());
-        if (needFetchPopular) fetchPromises.push(fetchPopularAnime());
-        if (needFetchCompleted) fetchPromises.push(fetchLatestCompleted());
-
-        await Promise.all(fetchPromises);
-        setLoading(false);
-        setRefreshing(false);
-        return;
       }
 
-      // If bypassing cache, fetch everything
-      await Promise.all([
-        fetchTrendingAndRecent(),
+      // If no cache or bypassing cache, fetch trending first for immediate display
+      await fetchTrendingAndRecent();
+      setLoading(false); // Show trending immediately
+      setRefreshing(false);
+      
+      // Load other sections in background
+      Promise.all([
         fetchNewEpisodes(),
         fetchPopularAnime(),
         fetchLatestCompleted()
-      ]);
+      ]).catch(error => {
+        logger.error('Error fetching background data:', String(error));
+      });
 
     } catch (error) {
       logger.error('Error fetching anime:', String(error));
-    } finally {
       setLoading(false);
       setRefreshing(false);
     }
@@ -551,17 +545,21 @@ export default function Home() {
     // Initialize watch history
     initializeHistory();
     
-    // Initial fetch
+    // Initial fetch - prioritize trending for immediate display
     fetchAnime(false);
 
     // Count user on app start
     countUser();
 
-    // Check for "What's New"
-    checkWhatsNew();
+    // Check for "What's New" - defer to avoid blocking initial render
+    setTimeout(() => {
+      checkWhatsNew();
+    }, 1000);
     
-    // Check for unread notifications
-    checkForUnreadNotifications();
+    // Check for unread notifications - defer to avoid blocking initial render
+    setTimeout(() => {
+      checkForUnreadNotifications();
+    }, 2000);
 
     // Setup notification update listener
     const notificationListener = notificationEmitter.on('notificationUpdate', () => {
@@ -593,8 +591,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    // Check for updates on app start
-    checkForUpdates();
+    // Check for updates on app start - defer to avoid blocking initial render
+    setTimeout(() => {
+      checkForUpdates();
+    }, 3000);
     
     // Check for updates when app comes to foreground
     const subscription = AppState.addEventListener('change', (nextAppState) => {
@@ -663,21 +663,23 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    (async () => {
+    // Defer storage modal check to avoid blocking initial render
+    setTimeout(async () => {
       const folderUri = await AsyncStorage.getItem(APP_STORAGE_FOLDER_KEY);
       const skip = await AsyncStorage.getItem(APP_STORAGE_FOLDER_SKIP_KEY);
       if (!folderUri && !skip && Platform.OS === 'android') {
         setShowStorageModal(true);
       }
-    })();
+    }, 5000);
   }, []);
 
   useEffect(() => {
-    (async () => {
+    // Defer beta updates check to avoid blocking initial render
+    setTimeout(async () => {
       const value = await AsyncStorage.getItem('beta_updates_enabled');
       setBetaUpdatesEnabled(value === 'true');
       setBetaChecked(true);
-    })();
+    }, 1000);
   }, []);
 
   const handleAuthSuccess = () => {
