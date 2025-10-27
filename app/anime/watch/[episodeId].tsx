@@ -16,6 +16,7 @@ import * as NavigationBar from 'expo-navigation-bar';
 import { WebView } from 'react-native-webview';
 import { debounce } from 'lodash';
 import CommentModal from '../../../components/CommentModal';
+import { mediaSessionService, MediaSessionData } from '../../../services/mediaSessionService';
 
 type StreamSource = {
   url: string;
@@ -900,6 +901,8 @@ export default function WatchEpisode() {
   const [showDownloadOptions, setShowDownloadOptions] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<number>(1);
   const [showBatchDropdown, setShowBatchDropdown] = useState(false);
+  const [mediaSessionActive, setMediaSessionActive] = useState(false);
+  const [notificationRestored, setNotificationRestored] = useState(false);
 
   // Set initial batch based on current episode
   useEffect(() => {
@@ -957,6 +960,30 @@ export default function WatchEpisode() {
     } catch (err) {
       console.error('Error updating anime count:', err);
     }
+
+    // Initialize media session
+    const initializeMediaSession = async () => {
+      try {
+        const episodeTitleText = episodeTitle as string || `Episode ${episodeNumber}`;
+        const animeTitleText = animeInfo?.title || (title as string) || 'Unknown Anime';
+        
+        const success = await mediaSessionService.startMediaSession({
+          title: episodeTitleText,
+          episodeTitle: episodeTitleText,
+          animeTitle: animeTitleText,
+          isPlaying: isPlaying,
+          currentTime: currentTime,
+          duration: duration,
+          hasPrevious: currentEpisodeIndex > 0,
+          hasNext: currentEpisodeIndex < episodes.length - 1,
+        });
+        setMediaSessionActive(success);
+      } catch (error) {
+        console.error('Failed to initialize media session:', error);
+      }
+    };
+
+    initializeMediaSession();
   }, [episodeId, animeId]);
 
   useEffect(() => {
@@ -1775,8 +1802,117 @@ export default function WatchEpisode() {
           subOrDub: (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub'
         });
       }
+
+      // Stop media session when component unmounts
+      if (mediaSessionActive) {
+        mediaSessionService.stopMediaSession();
+      }
     };
-  }, [currentTime, duration, animeInfo, animeId, episodeId, episodeNumber, category, addToHistory]);
+  }, [currentTime, duration, animeInfo, animeId, episodeId, episodeNumber, category, addToHistory, mediaSessionActive]);
+
+  // Update media session when playback state changes
+  useEffect(() => {
+    if (mediaSessionActive && animeInfo) {
+      const episodeTitleText = episodeTitle as string || `Episode ${episodeNumber}`;
+      const animeTitleText = animeInfo.title || (title as string) || 'Unknown Anime';
+      
+      mediaSessionService.updateMediaSession({
+        title: episodeTitleText,
+        episodeTitle: episodeTitleText,
+        animeTitle: animeTitleText,
+        isPlaying: isPlaying,
+        currentTime: currentTime,
+        duration: duration,
+        hasPrevious: currentEpisodeIndex > 0,
+        hasNext: currentEpisodeIndex < episodes.length - 1,
+      });
+    }
+  }, [mediaSessionActive, animeInfo, episodeTitle, episodeNumber, title, isPlaying, currentTime, duration, currentEpisodeIndex, episodes.length]);
+
+  // Set up notification listener
+  useEffect(() => {
+    console.log('🔔 Setting up notification listener with callbacks:', {
+      hasPrevious: currentEpisodeIndex > 0,
+      hasNext: currentEpisodeIndex < episodes.length - 1,
+      currentEpisodeIndex,
+      episodesLength: episodes.length
+    });
+
+    const notificationListener = mediaSessionService.setupNotificationListener(
+      () => {
+        console.log('🔔 Previous episode callback triggered');
+        handlePreviousEpisode();
+      },
+      () => {
+        console.log('🔔 Next episode callback triggered');
+        handleNextEpisode();
+      }
+    );
+
+    return () => {
+      notificationListener.remove();
+    };
+  }, [handlePreviousEpisode, handleNextEpisode, currentEpisodeIndex, episodes.length]);
+
+  // Periodic check to restore notification if it was dismissed
+  useEffect(() => {
+    if (!mediaSessionActive) return;
+
+    const checkInterval = setInterval(async () => {
+      const isActive = await mediaSessionService.checkNotificationStatus();
+      if (!isActive && !notificationRestored) {
+        console.log('Notification was dismissed, restoring...');
+        const restored = await mediaSessionService.restoreNotification();
+        if (restored) {
+          setNotificationRestored(true);
+          // Reset the flag after 5 seconds
+          setTimeout(() => setNotificationRestored(false), 5000);
+        }
+      }
+    }, 10000); // Check every 10 seconds
+
+    return () => {
+      clearInterval(checkInterval);
+    };
+  }, [mediaSessionActive, notificationRestored]);
+
+  // Live time updates for notification (every 5 seconds)
+  useEffect(() => {
+    if (!mediaSessionActive || !animeInfo) return;
+
+    const timeUpdateInterval = setInterval(() => {
+      const episodeTitleText = episodeTitle as string || `Episode ${episodeNumber}`;
+      const animeTitleText = animeInfo.title || (title as string) || 'Unknown Anime';
+      
+      mediaSessionService.updateMediaSession({
+        title: episodeTitleText,
+        episodeTitle: episodeTitleText,
+        animeTitle: animeTitleText,
+        isPlaying: isPlaying,
+        currentTime: currentTime,
+        duration: duration,
+        hasPrevious: currentEpisodeIndex > 0,
+        hasNext: currentEpisodeIndex < episodes.length - 1,
+      });
+    }, 5000); // Update every 5 seconds for live time
+
+    return () => {
+      clearInterval(timeUpdateInterval);
+    };
+  }, [mediaSessionActive, animeInfo, episodeTitle, episodeNumber, title, isPlaying, currentTime, duration, currentEpisodeIndex, episodes.length]);
+
+  // Manual restore notification function
+  const handleRestoreNotification = async () => {
+    try {
+      const restored = await mediaSessionService.restoreNotification();
+      if (restored) {
+        setNotificationRestored(true);
+        setTimeout(() => setNotificationRestored(false), 3000);
+      }
+    } catch (error) {
+      console.error('Failed to restore notification:', error);
+    }
+  };
 
   // Define handleSeek before it's used in useEffect
   const handleSeek = async (value: number) => {
@@ -1962,7 +2098,12 @@ export default function WatchEpisode() {
     savedQualityPosition: savedPosition,
     qualities: qualities,
     selectedQuality: selectedQuality,
-    onQualityChange: handleQualityChange
+    onQualityChange: handleQualityChange,
+    // Episode navigation props
+    onPreviousEpisode: handlePreviousEpisode,
+    onNextEpisode: handleNextEpisode,
+    hasPreviousEpisode: currentEpisodeIndex > 0,
+    hasNextEpisode: currentEpisodeIndex < episodes.length - 1
   }), [
     streamingUrl,
     videoHeaders,
@@ -1981,7 +2122,11 @@ export default function WatchEpisode() {
     subtitles,
     handleSkipIntro,
     handleSkipOutro,
-    selectedServer
+    selectedServer,
+    handlePreviousEpisode,
+    handleNextEpisode,
+    currentEpisodeIndex,
+    episodes.length
   ]);
 
   // Add control visibility timeout
@@ -2244,11 +2389,20 @@ export default function WatchEpisode() {
 
   // Handle previous episode navigation
   const handlePreviousEpisode = useCallback(() => {
-    if (isNavigating.current) return;
+    console.log('🔔 handlePreviousEpisode called, currentEpisodeIndex:', currentEpisodeIndex);
+    console.log('🔔 isNavigating.current:', isNavigating.current);
+    
+    if (isNavigating.current) {
+      console.log('🔔 Already navigating, skipping');
+      return;
+    }
     
     if (currentEpisodeIndex > 0) {
+      console.log('🔔 Navigating to previous episode');
       isNavigating.current = true;
       const prevEpisode = episodes[currentEpisodeIndex - 1];
+      console.log('🔔 Previous episode:', prevEpisode);
+      
       router.push({
         pathname: "/anime/watch/[episodeId]",
         params: {
@@ -2261,16 +2415,28 @@ export default function WatchEpisode() {
           resumeTime: "0" // Force start from beginning
         }
       });
+    } else {
+      console.log('🔔 No previous episode available');
     }
   }, [currentEpisodeIndex, episodes, router, animeId, animeInfo, title, category]);
 
   // Handle next episode navigation
   const handleNextEpisode = useCallback(() => {
-    if (isNavigating.current) return;
+    console.log('🔔 handleNextEpisode called, currentEpisodeIndex:', currentEpisodeIndex);
+    console.log('🔔 episodes.length:', episodes.length);
+    console.log('🔔 isNavigating.current:', isNavigating.current);
+    
+    if (isNavigating.current) {
+      console.log('🔔 Already navigating, skipping');
+      return;
+    }
     
     if (currentEpisodeIndex < episodes.length - 1) {
+      console.log('🔔 Navigating to next episode');
       isNavigating.current = true;
       const nextEpisode = episodes[currentEpisodeIndex + 1];
+      console.log('🔔 Next episode:', nextEpisode);
+      
       router.push({
         pathname: "/anime/watch/[episodeId]",
         params: {
@@ -2283,6 +2449,8 @@ export default function WatchEpisode() {
           resumeTime: "0" // Force start from beginning
         }
       });
+    } else {
+      console.log('🔔 No next episode available');
     }
   }, [currentEpisodeIndex, episodes, router, animeId, animeInfo, title, category]);
 
@@ -2547,6 +2715,17 @@ export default function WatchEpisode() {
                   onPress={handleShowComments}
                 >
                   <MaterialIcons name="comment" size={20} color="#fff" />
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.actionButton, notificationRestored && styles.restoredButton]}
+                  onPress={handleRestoreNotification}
+                >
+                  <MaterialIcons 
+                    name={notificationRestored ? "check" : "notifications"} 
+                    size={20} 
+                    color={notificationRestored ? "#4CAF50" : "#fff"} 
+                  />
                 </TouchableOpacity>
 
                 <TouchableOpacity 
@@ -3688,5 +3867,10 @@ const styles = StyleSheet.create({
   selectedBatchDropdownText: {
     color: '#f4511e',
     fontWeight: '600',
+  },
+  restoredButton: {
+    backgroundColor: '#4CAF5011',
+    borderColor: '#4CAF50',
+    borderWidth: 1,
   },
 });

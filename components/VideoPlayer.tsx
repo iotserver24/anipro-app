@@ -61,6 +61,11 @@ interface VideoPlayerProps {
   savedQualityPosition?: number;
   qualities?: Quality[];
   selectedQuality?: string;
+  // Episode navigation props
+  onPreviousEpisode?: () => void;
+  onNextEpisode?: () => void;
+  hasPreviousEpisode?: boolean;
+  hasNextEpisode?: boolean;
 }
 
 interface APIEpisode {
@@ -160,6 +165,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   qualities = [],
   selectedQuality = 'auto',
   onQualityChange,
+  // Episode navigation props
+  onPreviousEpisode,
+  onNextEpisode,
+  hasPreviousEpisode = false,
+  hasNextEpisode = false,
 }) => {
   // Use textTracks from source, filter out 'thumbnails' tracks once, and set type to 'vtt'
   const textTracks = (source.textTracks || []).filter(track => {
@@ -1236,6 +1246,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           selectedSubtitle={selectedSubtitle}
           onSubtitleChange={handleSubtitleChange}
           onSubtitleSettingsPress={() => setShowSubtitleSettings(true)}
+          // Episode navigation props
+          onPreviousEpisode={onPreviousEpisode}
+          onNextEpisode={onNextEpisode}
+          hasPreviousEpisode={hasPreviousEpisode}
+          hasNextEpisode={hasNextEpisode}
         />
       </View>
       )}

@@ -26,6 +26,11 @@ interface ControlsOverlayProps {
   selectedSubtitle?: string;
   onSubtitleChange: (subtitle: string | null) => void;
   onSubtitleSettingsPress?: () => void;
+  // Episode navigation props
+  onPreviousEpisode?: () => void;
+  onNextEpisode?: () => void;
+  hasPreviousEpisode?: boolean;
+  hasNextEpisode?: boolean;
 }
 
 // Format time helper function
@@ -72,6 +77,11 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
   selectedSubtitle,
   onSubtitleChange,
   onSubtitleSettingsPress,
+  // Episode navigation props
+  onPreviousEpisode,
+  onNextEpisode,
+  hasPreviousEpisode = false,
+  hasNextEpisode = false,
 }) => {
   const [showSpeedOptions, setShowSpeedOptions] = useState(false);
   const [showQualityOptions, setShowQualityOptions] = useState(false);
@@ -237,6 +247,28 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
 
       {/* Center controls with skip and play/pause */}
       <View style={styles.centerControls}>
+        {/* Episode navigation controls - only show in fullscreen */}
+        {isFullscreen && (
+          <>
+            <TouchableOpacity
+              style={[styles.episodeNavButton, !hasPreviousEpisode && styles.disabledEpisodeNavButton]}
+              onPress={onPreviousEpisode}
+              activeOpacity={0.5}
+              disabled={!hasPreviousEpisode}
+              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+            >
+              <MaterialIcons 
+                name="skip-previous" 
+                size={32} 
+                color={hasPreviousEpisode ? "white" : "rgba(255,255,255,0.3)"} 
+              />
+              <Text style={[styles.episodeNavText, !hasPreviousEpisode && styles.disabledEpisodeNavText]}>
+                Prev
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
+
         <TouchableOpacity
           style={styles.skipBackwardButton}
           onPress={() => onSeek(Math.max(0, currentTime - 10))}
@@ -268,6 +300,28 @@ const ControlsOverlay: React.FC<ControlsOverlayProps> = ({
         >
           <MaterialIcons name="forward-10" size={28} color="white" />
         </TouchableOpacity>
+
+        {/* Episode navigation controls - only show in fullscreen */}
+        {isFullscreen && (
+          <>
+            <TouchableOpacity
+              style={[styles.episodeNavButton, !hasNextEpisode && styles.disabledEpisodeNavButton]}
+              onPress={onNextEpisode}
+              activeOpacity={0.5}
+              disabled={!hasNextEpisode}
+              hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+            >
+              <MaterialIcons 
+                name="skip-next" 
+                size={32} 
+                color={hasNextEpisode ? "white" : "rgba(255,255,255,0.3)"} 
+              />
+              <Text style={[styles.episodeNavText, !hasNextEpisode && styles.disabledEpisodeNavText]}>
+                Next
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
       </View>
 
       {/* Bottom controls with progress bar */}
@@ -494,7 +548,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: 50,
+    gap: 30,
   },
   playPauseButton: {
     width: 56,
@@ -648,6 +702,39 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  episodeNavButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(244, 81, 30, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+    flexDirection: "column",
+    gap: 2,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  disabledEpisodeNavButton: {
+    backgroundColor: "rgba(0,0,0,0.4)",
+    opacity: 0.5,
+  },
+  episodeNavText: {
+    color: "white",
+    fontSize: 10,
+    fontWeight: "600",
+    textShadowColor: "rgba(0,0,0,0.75)",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+  },
+  disabledEpisodeNavText: {
+    color: "rgba(255,255,255,0.3)",
   },
 });
 

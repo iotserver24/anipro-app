@@ -192,6 +192,7 @@ export default function MyList() {
         </View>
       ) : (
         <FlatList
+          key={`flatlist-${responsive.isLandscape ? 3 : 2}`}
           data={myList}
           renderItem={renderAnimeCard}
           keyExtractor={(item) => item.id}
