@@ -2537,6 +2537,13 @@ export default function WatchEpisode() {
 
                 <TouchableOpacity 
                   style={styles.actionButton}
+                  onPress={() => setIsAnimeInfoVisible(!isAnimeInfoVisible)}
+                >
+                  <MaterialIcons name="info" size={20} color="#fff" />
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.actionButton}
                   onPress={handleShowComments}
                 >
                   <MaterialIcons name="comment" size={20} color="#fff" />
@@ -2586,6 +2593,19 @@ export default function WatchEpisode() {
                   </TouchableOpacity>
                 </View>
               </View>
+
+              {/* Anime Info Section */}
+              {isAnimeInfoVisible && (
+                <AnimeInfo 
+                  animeInfo={animeInfo} 
+                  onNavigateToAnime={() => {
+                    router.push({
+                      pathname: "/anime/[id]",
+                      params: { id: animeId }
+                    });
+                  }}
+                />
+              )}
 
               {/* Clean Episode Grid */}
               <View style={styles.episodeGridContainer}>
@@ -3503,6 +3523,7 @@ const styles = StyleSheet.create({
   serverSelectorClean: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#1a1a1a',
     marginHorizontal: 16,
     marginBottom: 12,
@@ -3538,7 +3559,7 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   episodeGridContainer: {
-    backgroundColor: '#1a1a1a',
+    backgroundColor: 'rgba(26, 26, 26, 0.5)',
     marginHorizontal: 16,
     marginBottom: 16,
     borderRadius: 12,
@@ -3589,7 +3610,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   episodeGridScroll: {
-    maxHeight: 200,
+    maxHeight: 300,
   },
   episodeGridContent: {
     paddingBottom: 8,
