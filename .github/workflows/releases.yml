@@ -1,23 +1,19 @@
 name: Build and Release Android App
 
 on:
-  push:
-    branches:
-      - main
-      - master
-    paths:
-      - 'constants/appConfig.ts'
-      - 'android/**'
-      - 'app/**'
-      - '.github/workflows/**'
   workflow_dispatch:
     inputs:
       version:
         description: 'Version number (e.g., 2.26.3)'
         required: false
+        type: string
       build_number:
         description: 'Build number'
         required: false
+        type: number
+
+permissions:
+  contents: write  # Required to create releases and upload assets
 
 jobs:
   build:
