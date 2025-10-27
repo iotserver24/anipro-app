@@ -425,18 +425,24 @@ const extractQualities = async (m3u8Url: string, headers?: {[key: string]: strin
   }
 };
 
-// Add this function to sort episodes relative to current episode
-const sortEpisodesByProximity = (episodes: APIEpisode[], currentEpisodeId: string) => {
-  const currentIndex = episodes.findIndex(ep => ep.id === currentEpisodeId);
-  if (currentIndex === -1) return episodes;
+// Add this function to get episodes for a specific batch
+const getEpisodesForBatch = (episodes: APIEpisode[], batchNumber: number) => {
+  const batchStart = (batchNumber - 1) * 50 + 1;
+  const batchEnd = batchNumber * 50;
+  
+  return episodes
+    .filter(episode => episode.number >= batchStart && episode.number <= batchEnd)
+    .sort((a, b) => a.number - b.number);
+};
 
-  // Split episodes into before and after current
-  const beforeCurrent = episodes.slice(0, currentIndex);
-  const afterCurrent = episodes.slice(currentIndex + 1);
-  const current = episodes[currentIndex];
-
-  // Combine in order: after current, current, before current
-  return [current, ...afterCurrent, ...beforeCurrent];
+// Add this function to get all available batches
+const getAvailableBatches = (episodes: APIEpisode[]) => {
+  if (episodes.length === 0) return [];
+  
+  const maxEpisodeNumber = Math.max(...episodes.map(ep => ep.number));
+  const totalBatches = Math.ceil(maxEpisodeNumber / 50);
+  
+  return Array.from({ length: totalBatches }, (_, i) => i + 1);
 };
 
 // Memoize the EpisodeControls component
@@ -892,6 +898,15 @@ export default function WatchEpisode() {
   const [lastServerPosition, setLastServerPosition] = useState<number>(0);
   const [downloadOptions, setDownloadOptions] = useState<{ url: string; quality: string }[] | null>(null);
   const [showDownloadOptions, setShowDownloadOptions] = useState(false);
+  const [selectedBatch, setSelectedBatch] = useState<number>(1);
+  const [showBatchDropdown, setShowBatchDropdown] = useState(false);
+
+  // Set initial batch based on current episode
+  useEffect(() => {
+    const currentEpisodeNumber = Number(episodeNumber) || 1;
+    const currentBatch = Math.ceil(currentEpisodeNumber / 50);
+    setSelectedBatch(currentBatch);
+  }, [episodeNumber]);
 
   useEffect(() => {
     // If resumeTime is provided, use it directly and skip getting from history
@@ -1084,7 +1099,7 @@ export default function WatchEpisode() {
             const filteredByCategory = allEpisodes.filter(ep => 
               currentCategory === 'dub' ? ep.isDubbed : ep.isSubbed
             );
-            setFilteredEpisodes(sortEpisodesByProximity(filteredByCategory, episodeId));
+            setFilteredEpisodes(sortEpisodesByBatches(filteredByCategory, episodeId));
             const index = filteredByCategory.findIndex(ep => ep.id === episodeId);
             setCurrentEpisodeIndex(index);
           }
@@ -2103,26 +2118,23 @@ export default function WatchEpisode() {
 
   // Update the useEffect that initializes filtered episodes
   useEffect(() => {
-    const sortedEpisodes = sortEpisodesByProximity(
-      episodes.filter(ep => categoryAsSubOrDub === 'dub' ? ep.isDubbed : ep.isSubbed),
-      episodeId as string
-    );
-    setFilteredEpisodes(sortedEpisodes);
-  }, [episodes, episodeId, categoryAsSubOrDub]);
+    const categoryFilteredEpisodes = episodes.filter(ep => categoryAsSubOrDub === 'dub' ? ep.isDubbed : ep.isSubbed);
+    const batchEpisodes = getEpisodesForBatch(categoryFilteredEpisodes, selectedBatch);
+    setFilteredEpisodes(batchEpisodes);
+  }, [episodes, episodeId, categoryAsSubOrDub, selectedBatch]);
 
-  // Update the search handler to maintain sub/dub filtering
+  // Update the search handler to maintain sub/dub filtering and batch selection
   const handleSearch = (query: string) => {
     setSearchQuery(query);
+    const categoryFilteredEpisodes = episodes.filter(ep => categoryAsSubOrDub === 'dub' ? ep.isDubbed : ep.isSubbed);
+    
     if (!query.trim()) {
-      setFilteredEpisodes(sortEpisodesByProximity(
-        episodes.filter(ep => categoryAsSubOrDub === 'dub' ? ep.isDubbed : ep.isSubbed),
-        episodeId as string
-      ));
+      const batchEpisodes = getEpisodesForBatch(categoryFilteredEpisodes, selectedBatch);
+      setFilteredEpisodes(batchEpisodes);
       return;
     }
     
-    const filtered = episodes
-      .filter(ep => categoryAsSubOrDub === 'dub' ? ep.isDubbed : ep.isSubbed)
+    const filtered = categoryFilteredEpisodes
       .filter(episode => 
         episode.number.toString().includes(query) ||
         episode.title?.toLowerCase().includes(query.toLowerCase())
@@ -2582,11 +2594,24 @@ export default function WatchEpisode() {
                     {categoryAsSubOrDub === 'dub' ? 'Dubbed' : 'Subbed'}
                   </Text>
                   <View style={styles.episodeGridControls}>
-                    <View style={styles.episodeRangeContainer}>
+                    <TouchableOpacity 
+                      style={styles.episodeRangeContainer}
+                      onPress={() => setShowBatchDropdown(!showBatchDropdown)}
+                    >
                       <MaterialIcons name="list" size={16} color="#666" />
-                      <Text style={styles.episodeRangeText}>EPS: 1-{episodes.length}</Text>
-                      <MaterialIcons name="keyboard-arrow-down" size={16} color="#666" />
-                    </View>
+                      <Text style={styles.episodeRangeText}>
+                        {(() => {
+                          const batchStart = (selectedBatch - 1) * 50 + 1;
+                          const batchEnd = Math.min(selectedBatch * 50, episodes.length);
+                          return `BATCH ${selectedBatch}: ${batchStart}-${batchEnd}`;
+                        })()}
+                      </Text>
+                      <MaterialIcons 
+                        name={showBatchDropdown ? "keyboard-arrow-up" : "keyboard-arrow-down"} 
+                        size={16} 
+                        color="#666" 
+                      />
+                    </TouchableOpacity>
                     <View style={styles.episodeGridSearch}>
                       <MaterialIcons name="search" size={16} color="#666" />
                       <TextInput
@@ -2599,6 +2624,43 @@ export default function WatchEpisode() {
                     </View>
                   </View>
                 </View>
+
+                {/* Batch Dropdown */}
+                {showBatchDropdown && (
+                  <View style={styles.batchDropdownContainer}>
+                    <ScrollView style={styles.batchDropdownScroll} showsVerticalScrollIndicator={false}>
+                      {getAvailableBatches(episodes).map((batchNumber) => {
+                        const batchStart = (batchNumber - 1) * 50 + 1;
+                        const batchEnd = Math.min(batchNumber * 50, episodes.length);
+                        const isSelected = batchNumber === selectedBatch;
+                        
+                        return (
+                          <TouchableOpacity
+                            key={batchNumber}
+                            style={[
+                              styles.batchDropdownItem,
+                              isSelected && styles.selectedBatchDropdownItem
+                            ]}
+                            onPress={() => {
+                              setSelectedBatch(batchNumber);
+                              setShowBatchDropdown(false);
+                            }}
+                          >
+                            <Text style={[
+                              styles.batchDropdownText,
+                              isSelected && styles.selectedBatchDropdownText
+                            ]}>
+                              Batch {batchNumber}: {batchStart}-{batchEnd}
+                            </Text>
+                            {isSelected && (
+                              <MaterialIcons name="check" size={16} color="#f4511e" />
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+                )}
 
                 <ScrollView 
                   style={styles.episodeGridScroll}
@@ -3502,6 +3564,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    backgroundColor: '#2a2a2a',
   },
   episodeRangeText: {
     color: '#666',
@@ -3564,5 +3630,42 @@ const styles = StyleSheet.create({
     height: 16,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // Batch dropdown styles
+  batchDropdownContainer: {
+    backgroundColor: '#2a2a2a',
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    maxHeight: 120,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
+  batchDropdownScroll: {
+    maxHeight: 120,
+  },
+  batchDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  selectedBatchDropdownItem: {
+    backgroundColor: '#f4511e11',
+  },
+  batchDropdownText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  selectedBatchDropdownText: {
+    color: '#f4511e',
+    fontWeight: '600',
   },
 });
