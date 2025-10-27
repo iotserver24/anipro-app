@@ -860,6 +860,8 @@ export default function WatchEpisode() {
   });
   const [videoHeaders, setVideoHeaders] = useState<{[key: string]: string}>({});
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [wasFullscreenBeforeNavigation, setWasFullscreenBeforeNavigation] = useState(false);
+  const [isNavigatingEpisode, setIsNavigatingEpisode] = useState(false);
   const [videoData, setVideoData] = useState<VideoResponse | null>(null);
   const [showControls, setShowControls] = useState(true);
   const [playerDimensions, setPlayerDimensions] = useState({
@@ -1026,6 +1028,11 @@ export default function WatchEpisode() {
     // Cleanup function to deactivate keep awake when leaving the screen
     return () => {
       deactivateKeepAwake();
+      
+      // Unlock orientation when component unmounts
+      ScreenOrientation.unlockAsync().catch((error) => {
+        console.error('🔔 Failed to unlock orientation on cleanup:', error);
+      });
     };
   }, []);
 
@@ -2388,9 +2395,10 @@ export default function WatchEpisode() {
   }, []);
 
   // Handle previous episode navigation
-  const handlePreviousEpisode = useCallback(() => {
+  const handlePreviousEpisode = useCallback(async () => {
     console.log('🔔 handlePreviousEpisode called, currentEpisodeIndex:', currentEpisodeIndex);
     console.log('🔔 isNavigating.current:', isNavigating.current);
+    console.log('🔔 isFullscreen:', isFullscreen);
     
     if (isNavigating.current) {
       console.log('🔔 Already navigating, skipping');
@@ -2400,6 +2408,22 @@ export default function WatchEpisode() {
     if (currentEpisodeIndex > 0) {
       console.log('🔔 Navigating to previous episode');
       isNavigating.current = true;
+      setIsNavigatingEpisode(true);
+      
+      // Preserve fullscreen state
+      if (isFullscreen) {
+        console.log('🔔 Preserving fullscreen state for navigation');
+        setWasFullscreenBeforeNavigation(true);
+        
+        // Lock orientation to landscape to maintain fullscreen
+        try {
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+          console.log('🔔 Orientation locked to landscape');
+        } catch (error) {
+          console.error('🔔 Failed to lock orientation:', error);
+        }
+      }
+      
       const prevEpisode = episodes[currentEpisodeIndex - 1];
       console.log('🔔 Previous episode:', prevEpisode);
       
@@ -2418,13 +2442,14 @@ export default function WatchEpisode() {
     } else {
       console.log('🔔 No previous episode available');
     }
-  }, [currentEpisodeIndex, episodes, router, animeId, animeInfo, title, category]);
+  }, [currentEpisodeIndex, episodes, router, animeId, animeInfo, title, category, isFullscreen]);
 
   // Handle next episode navigation
-  const handleNextEpisode = useCallback(() => {
+  const handleNextEpisode = useCallback(async () => {
     console.log('🔔 handleNextEpisode called, currentEpisodeIndex:', currentEpisodeIndex);
     console.log('🔔 episodes.length:', episodes.length);
     console.log('🔔 isNavigating.current:', isNavigating.current);
+    console.log('🔔 isFullscreen:', isFullscreen);
     
     if (isNavigating.current) {
       console.log('🔔 Already navigating, skipping');
@@ -2434,6 +2459,22 @@ export default function WatchEpisode() {
     if (currentEpisodeIndex < episodes.length - 1) {
       console.log('🔔 Navigating to next episode');
       isNavigating.current = true;
+      setIsNavigatingEpisode(true);
+      
+      // Preserve fullscreen state
+      if (isFullscreen) {
+        console.log('🔔 Preserving fullscreen state for navigation');
+        setWasFullscreenBeforeNavigation(true);
+        
+        // Lock orientation to landscape to maintain fullscreen
+        try {
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+          console.log('🔔 Orientation locked to landscape');
+        } catch (error) {
+          console.error('🔔 Failed to lock orientation:', error);
+        }
+      }
+      
       const nextEpisode = episodes[currentEpisodeIndex + 1];
       console.log('🔔 Next episode:', nextEpisode);
       
@@ -2452,12 +2493,40 @@ export default function WatchEpisode() {
     } else {
       console.log('🔔 No next episode available');
     }
-  }, [currentEpisodeIndex, episodes, router, animeId, animeInfo, title, category]);
+  }, [currentEpisodeIndex, episodes, router, animeId, animeInfo, title, category, isFullscreen]);
 
   // Reset navigation state when component mounts or episodeId changes
   useEffect(() => {
     isNavigating.current = false;
   }, [episodeId]);
+
+  // Restore fullscreen mode after episode navigation
+  useEffect(() => {
+    if (wasFullscreenBeforeNavigation && !isNavigatingEpisode && videoData) {
+      console.log('🔔 Restoring fullscreen mode after navigation');
+      
+      // Small delay to ensure video is loaded
+      const timer = setTimeout(async () => {
+        try {
+          setIsFullscreen(true);
+          
+          // Ensure orientation is locked to landscape
+          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+          console.log('🔔 Fullscreen restored and orientation locked');
+          
+          // Reset the flag
+          setWasFullscreenBeforeNavigation(false);
+          setIsNavigatingEpisode(false);
+        } catch (error) {
+          console.error('🔔 Failed to restore fullscreen:', error);
+          setWasFullscreenBeforeNavigation(false);
+          setIsNavigatingEpisode(false);
+        }
+      }, 1000); // 1 second delay to ensure video is ready
+      
+      return () => clearTimeout(timer);
+    }
+  }, [wasFullscreenBeforeNavigation, isNavigatingEpisode, videoData]);
 
   // Modify the handleLoad function to check if we should use the resume position
   const handleLoad = (status: VideoProgress) => {
