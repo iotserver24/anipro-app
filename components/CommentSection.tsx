@@ -287,6 +287,9 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
   const [commentCooldown, setCommentCooldown] = useState(0);
   const cooldownTimerRef = useRef<NodeJS.Timeout | null>(null);
   
+  // Add background image state
+  const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
+  
   // Add keyboard event listeners
   useEffect(() => {
     keyboardDidShowListener.current = Keyboard.addListener(
@@ -312,6 +315,22 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
   useEffect(() => {
     loadComments();
   }, [animeId, forceRefresh]);
+  
+  // Load background image
+  useEffect(() => {
+    const loadBackgroundImage = async () => {
+      try {
+        const savedImage = await AsyncStorage.getItem('backgroundImage');
+        if (savedImage) {
+          setBackgroundImage(savedImage);
+        }
+      } catch (error) {
+        console.error('Error loading background image:', error);
+      }
+    };
+    
+    loadBackgroundImage();
+  }, []);
   
   // Also load comments when the component comes into focus
   useFocusEffect(
@@ -784,11 +803,16 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={[styles.container, { backgroundColor: theme.colors.background }, fullscreen && styles.fullscreenContainer]} 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+    <ImageBackground
+      source={backgroundImage ? { uri: backgroundImage } : require('../assets/default-chat-bg.png')}
+      style={[styles.container, { backgroundColor: theme.colors.background }, fullscreen && styles.fullscreenContainer]}
+      imageStyle={styles.backgroundImage}
     >
+      <KeyboardAvoidingView 
+        style={styles.keyboardAvoidingView} 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
       {/* Comments header */}
       {!fullscreen && (
         <View style={styles.headerContainer}>
@@ -964,7 +988,8 @@ const CommentSection = ({ animeId, fullscreen = false }: CommentSectionProps) =>
         onClose={() => setShowAuthModal(false)}
         onAuthSuccess={handleAuthSuccess}
       />
-    </KeyboardAvoidingView>
+      </KeyboardAvoidingView>
+    </ImageBackground>
   );
 };
 
@@ -975,6 +1000,13 @@ const styles = StyleSheet.create({
   },
   fullscreenContainer: {
     paddingTop: 0,
+  },
+  backgroundImage: {
+    opacity: 0.1,
+    resizeMode: 'cover',
+  },
+  keyboardAvoidingView: {
+    flex: 1,
   },
   headerContainer: {
     flexDirection: 'row',
