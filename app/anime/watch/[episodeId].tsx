@@ -436,6 +436,13 @@ const getEpisodesForBatch = (episodes: APIEpisode[], batchNumber: number) => {
     .sort((a, b) => a.number - b.number);
 };
 
+// Add this function to sort episodes by batches
+const sortEpisodesByBatches = (episodes: APIEpisode[], episodeId: string) => {
+  // For now, just return episodes sorted by number
+  // This can be enhanced later for better batch organization
+  return episodes.sort((a, b) => a.number - b.number);
+};
+
 // Add this function to get all available batches
 const getAvailableBatches = (episodes: APIEpisode[]) => {
   if (episodes.length === 0) return [];
@@ -1071,7 +1078,7 @@ export default function WatchEpisode() {
   };
 
   // Modify the fetchEpisodeData function to handle server selection
-  const fetchEpisodeData = async (isServerChange = false) => {
+  const fetchEpisodeData = async (isServerChange = false, newEpisodeId?: string) => {
     // Only set main loading state if this is not a server change
     if (!isServerChange) {
       setLoading(true);
@@ -1141,7 +1148,31 @@ export default function WatchEpisode() {
       }
       
       // Get episode sources with the correct category
-      const cleanEpisodeId = (episodeId as string).split('$category=')[0];
+      const episodeIdToUse = newEpisodeId || episodeId;
+      const cleanEpisodeId = (episodeIdToUse as string).split('$category=')[0];
+      
+      // Update media session with new episode info if this is a seamless transition
+      if (newEpisodeId && isFullscreen) {
+        const targetEpisode = episodes.find(ep => ep.id === newEpisodeId);
+        if (targetEpisode) {
+          const episodeTitleText = targetEpisode.title || `Episode ${targetEpisode.number}`;
+          const animeTitleText = animeInfo?.title || (title as string) || 'Unknown Anime';
+          
+          // Update media session immediately for seamless transition
+          if (mediaSessionActive) {
+            mediaSessionService.updateMediaSession({
+              title: episodeTitleText,
+              episodeTitle: episodeTitleText,
+              animeTitle: animeTitleText,
+              isPlaying: isPlaying,
+              currentTime: 0, // Reset to 0 for new episode
+              duration: 0, // Will be updated when video loads
+              hasPrevious: episodes.findIndex(ep => ep.id === newEpisodeId) > 0,
+              hasNext: episodes.findIndex(ep => ep.id === newEpisodeId) < episodes.length - 1,
+            });
+          }
+        }
+      }
 
       // Handle different servers
       let sources;
@@ -1836,6 +1867,131 @@ export default function WatchEpisode() {
     }
   }, [mediaSessionActive, animeInfo, episodeTitle, episodeNumber, title, isPlaying, currentTime, duration, currentEpisodeIndex, episodes.length]);
 
+  // Handle previous episode navigation
+  const handlePreviousEpisode = useCallback(async () => {
+    console.log('🔔 handlePreviousEpisode called, currentEpisodeIndex:', currentEpisodeIndex);
+    console.log('🔔 isNavigating.current:', isNavigating.current);
+    console.log('🔔 isFullscreen:', isFullscreen);
+    
+    if (isNavigating.current) {
+      console.log('🔔 Already navigating, skipping');
+      return;
+    }
+    
+    if (currentEpisodeIndex > 0) {
+      console.log('🔔 Navigating to previous episode');
+      isNavigating.current = true;
+      setIsNavigatingEpisode(true);
+      
+      const prevEpisode = episodes[currentEpisodeIndex - 1];
+      console.log('🔔 Previous episode:', prevEpisode);
+      
+      // If in fullscreen, do seamless transition without any routing
+      if (isFullscreen) {
+        console.log('🔔 Seamless fullscreen transition to previous episode');
+        
+        // Update current episode index first
+        setCurrentEpisodeIndex(currentEpisodeIndex - 1);
+        
+        // Reset video state for new episode
+        setStreamingUrl(null);
+        setVideoUrl(null);
+        setVideoData(null);
+        setIsVideoReady(false);
+        setResumePosition(0);
+        setLastServerPosition(0);
+        
+        // Fetch new episode data using the previous episode's ID
+        await fetchEpisodeData(false, prevEpisode.id);
+        
+        // Reset navigation state
+        isNavigating.current = false;
+        setIsNavigatingEpisode(false);
+        
+        console.log('🔔 Seamless transition completed');
+      } else {
+        // Normal navigation for non-fullscreen mode
+        router.push({
+          pathname: "/anime/watch/[episodeId]",
+          params: {
+            episodeId: prevEpisode.id,
+            animeId: animeId as string,
+            episodeNumber: prevEpisode.number,
+            title: animeInfo?.title || (title as string) || 'Unknown Anime',
+            episodeTitle: prevEpisode.title || `Episode ${prevEpisode.number}`,
+            category: category,
+            resumeTime: "0" // Force start from beginning
+          }
+        });
+      }
+    } else {
+      console.log('🔔 No previous episode available');
+    }
+  }, [currentEpisodeIndex, episodes, router, animeId, animeInfo, title, category, isFullscreen, fetchEpisodeData]);
+
+  // Handle next episode navigation
+  const handleNextEpisode = useCallback(async () => {
+    console.log('🔔 handleNextEpisode called, currentEpisodeIndex:', currentEpisodeIndex);
+    console.log('🔔 episodes.length:', episodes.length);
+    console.log('🔔 isNavigating.current:', isNavigating.current);
+    console.log('🔔 isFullscreen:', isFullscreen);
+    
+    if (isNavigating.current) {
+      console.log('🔔 Already navigating, skipping');
+      return;
+    }
+    
+    if (currentEpisodeIndex < episodes.length - 1) {
+      console.log('🔔 Navigating to next episode');
+      isNavigating.current = true;
+      setIsNavigatingEpisode(true);
+      
+      const nextEpisode = episodes[currentEpisodeIndex + 1];
+      console.log('🔔 Next episode:', nextEpisode);
+      
+      // If in fullscreen, do seamless transition without any routing
+      if (isFullscreen) {
+        console.log('🔔 Seamless fullscreen transition to next episode');
+        
+        // Update current episode index first
+        setCurrentEpisodeIndex(currentEpisodeIndex + 1);
+        
+        // Reset video state for new episode
+        setStreamingUrl(null);
+        setVideoUrl(null);
+        setVideoData(null);
+        setIsVideoReady(false);
+        setResumePosition(0);
+        setLastServerPosition(0);
+        
+        // Fetch new episode data using the next episode's ID
+        await fetchEpisodeData(false, nextEpisode.id);
+        
+        // Reset navigation state
+        isNavigating.current = false;
+        setIsNavigatingEpisode(false);
+        
+        console.log('🔔 Seamless transition completed');
+      } else {
+        // Normal navigation for non-fullscreen mode
+        router.push({
+          pathname: "/anime/watch/[episodeId]",
+          params: {
+            episodeId: nextEpisode.id,
+            animeId: animeId as string,
+            episodeNumber: nextEpisode.number,
+            title: animeInfo?.title || (title as string) || 'Unknown Anime',
+            episodeTitle: nextEpisode.title || `Episode ${nextEpisode.number}`,
+            category: category,
+            resumeTime: "0" // Force start from beginning
+          }
+        });
+      }
+    } else {
+      console.log('🔔 No next episode available');
+    }
+  }, [currentEpisodeIndex, episodes, router, animeId, animeInfo, title, category, isFullscreen, fetchEpisodeData]);
+
   // Set up notification listener
   useEffect(() => {
     console.log('🔔 Setting up notification listener with callbacks:', {
@@ -2070,51 +2226,59 @@ export default function WatchEpisode() {
   }, [animeInfo, animeId, episodeId, episodeNumber, category, addToHistory]);
 
   // Memoize video props
-  const videoPlayerProps = useMemo(() => ({
-    source: { 
-      uri: streamingUrl || '',
-      headers: videoHeaders,
-      isZenEmbedded: selectedServer === 'zen' || selectedServer === 'softSub', // Flag for embedded players (Zen and SoftSub)
-      textTracks: subtitles.length > 0 ? subtitles
-        .filter(track => {
-          const langToCheck = track.lang || track.language || track.title || '';
-          return !langToCheck.toLowerCase().includes('thumbnails');
-        })
-        .map((track, index) => ({
-          title: track.lang || track.language || track.title || 'Unknown',
-          language: (track.lang || track.language || track.title || 'en').toLowerCase().substring(0, 2),
-          type: 'text/vtt',
-          uri: track.url,
-        })) : []
-    },
-    title: episodeTitle as string,
-    initialPosition: lastServerPosition > 0 ? lastServerPosition : resumePosition, // Use lastServerPosition if available, otherwise resumePosition
-    rate: playbackSpeed,
-    onPlaybackRateChange: handlePlaybackSpeedChange,
-    onProgress: handleVideoProgress,
-    onEnd: onVideoEnd,
-    onFullscreenChange: handleFullscreenChange,
-    style: isFullscreen ? 
-      { width: playerDimensions.width, height: playerDimensions.height, backgroundColor: '#000' } : 
-      { width: '100%', aspectRatio: 16/9, backgroundColor: '#000' },
-    intro: videoData?.intro,
-    outro: videoData?.outro,
-    onSkipIntro: handleSkipIntro,
-    onSkipOutro: handleSkipOutro,
-    isQualityChanging: isQualityChanging,
-    savedQualityPosition: savedPosition,
-    qualities: qualities,
-    selectedQuality: selectedQuality,
-    onQualityChange: handleQualityChange,
-    // Episode navigation props
-    onPreviousEpisode: handlePreviousEpisode,
-    onNextEpisode: handleNextEpisode,
-    hasPreviousEpisode: currentEpisodeIndex > 0,
-    hasNextEpisode: currentEpisodeIndex < episodes.length - 1
-  }), [
+  const videoPlayerProps = useMemo(() => {
+    // Get current episode info for display
+    const currentEpisode = episodes[currentEpisodeIndex];
+    const currentEpisodeTitle = currentEpisode?.title || `Episode ${currentEpisode?.number || episodeNumber}`;
+    
+    return {
+      source: { 
+        uri: streamingUrl || '',
+        headers: videoHeaders,
+        isZenEmbedded: selectedServer === 'zen' || selectedServer === 'softSub', // Flag for embedded players (Zen and SoftSub)
+        textTracks: subtitles.length > 0 ? subtitles
+          .filter(track => {
+            const langToCheck = track.lang || track.language || track.title || '';
+            return !langToCheck.toLowerCase().includes('thumbnails');
+          })
+          .map((track, index) => ({
+            title: track.lang || track.language || track.title || 'Unknown',
+            language: (track.lang || track.language || track.title || 'en').toLowerCase().substring(0, 2),
+            type: 'text/vtt',
+            uri: track.url,
+          })) : []
+      },
+      title: currentEpisodeTitle,
+      initialPosition: lastServerPosition > 0 ? lastServerPosition : resumePosition, // Use lastServerPosition if available, otherwise resumePosition
+      rate: playbackSpeed,
+      onPlaybackRateChange: handlePlaybackSpeedChange,
+      onProgress: handleVideoProgress,
+      onEnd: onVideoEnd,
+      onFullscreenChange: handleFullscreenChange,
+      style: isFullscreen ? 
+        { width: playerDimensions.width, height: playerDimensions.height, backgroundColor: '#000' } : 
+        { width: '100%', aspectRatio: 16/9, backgroundColor: '#000' },
+      intro: videoData?.intro,
+      outro: videoData?.outro,
+      onSkipIntro: handleSkipIntro,
+      onSkipOutro: handleSkipOutro,
+      isQualityChanging: isQualityChanging,
+      savedQualityPosition: savedPosition,
+      qualities: qualities,
+      selectedQuality: selectedQuality,
+      onQualityChange: handleQualityChange,
+      // Episode navigation props
+      onPreviousEpisode: handlePreviousEpisode,
+      onNextEpisode: handleNextEpisode,
+      hasPreviousEpisode: currentEpisodeIndex > 0,
+      hasNextEpisode: currentEpisodeIndex < episodes.length - 1
+    };
+  }, [
     streamingUrl,
     videoHeaders,
-    episodeTitle,
+    episodes,
+    currentEpisodeIndex,
+    episodeNumber,
     resumePosition,
     lastServerPosition,
     playbackSpeed,
@@ -2131,9 +2295,7 @@ export default function WatchEpisode() {
     handleSkipOutro,
     selectedServer,
     handlePreviousEpisode,
-    handleNextEpisode,
-    currentEpisodeIndex,
-    episodes.length
+    handleNextEpisode
   ]);
 
   // Add control visibility timeout
@@ -2393,107 +2555,6 @@ export default function WatchEpisode() {
       cleanup();
     };
   }, []);
-
-  // Handle previous episode navigation
-  const handlePreviousEpisode = useCallback(async () => {
-    console.log('🔔 handlePreviousEpisode called, currentEpisodeIndex:', currentEpisodeIndex);
-    console.log('🔔 isNavigating.current:', isNavigating.current);
-    console.log('🔔 isFullscreen:', isFullscreen);
-    
-    if (isNavigating.current) {
-      console.log('🔔 Already navigating, skipping');
-      return;
-    }
-    
-    if (currentEpisodeIndex > 0) {
-      console.log('🔔 Navigating to previous episode');
-      isNavigating.current = true;
-      setIsNavigatingEpisode(true);
-      
-      // Preserve fullscreen state
-      if (isFullscreen) {
-        console.log('🔔 Preserving fullscreen state for navigation');
-        setWasFullscreenBeforeNavigation(true);
-        
-        // Lock orientation to landscape to maintain fullscreen
-        try {
-          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-          console.log('🔔 Orientation locked to landscape');
-        } catch (error) {
-          console.error('🔔 Failed to lock orientation:', error);
-        }
-      }
-      
-      const prevEpisode = episodes[currentEpisodeIndex - 1];
-      console.log('🔔 Previous episode:', prevEpisode);
-      
-      router.push({
-        pathname: "/anime/watch/[episodeId]",
-        params: {
-          episodeId: prevEpisode.id,
-          animeId: animeId as string,
-          episodeNumber: prevEpisode.number,
-          title: animeInfo?.title || (title as string) || 'Unknown Anime',
-          episodeTitle: prevEpisode.title || `Episode ${prevEpisode.number}`,
-          category: category,
-          resumeTime: "0" // Force start from beginning
-        }
-      });
-    } else {
-      console.log('🔔 No previous episode available');
-    }
-  }, [currentEpisodeIndex, episodes, router, animeId, animeInfo, title, category, isFullscreen]);
-
-  // Handle next episode navigation
-  const handleNextEpisode = useCallback(async () => {
-    console.log('🔔 handleNextEpisode called, currentEpisodeIndex:', currentEpisodeIndex);
-    console.log('🔔 episodes.length:', episodes.length);
-    console.log('🔔 isNavigating.current:', isNavigating.current);
-    console.log('🔔 isFullscreen:', isFullscreen);
-    
-    if (isNavigating.current) {
-      console.log('🔔 Already navigating, skipping');
-      return;
-    }
-    
-    if (currentEpisodeIndex < episodes.length - 1) {
-      console.log('🔔 Navigating to next episode');
-      isNavigating.current = true;
-      setIsNavigatingEpisode(true);
-      
-      // Preserve fullscreen state
-      if (isFullscreen) {
-        console.log('🔔 Preserving fullscreen state for navigation');
-        setWasFullscreenBeforeNavigation(true);
-        
-        // Lock orientation to landscape to maintain fullscreen
-        try {
-          await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
-          console.log('🔔 Orientation locked to landscape');
-        } catch (error) {
-          console.error('🔔 Failed to lock orientation:', error);
-        }
-      }
-      
-      const nextEpisode = episodes[currentEpisodeIndex + 1];
-      console.log('🔔 Next episode:', nextEpisode);
-      
-      router.push({
-        pathname: "/anime/watch/[episodeId]",
-        params: {
-          episodeId: nextEpisode.id,
-          animeId: animeId as string,
-          episodeNumber: nextEpisode.number,
-          title: animeInfo?.title || (title as string) || 'Unknown Anime',
-          episodeTitle: nextEpisode.title || `Episode ${nextEpisode.number}`,
-          category: category,
-          resumeTime: "0" // Force start from beginning
-        }
-      });
-    } else {
-      console.log('🔔 No next episode available');
-    }
-  }, [currentEpisodeIndex, episodes, router, animeId, animeInfo, title, category, isFullscreen]);
 
   // Reset navigation state when component mounts or episodeId changes
   useEffect(() => {

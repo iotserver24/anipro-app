@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, Image, Linking } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, Image } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { useTheme } from '../hooks/useTheme';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -25,6 +25,7 @@ export default function ScheduleScreen() {
   const [animes, setAnimes] = useState<ScheduledAnime[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState<number>(Math.floor(Date.now() / 1000));
+  const [triggering, setTriggering] = useState(false);
 
   // Live timer to update countdowns every second
   useEffect(() => {
@@ -60,6 +61,20 @@ export default function ScheduleScreen() {
   const onRefresh = () => {
     setRefreshing(true);
     fetchSchedule();
+  };
+
+  const triggerSchedule = async () => {
+    try {
+      setTriggering(true);
+      await fetch('https://she.anisurge.me/api/schedule/trigger', {
+        method: 'POST',
+      });
+    } catch (e) {
+      // no-op; rely on fetchSchedule state to reflect availability
+    } finally {
+      setTriggering(false);
+      fetchSchedule();
+    }
   };
 
   const renderAnime = ({ item }: { item: ScheduledAnime }) => {
@@ -137,10 +152,11 @@ export default function ScheduleScreen() {
             </Text>
             <TouchableOpacity 
               style={styles.triggerButton} 
-              onPress={() => Linking.openURL('https://sc.anisurge.me/schedule-trigger')}
+              onPress={triggerSchedule}
+              disabled={triggering}
             >
               <MaterialIcons name="open-in-new" size={20} color="#fff" />
-              <Text style={styles.triggerText}>Open Schedule Trigger</Text>
+              <Text style={styles.triggerText}>{triggering ? 'Triggering…' : 'Trigger Schedule'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.retryButton} onPress={fetchSchedule}>
               <MaterialIcons name="refresh" size={20} color="#fff" />
@@ -161,10 +177,11 @@ export default function ScheduleScreen() {
                 </Text>
                 <TouchableOpacity 
                   style={styles.triggerButton} 
-                  onPress={() => Linking.openURL('https://sc.anisurge.me/schedule-trigger')}
+                  onPress={triggerSchedule}
+                  disabled={triggering}
                 >
                   <MaterialIcons name="open-in-new" size={20} color="#fff" />
-                  <Text style={styles.triggerText}>Check Schedule Trigger</Text>
+                  <Text style={styles.triggerText}>{triggering ? 'Triggering…' : 'Trigger Schedule'}</Text>
                 </TouchableOpacity>
               </View>
             }
