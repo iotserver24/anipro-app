@@ -1,0 +1,184 @@
+name: Build and Release Android App
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 2.26.3)'
+        required: false
+        type: string
+      build_number:
+        description: 'Build number'
+        required: false
+        type: number
+
+permissions:
+  contents: write  # Required to create releases and upload assets
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Extract version from appConfig.ts
+        id: version
+        run: |
+          VERSION=$(grep -oP "VERSION:\s*['\"]([^'\"]+)['\"]" constants/appConfig.ts | grep -oP "['\"]([^'\"]+)['\"]" | tr -d "'\"")
+          VERSION_CODE=$(grep -oP "VERSION_CODE:\s*(\d+)" constants/appConfig.ts | grep -oP "\d+")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION (Build: $VERSION_CODE)"
+
+      - name: Update version (if manually triggered)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          BUILD_NUMBER="${{ github.event.inputs.build_number }}"
+          if [ -n "$BUILD_NUMBER" ]; then
+            node scripts/update-version.js "$VERSION" "$BUILD_NUMBER"
+          fi
+
+      - name: Create assets directory
+        run: mkdir -p android/app/src/main/assets
+
+      - name: Bundle JavaScript
+        run: |
+          npx react-native bundle \
+            --platform android \
+            --dev false \
+            --entry-file app/_layout.tsx \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/assets
+
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
+      - name: Build Release APKs
+        working-directory: android
+        run: ./gradlew clean assembleRelease
+
+      - name: Rename APKs
+        id: rename
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          VERSION_CODE="${{ steps.version.outputs.version_code }}"
+          
+          APK_DIR="android/app/build/outputs/apk/release"
+          OUTPUT_DIR="releases/${VERSION}-${VERSION_CODE}"
+          
+          mkdir -p "$OUTPUT_DIR"
+          
+          # Rename and move APKs
+          declare -A apk_map=(
+            ["app-arm64-v8a-release.apk"]="Anisurge-arm64-v8a.apk"
+            ["app-armeabi-v7a-release.apk"]="Anisurge-armeabi-v7a.apk"
+            ["app-x86-release.apk"]="Anisurge-x86.apk"
+            ["app-x86_64-release.apk"]="Anisurge-x86_64.apk"
+            ["app-universal-release.apk"]="Anisurge-universal.apk"
+          )
+          
+          for original in "${!apk_map[@]}"; do
+            new_name="${apk_map[$original]}"
+            if [ -f "$APK_DIR/$original" ]; then
+              cp "$APK_DIR/$original" "$OUTPUT_DIR/$new_name"
+              echo "✓ Copied: $new_name"
+            else
+              echo "⚠ Not found: $original"
+            fi
+          done
+          
+          # Create version info
+          cat > "$OUTPUT_DIR/version-info.txt" <<EOF
+          Version: $VERSION
+          Version Code: $VERSION_CODE
+          Release Date: $(date '+%Y-%m-%d %H:%M:%S')
+          Commit: ${{ github.sha }}
+          EOF
+          
+          echo "output_dir=$OUTPUT_DIR" >> $GITHUB_OUTPUT
+          echo "tag_name=v${VERSION}-${VERSION_CODE}" >> $GITHUB_OUTPUT
+
+      - name: Create and push tag
+        run: |
+          TAG_NAME="${{ steps.rename.outputs.tag_name }}"
+          echo "Preparing tag: $TAG_NAME"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch --tags
+          
+          # Check if tag exists and delete it if it does
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Tag $TAG_NAME already exists. Deleting old tag to create new one."
+            git tag -d "$TAG_NAME"
+            git push origin --delete "$TAG_NAME" || true
+            echo "Old tag deleted successfully"
+          fi
+          
+          git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+          git push origin "$TAG_NAME"
+          echo "New tag $TAG_NAME created and pushed"
+
+      - name: Delete existing release if present
+        continue-on-error: true
+        run: |
+          TAG_NAME="${{ steps.rename.outputs.tag_name }}"
+          gh release delete "$TAG_NAME" --yes || echo "No existing release to delete"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.rename.outputs.tag_name }}
+          target_commitish: ${{ github.sha }}
+          name: Anisurge v${{ steps.version.outputs.version }} (Build ${{ steps.version.outputs.version_code }})
+          body: |
+            ## 🚀 Anisurge v${{ steps.version.outputs.version }}
+            
+            **Build Number:** ${{ steps.version.outputs.version_code }}
+            **Release Date:** ${{ github.event.head_commit.timestamp }}
+            **Commit:** ${{ github.sha }}
+            
+            ### 📱 Download APKs
+            
+            Choose the appropriate APK for your device:
+            - **arm64-v8a**: Modern 64-bit ARM devices (recommended for most)
+            - **armeabi-v7a**: Older 32-bit ARM devices
+            - **x86_64**: 64-bit x86 devices (emulators, some tablets)
+            - **x86**: 32-bit x86 devices
+            - **universal**: Works on all devices (larger file size)
+            
+            ### 📝 Changes
+            ${{ github.event.head_commit.message }}
+          files: |
+            ${{ steps.rename.outputs.output_dir }}/Anisurge-*.apk
+            ${{ steps.rename.outputs.output_dir }}/version-info.txt
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean up artifacts
+        if: always()
+        run: |
+          rm -rf android/app/build/outputs/apk
+          rm -rf releases
+          echo "✓ Artifacts cleaned up"
