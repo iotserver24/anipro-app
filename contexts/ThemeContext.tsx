@@ -149,6 +149,26 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       if (savedGlobalCustomMedia) {
         setGlobalCustomBackgroundState(JSON.parse(savedGlobalCustomMedia));
       }
+
+      // Ensure we pick up persistent anisurge-bg from user-selected folder (SAF)
+      try {
+        const APP_STORAGE_FOLDER_KEY = 'APP_STORAGE_FOLDER_URI';
+        const folderUri = await AsyncStorage.getItem(APP_STORAGE_FOLDER_KEY);
+        if (folderUri) {
+          const entries = await FileSystem.StorageAccessFramework.readDirectoryAsync(folderUri);
+          const existing = entries.find(u => /anisurge-bg\.(jpg|jpeg|png|webp)$/i.test(u));
+          if (existing) {
+            // If not already set or URI differs, set and persist
+            if (!globalCustomBackground || globalCustomBackground.uri !== existing) {
+              const media = { type: 'image' as const, uri: existing, size: 0, opacity: globalCustomBackground?.opacity ?? 0.3 };
+              setGlobalCustomBackgroundState(media);
+              await AsyncStorage.setItem('globalCustomBackground', JSON.stringify(media));
+            }
+          }
+        }
+      } catch (e) {
+        // Non-fatal; continue
+      }
       
       // Cleanup orphaned images after loading theme data
       await cleanupOrphanedImages();

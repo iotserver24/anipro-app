@@ -12,6 +12,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useTheme } from '../hooks/useTheme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface BackgroundMediaSelectorProps {
   onMediaSelected: (media: { type: 'image' | 'video'; uri: string; size: number; opacity?: number }) => void;
@@ -39,52 +40,53 @@ export default function BackgroundMediaSelector({
     return size <= maxSize;
   };
 
-  // Generate unique filename to prevent conflicts
-  const generateUniqueFilename = (originalUri: string): string => {
-    const timestamp = Date.now();
-    const randomSuffix = Math.random().toString(36).substring(2, 8);
-    const extension = originalUri.split('.').pop()?.toLowerCase() || 'jpg';
-    return `custom_theme_${timestamp}_${randomSuffix}.${extension}`;
+  // Get extension from uri
+  const getImageExtension = (originalUri: string): string => {
+    const ext = originalUri.split('.').pop()?.toLowerCase();
+    if (!ext) return 'jpg';
+    if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return ext;
+    return 'jpg';
   };
 
-  // Copy image to app document directory for permanent storage with validation
-  const copyImageToAppStorage = async (originalUri: string): Promise<string> => {
-    try {
-      // Ensure document directory exists
-      const documentDir = FileSystem.documentDirectory;
-      if (!documentDir) {
-        throw new Error('Document directory not available');
+  // Save image into user-selected storage folder as anisurge-bg.[ext] via SAF
+  const saveImageToUserFolder = async (originalUri: string): Promise<string> => {
+    const APP_STORAGE_FOLDER_KEY = 'APP_STORAGE_FOLDER_URI';
+    // Ensure we have a storage folder (request if missing)
+    let folderUri = await AsyncStorage.getItem(APP_STORAGE_FOLDER_KEY);
+    if (!folderUri) {
+      const perm = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+      if (!perm.granted) {
+        throw new Error('Storage folder permission not granted');
       }
-
-      // Create themes subdirectory if it doesn't exist
-      const themesDir = documentDir + 'themes/';
-      const dirInfo = await FileSystem.getInfoAsync(themesDir);
-      if (!dirInfo.exists) {
-        await FileSystem.makeDirectoryAsync(themesDir, { intermediates: true });
-      }
-
-      // Generate unique filename
-      const filename = generateUniqueFilename(originalUri);
-      const destinationUri = themesDir + filename;
-
-      // Copy the image file
-      await FileSystem.copyAsync({
-        from: originalUri,
-        to: destinationUri,
-      });
-
-      // Validate the copied file exists and is accessible
-      const copiedFileInfo = await FileSystem.getInfoAsync(destinationUri);
-      if (!copiedFileInfo.exists) {
-        throw new Error('Failed to verify copied file');
-      }
-
-      console.log('Image successfully copied and validated:', destinationUri);
-      return destinationUri;
-    } catch (error) {
-      console.error('Error copying image to app storage:', error);
-      throw error;
+      folderUri = perm.directoryUri;
+      await AsyncStorage.setItem(APP_STORAGE_FOLDER_KEY, folderUri);
     }
+
+    // Determine extension and fixed filename
+    const ext = getImageExtension(originalUri);
+    const fixedName = `anisurge-bg.${ext}`;
+
+    // If an older anisurge-bg with any extension exists, delete it first to avoid duplicates
+    try {
+      const existing = await FileSystem.StorageAccessFramework.readDirectoryAsync(folderUri);
+      const candidates = existing.filter(u => /anisurge-bg\.(jpg|jpeg|png|webp)$/i.test(u));
+      for (const uri of candidates) {
+        try { await FileSystem.StorageAccessFramework.deleteAsync(uri); } catch {}
+      }
+    } catch {}
+
+    // Create destination file
+    const mime = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    const destUri = await FileSystem.StorageAccessFramework.createFileAsync(
+      folderUri,
+      fixedName,
+      mime
+    );
+
+    // Read source as base64 and write to destination
+    const base64 = await FileSystem.readAsStringAsync(originalUri, { encoding: FileSystem.EncodingType.Base64 });
+    await FileSystem.writeAsStringAsync(destUri, base64, { encoding: FileSystem.EncodingType.Base64 });
+    return destUri;
   };
 
   // Validate image URI is accessible
@@ -118,9 +120,9 @@ export default function BackgroundMediaSelector({
         }
 
         try {
-          // Copy image to app storage for permanent access
-          const copiedUri = await copyImageToAppStorage(asset.uri);
-          console.log('Image copied successfully to:', copiedUri);
+          // Persist image to user storage folder with fixed filename
+          const copiedUri = await saveImageToUserFolder(asset.uri);
+          console.log('Image saved successfully to:', copiedUri);
           
           // Validate the copied URI is accessible
           const isValid = await validateImageUri(copiedUri);
