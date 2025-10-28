@@ -5,7 +5,13 @@ node_modules/
 /anisurge-website/
 anisurge-website/
 /anisurge-website
-
+# Environment files
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+.env.*.local
 # Expo
 .expo/
 dist/
@@ -18,6 +24,8 @@ web-build/
 *.p8
 *.p12
 #*.key
+*.keystore
+android/app/release.keystore
 *.mobileprovision
 
 # Metro
@@ -33,7 +41,7 @@ yarn-error.*
 *.pem
 
 # local env files
-#.env*.local
+.env*.local
 
 # typescript
 *.tsbuildinfo
