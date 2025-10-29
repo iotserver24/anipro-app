@@ -1,4 +1,4 @@
-name: Build and Release Android App
+name: BUILDnRELEASE
 
 on:
   workflow_dispatch:
