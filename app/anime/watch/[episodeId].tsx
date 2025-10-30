@@ -1554,8 +1554,11 @@ export default function WatchEpisode() {
         setDownloadOptions(null);
       }
 
-      // Get the m3u8 URL
+      // Get the m3u8 or embed URL
       const videoSource = sources.sources[0];
+      try {
+        console.log('[Player] Stream URL (embed or m3u8):', videoSource?.url);
+      } catch {}
       setVideoHeaders(sources.headers || {});
 
       // Extract qualities from m3u8
@@ -1822,7 +1825,7 @@ export default function WatchEpisode() {
   useEffect(() => {
     return () => {
       // Save progress when component unmounts
-      if (currentTime > 0 && duration > 0 && animeInfo) {
+      if (currentTime > 0 && duration > 0) {
         //console.log(`[DEBUG] Saving final progress - Time: ${currentTime}, Duration: ${duration}`);
         const now = Date.now();
         
@@ -1845,15 +1848,15 @@ export default function WatchEpisode() {
         
         addToHistory({
           id: actualAnimeId,
-          name: animeInfo.title || animeInfo.info?.title || 'Unknown Anime',
-          img: animeInfo.image || animeInfo.info?.image || '',
+          name: (animeInfo?.title || (animeInfo as any)?.info?.title || (title as string) || 'Unknown Anime') as string,
+          img: (animeInfo?.image || (animeInfo as any)?.info?.image || '') as string,
           episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
           episodeNumber: Number(episodeNumber),
           timestamp: now,
           progress: Number(currentTime), // Ensure it's a number
           duration: Number(duration), // Ensure it's a number
           lastWatched: now,
-          subOrDub: (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub'
+          subOrDub: mode
         });
       }
 
@@ -2204,41 +2207,61 @@ export default function WatchEpisode() {
     // Update local state
     setCurrentTime(currentTime);
     setDuration(videoDuration);
-    
+
+    // Debug incoming progress
+    try { console.log('[Progress] time:', currentTime, 'duration:', videoDuration); } catch {}
+
     // Save progress if we have valid data
-    if (animeInfo && currentTime > 0 && videoDuration > 0) {
+    if (currentTime > 0 && videoDuration > 0) {
       const now = Date.now();
-      
+
       // Save progress every 2 seconds or if position changed significantly
-      if (now - lastProgressUpdateRef.current >= 2000 || 
-          Math.abs(currentTime - lastProgressValueRef.current) > 5) {
-        
-        // Ensure all fields are valid before saving
+      if (now - lastProgressUpdateRef.current >= 2000 || Math.abs(currentTime - lastProgressValueRef.current) > 5) {
+        // Build safe history item even if animeInfo hasn't loaded yet
+        const safeTitle = (animeInfo?.title || (title as string) || 'Unknown Anime') as string;
+        const safeImage = (animeInfo?.image || (animeInfo as any)?.info?.image || '') as string;
+        const epId = (typeof episodeId === 'string' ? episodeId : episodeId[0]) as string;
+        const epNum = Number(episodeNumber) || 0;
+
+        // Resolve actual anime id if it's missing in params
+        let actualAnimeId = animeId as string;
+        if ((!actualAnimeId || typeof actualAnimeId !== 'string') && typeof episodeId === 'string') {
+          const withoutCategory = (episodeId as string).split('$category=')[0];
+          if (withoutCategory.includes('$episode$')) {
+            actualAnimeId = withoutCategory.split('$episode$')[0];
+          } else if (withoutCategory.includes('$ep=')) {
+            actualAnimeId = withoutCategory.split('$ep=')[0];
+          } else {
+            actualAnimeId = (episodeId as string).split('$')[0];
+          }
+        }
+
         const historyItem: WatchHistoryItem = {
-          id: animeId as string,
-          name: animeInfo.title || 'Unknown Anime',
-          img: animeInfo.image || '',
-          episodeId: typeof episodeId === 'string' ? episodeId : episodeId[0],
-          episodeNumber: Number(episodeNumber) || 0,
+          id: actualAnimeId,
+          name: safeTitle,
+          img: safeImage,
+          episodeId: epId,
+          episodeNumber: epNum,
           timestamp: now,
-          progress: Math.max(0, Math.floor(currentTime)), // Ensure positive integer
-          duration: Math.max(0, Math.floor(videoDuration)), // Ensure positive integer
+          progress: Math.max(0, Math.floor(currentTime)),
+          duration: Math.max(0, Math.floor(videoDuration)),
           lastWatched: now,
           subOrDub: mode
         };
-        
-        // Log the history item for debugging
-        logger.debug('Saving history item:', JSON.stringify(historyItem));
-        
-        // Save progress to history
-        await (addToHistory as (item: WatchHistoryItem) => Promise<void>)(historyItem);
-        
-        // Update last progress values
-        lastProgressUpdateRef.current = now;
-        lastProgressValueRef.current = currentTime;
+
+        try {
+          console.log('[History] saving progress:', historyItem);
+          await (addToHistory as (item: WatchHistoryItem) => Promise<void>)(historyItem);
+          lastProgressUpdateRef.current = now;
+          lastProgressValueRef.current = currentTime;
+        } catch (err) {
+          console.error('[History] save failed:', err);
+        }
       }
+    } else {
+      try { console.log('[Progress] Skipped save due to invalid times'); } catch {}
     }
-  }, [animeInfo, animeId, episodeId, episodeNumber, mode, addToHistory]);
+  }, [animeInfo, title, animeId, episodeId, episodeNumber, mode, addToHistory]);
 
   // Memoize video props
   const videoPlayerProps = useMemo(() => {
