@@ -3922,7 +3922,7 @@ const styles = StyleSheet.create({
     maxHeight: 300,
   },
   episodeGridContent: {
-    paddingBottom: 8,
+    paddingBottom: 80, // increased to prevent overlap with bottom controls/nav
   },
   episodeGrid: {
     flexDirection: 'row',
