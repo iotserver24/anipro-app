@@ -461,10 +461,8 @@ export default function AnimeDetails() {
     // Make sure history is loaded and id is valid
     if (!history || !id) return null;
     
-    // Filter by current anime id and current selected mode (sub/dub)
-    const animeHistory = history.filter(item => 
-      item.id === id && item.subOrDub === selectedMode
-    );
+    // Filter by current anime id (any mode)
+    const animeHistory = history.filter(item => item.id === id);
     
     // Sort by lastWatched (most recent first)
     if (animeHistory.length > 0) {
@@ -472,7 +470,7 @@ export default function AnimeDetails() {
     }
     
     return null;
-  }, [history, id, selectedMode]);
+  }, [history, id]);
 
   // Handle start/resume button animation
   const animatePlayButton = useCallback(() => {
@@ -515,12 +513,22 @@ export default function AnimeDetails() {
     // Animate button for visual feedback
     animatePlayButton();
     
-    // Find last watched episode for this anime
+    // Find last watched episode for this anime (any mode)
     const lastWatched = getLastWatchedEpisode();
     
-    // Filter episodes for the current mode (sub/dub)
+    // Determine mode to use: last watched mode if available, else current selection
+    const modeToUse = (lastWatched?.subOrDub === 'dub' || lastWatched?.subOrDub === 'sub') 
+      ? lastWatched.subOrDub as 'sub' | 'dub' 
+      : selectedMode;
+    
+    // Ensure UI reflects the mode we are resuming with
+    if (modeToUse !== selectedMode) {
+      setSelectedMode(modeToUse);
+    }
+    
+    // Filter episodes for the chosen mode (sub/dub)
     const filteredEpisodes = episodeList.filter(episode => 
-      selectedMode === 'dub' ? episode.isDubbed : episode.isSubbed
+      modeToUse === 'dub' ? episode.isDubbed : episode.isSubbed
     );
 
     if (filteredEpisodes.length === 0) {
@@ -571,7 +579,7 @@ export default function AnimeDetails() {
           episodeNumber: targetEpisode.number,
           title: animeData?.info.name || 'Unknown Anime',
           episodeTitle: targetEpisode.title || `Episode ${targetEpisode.number}`,
-          category: selectedMode
+          category: modeToUse
         }
       });
     }, 100);

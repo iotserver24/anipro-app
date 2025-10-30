@@ -17,6 +17,7 @@ import { WebView } from 'react-native-webview';
 import { debounce } from 'lodash';
 import CommentModal from '../../../components/CommentModal';
 import { mediaSessionService, MediaSessionData } from '../../../services/mediaSessionService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type StreamSource = {
   url: string;
@@ -827,6 +828,7 @@ export default function WatchEpisode() {
   const { theme, hasBackgroundMedia } = useTheme();
   const { episodeId, animeId, episodeNumber, title, episodeTitle, category, resumeTime } = useLocalSearchParams();
   const categoryAsSubOrDub = (typeof category === 'string' ? category : 'sub') as 'sub' | 'dub';
+  const [mode, setMode] = useState<'sub' | 'dub'>(categoryAsSubOrDub);
   const videoRef = useRef<VideoRef>(null);
   const [streamingUrl, setStreamingUrl] = useState<string | null>(null);
   const [sources, setSources] = useState<StreamSource[]>([]);
@@ -910,11 +912,22 @@ export default function WatchEpisode() {
   const [showDownloadOptions, setShowDownloadOptions] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<number>(1);
   const [showBatchDropdown, setShowBatchDropdown] = useState(false);
+  const [showLangDropdown, setShowLangDropdown] = useState(false);
   const [mediaSessionActive, setMediaSessionActive] = useState(false);
   const [notificationRestored, setNotificationRestored] = useState(false);
 
-  // Set initial batch based on current episode
+  // Load preferred language and set initial batch based on current episode
   useEffect(() => {
+    const loadPreferredLanguage = async () => {
+      try {
+        const pref = await AsyncStorage.getItem('preferredLanguage');
+        if (pref === 'sub' || pref === 'dub') {
+          setMode(pref);
+        }
+      } catch {}
+    };
+    loadPreferredLanguage();
+
     const currentEpisodeNumber = Number(episodeNumber) || 1;
     const currentBatch = Math.ceil(currentEpisodeNumber / 50);
     setSelectedBatch(currentBatch);
@@ -1102,21 +1115,12 @@ export default function WatchEpisode() {
         isNavigating.current = false;
       }
       
-      let currentCategory = categoryAsSubOrDub;
+      let currentCategory = mode;
       
-      // If animeId is not provided (e.g., from a shared URL), parse the full URL
+      // If animeId is not provided (e.g., from a shared URL), parse the full URL for anime id only
       if (!animeId && typeof episodeId === 'string') {
         const parts = episodeId.split('$');
         const extractedAnimeId = parts[0];
-        
-        // Extract category if present
-        const categoryParam = parts.find(part => part.startsWith('category='));
-        if (categoryParam) {
-          const extractedCategory = categoryParam.split('=')[1];
-          if (extractedCategory === 'sub' || extractedCategory === 'dub') {
-            currentCategory = extractedCategory;
-          }
-        }
         
         if (extractedAnimeId) {
           const animeData = await animeAPI.getAnimeDetails(extractedAnimeId);
@@ -1137,9 +1141,7 @@ export default function WatchEpisode() {
           if (animeData.episodes) {
             const allEpisodes = animeData.episodes as APIEpisode[];
             setEpisodes(allEpisodes);
-            const filteredByCategory = allEpisodes.filter(ep => 
-              currentCategory === 'dub' ? ep.isDubbed : ep.isSubbed
-            );
+            const filteredByCategory = allEpisodes.filter(ep => currentCategory === 'dub' ? ep.isDubbed : ep.isSubbed);
             setFilteredEpisodes(sortEpisodesByBatches(filteredByCategory, episodeId));
             const index = filteredByCategory.findIndex(ep => ep.id === episodeId);
             setCurrentEpisodeIndex(index);
@@ -1457,7 +1459,7 @@ export default function WatchEpisode() {
           console.log(`Found access ID: ${accessId}`);
           
           // Use the wrapper URL with parameters and start_at support
-          const audioParam = categoryAsSubOrDub === 'dub' ? '1' : '0'; // a=1 for dub, a=0 for sub
+          const audioParam = currentCategory === 'dub' ? '1' : '0'; // a=1 for dub, a=0 for sub
           let wrapperUrl = `https://anisurge.me/zen-player/${accessId}?a=${audioParam}&autoPlay=true`;
           
           // Add start_at parameter for resume functionality
@@ -1598,6 +1600,20 @@ export default function WatchEpisode() {
       fetchEpisodeData(true); // Pass true to indicate this is a server change
     }
   }, [selectedServer]);
+
+  // Refetch when language mode changes and persist preference
+  useEffect(() => {
+    (async () => {
+      try {
+        await AsyncStorage.setItem('preferredLanguage', mode);
+      } catch {}
+      // Save position before switching language
+      if (currentTime > 0) {
+        setLastServerPosition(currentTime);
+      }
+      await fetchEpisodeData(false);
+    })();
+  }, [mode]);
 
   const fetchAnimeInfo = async () => {
     try {
@@ -1919,7 +1935,7 @@ export default function WatchEpisode() {
             episodeNumber: prevEpisode.number,
             title: animeInfo?.title || (title as string) || 'Unknown Anime',
             episodeTitle: prevEpisode.title || `Episode ${prevEpisode.number}`,
-            category: category,
+            category: mode,
             resumeTime: "0" // Force start from beginning
           }
         });
@@ -1982,7 +1998,7 @@ export default function WatchEpisode() {
             episodeNumber: nextEpisode.number,
             title: animeInfo?.title || (title as string) || 'Unknown Anime',
             episodeTitle: nextEpisode.title || `Episode ${nextEpisode.number}`,
-            category: category,
+            category: mode,
             resumeTime: "0" // Force start from beginning
           }
         });
@@ -2208,8 +2224,7 @@ export default function WatchEpisode() {
           progress: Math.max(0, Math.floor(currentTime)), // Ensure positive integer
           duration: Math.max(0, Math.floor(videoDuration)), // Ensure positive integer
           lastWatched: now,
-          subOrDub: (typeof category === 'string' && (category === 'sub' || category === 'dub')) ? 
-            category as 'sub' | 'dub' : 'sub'
+          subOrDub: mode
         };
         
         // Log the history item for debugging
@@ -2223,7 +2238,7 @@ export default function WatchEpisode() {
         lastProgressValueRef.current = currentTime;
       }
     }
-  }, [animeInfo, animeId, episodeId, episodeNumber, category, addToHistory]);
+  }, [animeInfo, animeId, episodeId, episodeNumber, mode, addToHistory]);
 
   // Memoize video props
   const videoPlayerProps = useMemo(() => {
@@ -2432,15 +2447,15 @@ export default function WatchEpisode() {
 
   // Update the useEffect that initializes filtered episodes
   useEffect(() => {
-    const categoryFilteredEpisodes = episodes.filter(ep => categoryAsSubOrDub === 'dub' ? ep.isDubbed : ep.isSubbed);
+    const categoryFilteredEpisodes = episodes.filter(ep => mode === 'dub' ? ep.isDubbed : ep.isSubbed);
     const batchEpisodes = getEpisodesForBatch(categoryFilteredEpisodes, selectedBatch);
     setFilteredEpisodes(batchEpisodes);
-  }, [episodes, episodeId, categoryAsSubOrDub, selectedBatch]);
+  }, [episodes, episodeId, mode, selectedBatch]);
 
   // Update the search handler to maintain sub/dub filtering and batch selection
   const handleSearch = (query: string) => {
     setSearchQuery(query);
-    const categoryFilteredEpisodes = episodes.filter(ep => categoryAsSubOrDub === 'dub' ? ep.isDubbed : ep.isSubbed);
+    const categoryFilteredEpisodes = episodes.filter(ep => mode === 'dub' ? ep.isDubbed : ep.isSubbed);
     
     if (!query.trim()) {
       const batchEpisodes = getEpisodesForBatch(categoryFilteredEpisodes, selectedBatch);
@@ -2903,6 +2918,8 @@ export default function WatchEpisode() {
                 </View>
               </View>
 
+              
+
               {/* Anime Info Section */}
               {isAnimeInfoVisible && (
                 <AnimeInfo 
@@ -2919,9 +2936,13 @@ export default function WatchEpisode() {
               {/* Clean Episode Grid */}
               <View style={styles.episodeGridContainer}>
                 <View style={styles.episodeGridHeader}>
-                  <Text style={styles.episodeGridTitle}>
-                    {categoryAsSubOrDub === 'dub' ? 'Dubbed' : 'Subbed'}
-                  </Text>
+                  <TouchableOpacity 
+                    style={styles.episodeRangeContainer}
+                    onPress={() => setShowLangDropdown(!showLangDropdown)}
+                  >
+                    <Text style={styles.episodeRangeText}>{mode === 'dub' ? 'DUB' : 'SUB'}</Text>
+                    <MaterialIcons name={showLangDropdown ? "keyboard-arrow-up" : "keyboard-arrow-right"} size={16} color="#666" />
+                  </TouchableOpacity>
                   <View style={styles.episodeGridControls}>
                     <TouchableOpacity 
                       style={styles.episodeRangeContainer}
@@ -2954,7 +2975,27 @@ export default function WatchEpisode() {
                   </View>
                 </View>
 
-                {/* Batch Dropdown */}
+              {/* Language Dropdown */}
+              {showLangDropdown && (
+                <View style={styles.batchDropdownContainer}>
+                  <ScrollView style={styles.batchDropdownScroll} showsVerticalScrollIndicator={false}>
+                    <TouchableOpacity
+                      style={styles.batchDropdownItem}
+                      onPress={() => {
+                        setMode(mode === 'dub' ? 'sub' : 'dub');
+                        setShowLangDropdown(false);
+                      }}
+                    >
+                      <Text style={styles.batchDropdownText}>
+                        {mode === 'dub' ? 'SUB' : 'DUB'}
+                      </Text>
+                      <MaterialIcons name="keyboard-arrow-right" size={16} color="#666" />
+                    </TouchableOpacity>
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* Batch Dropdown */}
                 {showBatchDropdown && (
                   <View style={styles.batchDropdownContainer}>
                     <ScrollView style={styles.batchDropdownScroll} showsVerticalScrollIndicator={false}>

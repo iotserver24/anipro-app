@@ -468,6 +468,28 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
               headerRight: () => <HeaderRight />,
             }}
           />
+          <Stack.Screen
+            name="chat"
+            options={{
+              title: 'Chat',
+              headerShown: true,
+              headerLeft: () => (
+                <TouchableOpacity
+                  onPress={() => {
+                    if (router.canGoBack()) {
+                      router.back();
+                    } else {
+                      router.replace('/');
+                    }
+                  }}
+                  style={{ marginLeft: 12 }}
+                >
+                  <MaterialIcons name="arrow-back" size={24} color="#fff" />
+                </TouchableOpacity>
+              ),
+              headerRight: () => <HeaderRight />, 
+            }}
+          />
             </Stack>
             {/* Position the bottom tab bar with absolute positioning outside the Stack */}
             <View style={styles.bottomTabContainer}>

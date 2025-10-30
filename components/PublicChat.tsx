@@ -16,6 +16,7 @@ import {
   Modal,
   ScrollView,
   Linking,
+  BackHandler,
 } from 'react-native';
 import { useTheme } from '../hooks/useTheme';
 import { FlashList } from '@shopify/flash-list';
@@ -31,10 +32,11 @@ import UserProfileModal from './UserProfileModal';
 import AvatarDisplay from './AvatarDisplay';
 import GifPicker from './GifPicker';
 import { API_BASE, ENDPOINTS } from '../constants/api';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
+import { useFocusEffect } from '@react-navigation/native';
 
 // Pollinations AI API Configuration
 const POLLINATIONS_TEXT_API_URL = 'https://text.pollinations.ai/openai?token=uNoesre5jXDzjhiY';
@@ -886,7 +888,7 @@ const MessageItem = memo(({
         )}
         {animeCard && (
           <View style={styles.animeCardInMessage}>
-            <Image source={{ uri: animeCard.image }} style={StyleSheet.flatten([styles.animeCardImage])} />
+            <Image source={{ uri: animeCard.image }} style={styles.animeCardImage} />
             <Text style={styles.animeCardTitle}>{animeCard.title}</Text>
             <TouchableOpacity style={styles.animeCardButton} onPress={() => onOpenAnime(animeCard.id)}>
               <Text style={styles.animeCardButtonText}>Open</Text>
@@ -1103,7 +1105,7 @@ const AIProfileModal: React.FC<AIProfileModalProps> = ({ visible, onClose, aiCon
           </View>
           <ScrollView style={styles.aiModalBody}>
             <View style={styles.aiAvatarContainer}>
-              <Image source={{ uri: aiConfig.avatar }} style={StyleSheet.flatten([styles.aiModalAvatar])} />
+              <Image source={{ uri: aiConfig.avatar }} style={styles.aiModalAvatar} />
               <View style={styles.aiModalBadge}>
                 <MaterialIcons name="smart-toy" size={16} color="#fff" />
                 <Text style={styles.aiModalBadgeText}>AI Character</Text>
@@ -1300,6 +1302,7 @@ const PublicChat = () => {
   const [selectedAnime, setSelectedAnime] = useState<any | null>(null);
   const animeSearchTimeout = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
+  const params = useLocalSearchParams<{ shareAnime?: string }>();
   const [showCommandSuggestions, setShowCommandSuggestions] = useState(false);
   const [commandQuery, setCommandQuery] = useState('');
   const [filteredCommands, setFilteredCommands] = useState<Command[]>([]);
@@ -1339,7 +1342,7 @@ const PublicChat = () => {
     const messagesQuery = dbQuery(
       messagesRef, 
       orderByChild('negativeTimestamp'),
-      limitToFirst(50)
+      limitToFirst(30)
     );
     
     onValue(messagesQuery, (snapshot) => {
@@ -1374,18 +1377,15 @@ const PublicChat = () => {
 
   // Add handling for shared anime from route params
   useEffect(() => {
-    const params = router.params;
     if (params?.shareAnime) {
       try {
         const sharedAnime = JSON.parse(params.shareAnime as string);
         setSelectedAnime(sharedAnime);
-        // Clear the param to prevent resharing on chat refresh
-        router.setParams({ shareAnime: undefined });
       } catch (error) {
         console.error('Error parsing shared anime data:', error);
       }
     }
-  }, [router.params]);
+  }, [params?.shareAnime]);
 
   // Function to fetch user suggestions
   const fetchUserSuggestions = useCallback(async (searchText: string) => {
@@ -1657,7 +1657,7 @@ const PublicChat = () => {
   };
 
   // Update sendAIMessage function
-  const sendAIMessage = async (messageData) => {
+  const sendAIMessage = async (messageData: Partial<ChatMessage> & { id?: string; timestamp?: number; negativeTimestamp?: number }) => {
     const database = getDatabase();
     const chatRef = ref(database, 'public_chat');
     
@@ -1778,7 +1778,7 @@ const PublicChat = () => {
         }
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(`Error in ${aiType} response:`, error);
       console.error('Full error details:', {
         message: error.message,
@@ -2721,7 +2721,7 @@ const PublicChat = () => {
       const reverseKey = generateReverseOrderKey();
       
       // Create message object without undefined values
-      const messageData = {
+      const messageData: any = {
         userId: currentUser.uid,
         userName: '@' + username,
         userAvatar: userAvatarUrl,
@@ -2832,13 +2832,13 @@ const PublicChat = () => {
     }
   }, []);
 
-  const handleOpenAnime = useCallback((animeId) => {
+  const handleOpenAnime = useCallback((animeId: string) => {
     router.push({ pathname: '/anime/[id]', params: { id: animeId } });
   }, [router]);
 
   const renderMessage = useCallback(({ item, index }: { item: ChatMessage; index: number }) => {
     const currentUser = getCurrentUser();
-    const isOwnMessage = currentUser && currentUser.uid === item.userId;
+    const isOwnMessage = !!currentUser && currentUser.uid === item.userId;
     
     // Check if this message is part of a consecutive sequence
     const nextMessage = messages[index + 1];
@@ -2889,7 +2889,7 @@ const PublicChat = () => {
     >
       <Image 
         source={{ uri: item.avatarUrl }} 
-        style={StyleSheet.flatten([styles.mentionAvatar])}
+        style={styles.mentionAvatar}
       />
       <Text style={styles.mentionUsername}>@{item.username}</Text>
     </Pressable>
@@ -2906,7 +2906,7 @@ const PublicChat = () => {
   };
 
   // Add this function to handle scroll events
-  const handleScroll = useCallback((event) => {
+  const handleScroll = useCallback((event: any) => {
     const currentOffset = event.nativeEvent.contentOffset.y;
     const contentHeight = event.nativeEvent.contentSize.height;
     const scrollViewHeight = event.nativeEvent.layoutMeasurement.height;
@@ -3040,6 +3040,22 @@ const PublicChat = () => {
     checkAdmin();
   }, []);
 
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => {
+        if ((router as any).canGoBack && router.canGoBack()) {
+          router.back();
+        } else {
+          router.replace('/');
+        }
+        return true;
+      };
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => {
+        BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+      };
+    }, []));
+
   return (
     <View style={[styles.container, { paddingBottom: 60, backgroundColor: theme.colors.background }]}> 
       <KeyboardAvoidingView 
@@ -3061,7 +3077,6 @@ const PublicChat = () => {
           isLooping
           shouldPlay
           isMuted
-          ignoreSilentSwitch="obey"
           pointerEvents="none"
         />
 
@@ -3119,7 +3134,7 @@ const PublicChat = () => {
         <View style={styles.inputContainer}>
           {selectedAnime && (
             <View style={styles.animeCardPreview}>
-              <Image source={{ uri: selectedAnime.image }} style={StyleSheet.flatten([styles.animeCardImage])} />
+              <Image source={{ uri: selectedAnime.image }} style={styles.animeCardImage} />
               <Text style={styles.animeCardTitle}>{selectedAnime.title}</Text>
               <TouchableOpacity style={styles.animeCardButton} onPress={() => router.push({ pathname: '/anime/[id]', params: { id: selectedAnime.id } })}>
                 <Text style={styles.animeCardButtonText}>Open</Text>
@@ -3235,7 +3250,7 @@ const PublicChat = () => {
               keyExtractor={item => item.id}
               renderItem={({ item }) => (
                 <TouchableOpacity style={styles.animeResultItem} onPress={() => handleSelectAnime(item)}>
-                  <Image source={{ uri: item.image }} style={StyleSheet.flatten([styles.animeResultImage])} />
+                  <Image source={{ uri: item.image }} style={styles.animeResultImage} />
                   <Text style={styles.animeResultTitle}>{item.title}</Text>
                 </TouchableOpacity>
               )}
@@ -3295,7 +3310,7 @@ const PublicChat = () => {
                   >
                     <Image 
                       source={{ uri: item.avatarUrl }} 
-                      style={StyleSheet.flatten([styles.mentionResultAvatar])}
+                      style={styles.mentionResultAvatar}
                     />
                     <View style={styles.mentionResultInfo}>
                       <Text style={styles.mentionResultUsername}>@{item.username}</Text>
@@ -3576,7 +3591,7 @@ const styles = StyleSheet.create({
     height: 0,
     marginBottom: 0,
   },
-  scrollButton: undefined,
+  scrollButton: {},
   mentionsContainer: {
     position: 'absolute',
     bottom: '100%',
