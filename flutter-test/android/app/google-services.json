@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "151470089122",
+    "project_id": "anisurge-11808",
+    "storage_bucket": "anisurge-11808.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:151470089122:android:966cd52d465f7f5ac3c8fb",
+        "android_client_info": {
+          "package_name": "com.anisurge.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "151470089122-5cscvg5rq70u4aj1bigmqfrhkiuu1vai.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.anisurge.app",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "151470089122-ir2ol2li6sk2173nmb4bsemn0k0jhf2c.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.anisurge.app",
+            "certificate_hash": "d89fb62054b8f4038737d1735837505a38774486"
+          }
+        },
+        {
+          "client_id": "151470089122-t1j0sj1qeot92d4k7mltdof5plr435vl.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBEKqew1rD5zWIEEsdQI-G6T6Es8x94TZU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "151470089122-1mret2eld1tti6gb1egu7bvmpiai5pmq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
