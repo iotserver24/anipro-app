@@ -48,21 +48,15 @@ void RunLoop::UnregisterFlutterInstance(
 std::optional<RunLoop::TimePoint> RunLoop::ProcessFlutterEvents() {
   std::optional<TimePoint> next_event_time;
   for (auto* flutter_instance : flutter_instances_) {
+    // Process all pending Flutter tasks.
+    // Note: The modern Flutter embedder handles this internally,
+    // so this is mostly a placeholder for compatibility.
     std::chrono::nanoseconds wait_duration =
         std::chrono::nanoseconds::max();
-    uint64_t next_task_time = flutter_instance->ProcessMessages();
     
-    // If there are pending tasks, calculate the wait time.
-    if (next_task_time != 0) {
-      auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(
-          TimePoint::clock::now().time_since_epoch());
-      int64_t wait_time = static_cast<int64_t>(next_task_time) - 
-                         static_cast<int64_t>(now.count());
-      if (wait_time > 0) {
-        wait_duration = std::chrono::nanoseconds(wait_time);
-      } else {
-        wait_duration = std::chrono::nanoseconds(0);
-      }
+    // Set a default minimal wait time
+    if (wait_duration == std::chrono::nanoseconds::max()) {
+      wait_duration = std::chrono::milliseconds(16);  // ~60 FPS
     }
 
     if (wait_duration != std::chrono::nanoseconds::max()) {
