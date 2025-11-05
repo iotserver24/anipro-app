@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../config/app_config.dart';
 import '../providers/anime_provider.dart';
 import '../widgets/anime_card.dart';
 import 'anime_detail_screen.dart';
