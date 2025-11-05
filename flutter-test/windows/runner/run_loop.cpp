@@ -48,6 +48,11 @@ void RunLoop::UnregisterFlutterInstance(
 std::optional<RunLoop::TimePoint> RunLoop::ProcessFlutterEvents() {
   std::optional<TimePoint> next_event_time;
   for (auto* flutter_instance : flutter_instances_) {
+    // Suppress unused variable warning - flutter_instance is part of the loop
+    // but not directly used in this implementation as the modern Flutter 
+    // embedder handles event processing internally.
+    (void)flutter_instance;
+    
     // Process all pending Flutter tasks.
     // Note: The modern Flutter embedder handles this internally,
     // so this is mostly a placeholder for compatibility.
