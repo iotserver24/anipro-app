@@ -183,6 +183,13 @@ export default function AnimeDetails() {
   });
   const { isBookmarked, addAnime, removeAnime } = useMyListStore();
   const { history } = useWatchHistoryStore();
+  const historyMap = React.useMemo(() => {
+    const map: Record<string, WatchHistoryItem> = {} as any;
+    (history || []).forEach((h) => {
+      if (h && h.episodeId) map[h.episodeId] = h;
+    });
+    return map;
+  }, [history]);
   const [showRelated, setShowRelated] = useState(false);
   const [showRecommendations, setShowRecommendations] = useState(false);
   const [selectedTab, setSelectedTab] = useState<'episodes' | 'related' | 'recommendations'>('episodes');
@@ -433,28 +440,33 @@ export default function AnimeDetails() {
   ), [animeData, TabButton]);
 
   // Define renderEpisode with useCallback for consistency
-  const renderEpisode = useCallback(({ item }: { item: APIEpisode }) => (
-    <EpisodeItem
-      episode={item}
-      mode={selectedMode}
-      animeTitle={animeData?.info.name || ''}
-      onPress={() => {
-        router.push({
-          pathname: "/anime/watch/[episodeId]",
-          params: {
-            episodeId: item.id,
-            animeId: id,
-            episodeNumber: item.number,
-            title: animeData?.info.name || 'Unknown Anime',
-            episodeTitle: item.title || `Episode ${item.number}`,
-            category: selectedMode
-          }
-        });
-      }}
-      onLongPress={() => handleDownload(item)}
-      onShare={() => handleEpisodeShare(item)}
-    />
-  ), [animeData, id, selectedMode, handleDownload, handleEpisodeShare]);
+  const renderEpisode = useCallback(({ item }: { item: APIEpisode }) => {
+    const h = historyMap[item.id];
+    return (
+      <EpisodeItem
+        episode={item}
+        mode={selectedMode}
+        animeTitle={animeData?.info.name || ''}
+        progressSeconds={typeof h?.progress === 'number' ? h.progress : undefined}
+        durationSeconds={typeof h?.duration === 'number' ? h.duration : undefined}
+        onPress={() => {
+          router.push({
+            pathname: "/anime/watch/[episodeId]",
+            params: {
+              episodeId: item.id,
+              animeId: id,
+              episodeNumber: item.number,
+              title: animeData?.info.name || 'Unknown Anime',
+              episodeTitle: item.title || `Episode ${item.number}`,
+              category: selectedMode
+            }
+          });
+        }}
+        onLongPress={() => handleDownload(item)}
+        onShare={() => handleEpisodeShare(item)}
+      />
+    );
+  }, [animeData, id, selectedMode, handleDownload, handleEpisodeShare, historyMap]);
 
   // Function to find last watched episode for this anime
   const getLastWatchedEpisode = useCallback(() => {
@@ -1024,7 +1036,20 @@ export default function AnimeDetails() {
               >
                 <MaterialIcons name="play-circle-filled" size={18} color="#fff" />
                 <Text style={styles.watchNowText}>
-                  {getLastWatchedEpisode() ? 'Resume Watching' : 'Start Watching'}
+                  {(() => {
+                    const last = getLastWatchedEpisode();
+                    if (!last) return 'Start Watching';
+                    const epNum = last.episodeNumber || 0;
+                    const p = typeof last.progress === 'number' ? last.progress : 0;
+                    const d = typeof last.duration === 'number' ? last.duration : 0;
+                    const fmt = (s: number) => {
+                      const m = Math.floor(s / 60);
+                      const sec = Math.floor(s % 60);
+                      return `${m}:${sec.toString().padStart(2, '0')}`;
+                    };
+                    const timeStr = d > 0 ? ` • ${fmt(p)} / ${fmt(d)}` : '';
+                    return `Resume Episode ${epNum}${timeStr}`;
+                  })()}
                 </Text>
               </TouchableOpacity>
             </Animated.View>

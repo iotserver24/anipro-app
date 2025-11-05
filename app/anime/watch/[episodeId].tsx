@@ -989,6 +989,9 @@ export default function WatchEpisode() {
         const episodeTitleText = episodeTitle as string || `Episode ${episodeNumber}`;
         const animeTitleText = animeInfo?.title || (title as string) || 'Unknown Anime';
         
+        // Ensure any existing session is stopped to prevent duplicate notifications
+        try { await mediaSessionService.stopMediaSession(); } catch {}
+
         const success = await mediaSessionService.startMediaSession({
           title: episodeTitleText,
           episodeTitle: episodeTitleText,
@@ -2086,8 +2089,30 @@ export default function WatchEpisode() {
   // Manual restore notification function
   const handleRestoreNotification = async () => {
     try {
-      const restored = await mediaSessionService.restoreNotification();
-      if (restored) {
+      const isActive = await mediaSessionService.checkNotificationStatus();
+      if (isActive) {
+        return; // already active, avoid duplicates
+      }
+
+      // Stop any lingering session just in case, then re-create a fresh one
+      try { await mediaSessionService.stopMediaSession(); } catch {}
+
+      const episodeTitleText = (episodeTitle as string) || `Episode ${episodeNumber}`;
+      const animeTitleText = (animeInfo?.title || (title as string) || 'Unknown Anime') as string;
+
+      const success = await mediaSessionService.startMediaSession({
+        title: episodeTitleText,
+        episodeTitle: episodeTitleText,
+        animeTitle: animeTitleText,
+        isPlaying: isPlaying,
+        currentTime: currentTime,
+        duration: duration,
+        hasPrevious: currentEpisodeIndex > 0,
+        hasNext: currentEpisodeIndex < episodes.length - 1,
+      });
+
+      if (success) {
+        setMediaSessionActive(true);
         setNotificationRestored(true);
         setTimeout(() => setNotificationRestored(false), 3000);
       }
@@ -2562,6 +2587,8 @@ export default function WatchEpisode() {
       setStreamingUrl(null);
       setPaused(true);
       setIsVideoReady(false);
+      // Ensure media session is stopped to prevent stacking notifications across navigations
+      try { mediaSessionService.stopMediaSession(); } catch {}
       
       // Reset orientation
       ScreenOrientation.lockAsync(

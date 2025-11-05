@@ -1029,6 +1029,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     playableDuration: data.duration,
                     seekableDuration: data.duration
                   });
+                  // Bypass internal debounce for embedded SoftSub to save precise timing upstream
+                  if (onProgress && typeof data.time === 'number' && typeof data.duration === 'number') {
+                    onProgress(data.time, data.duration);
+                  }
                 } else if (data.type === 'watching-log') {
                   console.log('SoftSub watching log:', data.currentTime, data.duration);
                   handleProgress({
@@ -1036,6 +1040,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     playableDuration: data.duration,
                     seekableDuration: data.duration
                   });
+                  if (onProgress && typeof data.currentTime === 'number' && typeof data.duration === 'number') {
+                    onProgress(data.currentTime, data.duration);
+                  }
                 }
               } catch (error) {
                 console.warn('Error parsing WebView message:', error);

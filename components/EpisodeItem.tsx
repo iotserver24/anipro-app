@@ -19,6 +19,8 @@ interface EpisodeItemProps {
   mode: 'sub' | 'dub';
   animeTitle: string;
   onShare: () => void;
+  progressSeconds?: number;
+  durationSeconds?: number;
 }
 
 const EpisodeItem = React.memo(({
@@ -27,7 +29,9 @@ const EpisodeItem = React.memo(({
   onLongPress,
   mode,
   animeTitle,
-  onShare
+  onShare,
+  progressSeconds,
+  durationSeconds
 }: EpisodeItemProps) => (
   <TouchableOpacity
     style={[styles.episodeCard, episode.isFiller && styles.fillerEpisodeCard]}
@@ -50,6 +54,21 @@ const EpisodeItem = React.memo(({
             <Text style={styles.fillerBadge}>FILLER</Text>
           )}
         </View>
+        {(typeof progressSeconds === 'number' && typeof durationSeconds === 'number' && durationSeconds > 0) && (
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBarBackground}>
+              <View
+                style={[
+                  styles.progressBarFill,
+                  { width: `${Math.min(100, Math.max(0, (progressSeconds / durationSeconds) * 100))}%` }
+                ]}
+              />
+            </View>
+            <Text style={styles.progressText}>
+              {formatTime(progressSeconds)} / {formatTime(durationSeconds)}
+            </Text>
+          </View>
+        )}
       </View>
       <View style={styles.episodeActions}>
         <TouchableOpacity onPress={onShare} style={styles.episodeActionButton}>
@@ -60,6 +79,13 @@ const EpisodeItem = React.memo(({
     </View>
   </TouchableOpacity>
 ));
+
+const formatTime = (secs?: number) => {
+  if (!secs || secs < 0) return '0:00';
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+};
 
 const styles = StyleSheet.create({
   episodeCard: {
@@ -103,6 +129,24 @@ const styles = StyleSheet.create({
   episodeBadges: {
     flexDirection: 'row',
     gap: 8,
+  },
+  progressContainer: {
+    marginTop: 6,
+  },
+  progressBarBackground: {
+    height: 4,
+    backgroundColor: '#333',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: 4,
+    backgroundColor: '#f4511e',
+  },
+  progressText: {
+    color: '#666',
+    fontSize: 11,
+    marginTop: 4,
   },
   fillerBadge: {
     color: '#f4511e',
