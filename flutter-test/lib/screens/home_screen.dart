@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/app_config.dart';
 import '../providers/anime_provider.dart';
-import '../providers/auth_provider.dart';
-import '../widgets/anime_card.dart';
 import '../widgets/anime_list_section.dart';
 import 'anime_detail_screen.dart';
 import 'search_screen.dart';
@@ -235,13 +233,13 @@ class _HomeScreenState extends State<HomeScreen> {
           end: Alignment.bottomRight,
           colors: [
             const Color(AppConfig.primaryColor),
-            const Color(AppConfig.primaryColor).withOpacity(0.7),
+            const Color(AppConfig.primaryColor).withValues(alpha: 0.7),
           ],
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(AppConfig.primaryColor).withOpacity(0.3),
+            color: const Color(AppConfig.primaryColor).withValues(alpha: 0.3),
             blurRadius: 15,
             spreadRadius: 2,
           ),
@@ -255,7 +253,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Icon(
               Icons.play_circle_filled,
               size: 200,
-              color: Colors.white.withOpacity(0.1),
+              color: Colors.white.withValues(alpha: 0.1),
             ),
           ),
           Padding(
@@ -275,7 +273,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   'Watch thousands of anime episodes for free',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Colors.white.withOpacity(0.9),
+                        color: Colors.white.withValues(alpha: 0.9),
                       ),
                 ),
                 const SizedBox(height: 20),

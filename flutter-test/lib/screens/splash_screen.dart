@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../config/app_config.dart';
-import '../providers/auth_provider.dart';
 import 'home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -83,7 +81,7 @@ class _SplashScreenState extends State<SplashScreen>
                         boxShadow: [
                           BoxShadow(
                             color: const Color(AppConfig.primaryColor)
-                                .withOpacity(0.5),
+                                .withValues(alpha: 0.5),
                             blurRadius: 20,
                             spreadRadius: 5,
                           ),

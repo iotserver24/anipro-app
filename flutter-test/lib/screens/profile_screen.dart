@@ -230,7 +230,7 @@ class ProfileScreen extends StatelessWidget {
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeColor: const Color(AppConfig.primaryColor),
+        activeTrackColor: const Color(AppConfig.primaryColor),
       ),
     );
   }
@@ -240,13 +240,13 @@ class ProfileScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text(AppConfig.appName),
-        content: Column(
+        content: const Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Version: ${AppConfig.appVersion}'),
-            const SizedBox(height: 8),
-            const Text(
+            SizedBox(height: 8),
+            Text(
               'A free anime streaming app that lets you watch your favorite anime shows and movies anytime, anywhere.',
             ),
             const SizedBox(height: 16),

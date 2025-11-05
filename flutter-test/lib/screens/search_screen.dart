@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../config/app_config.dart';
 import '../providers/anime_provider.dart';
 import '../widgets/anime_card.dart';
 import 'anime_detail_screen.dart';
@@ -76,7 +75,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   Icon(
                     Icons.search,
                     size: 100,
-                    color: Colors.white.withOpacity(0.3),
+                    color: Colors.white.withValues(alpha: 0.3),
                   ),
                   const SizedBox(height: 20),
                   Text(
@@ -96,7 +95,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   Icon(
                     Icons.search_off,
                     size: 100,
-                    color: Colors.white.withOpacity(0.3),
+                    color: Colors.white.withValues(alpha: 0.3),
                   ),
                   const SizedBox(height: 20),
                   Text(

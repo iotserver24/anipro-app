@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../models/anime_models.dart';
@@ -24,7 +25,7 @@ class ApiService {
       }
       throw Exception('Failed to load trending anime');
     } catch (e) {
-      print('Error fetching trending anime: $e');
+      debugPrint('Error fetching trending anime: $e');
       rethrow;
     }
   }
@@ -42,7 +43,7 @@ class ApiService {
       }
       throw Exception('Failed to load popular anime');
     } catch (e) {
-      print('Error fetching popular anime: $e');
+      debugPrint('Error fetching popular anime: $e');
       rethrow;
     }
   }
@@ -60,7 +61,7 @@ class ApiService {
       }
       throw Exception('Failed to load recent episodes');
     } catch (e) {
-      print('Error fetching recent episodes: $e');
+      debugPrint('Error fetching recent episodes: $e');
       rethrow;
     }
   }
@@ -78,7 +79,7 @@ class ApiService {
       }
       throw Exception('Failed to load new releases');
     } catch (e) {
-      print('Error fetching new releases: $e');
+      debugPrint('Error fetching new releases: $e');
       rethrow;
     }
   }
@@ -96,7 +97,7 @@ class ApiService {
       }
       throw Exception('Failed to load latest completed anime');
     } catch (e) {
-      print('Error fetching latest completed anime: $e');
+      debugPrint('Error fetching latest completed anime: $e');
       rethrow;
     }
   }
@@ -114,7 +115,7 @@ class ApiService {
       }
       throw Exception('Failed to search anime');
     } catch (e) {
-      print('Error searching anime: $e');
+      debugPrint('Error searching anime: $e');
       rethrow;
     }
   }
@@ -131,7 +132,7 @@ class ApiService {
       }
       throw Exception('Failed to load anime details');
     } catch (e) {
-      print('Error fetching anime details: $e');
+      debugPrint('Error fetching anime details: $e');
       rethrow;
     }
   }
@@ -148,7 +149,7 @@ class ApiService {
       }
       throw Exception('Failed to load episode sources');
     } catch (e) {
-      print('Error fetching episode sources: $e');
+      debugPrint('Error fetching episode sources: $e');
       rethrow;
     }
   }
@@ -166,7 +167,7 @@ class ApiService {
       }
       throw Exception('Failed to load movies');
     } catch (e) {
-      print('Error fetching movies: $e');
+      debugPrint('Error fetching movies: $e');
       rethrow;
     }
   }
