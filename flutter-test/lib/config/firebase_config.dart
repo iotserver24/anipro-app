@@ -25,8 +25,23 @@ class FirebaseConfig {
   }
 
   static Future<void> initialize() async {
-    await Firebase.initializeApp(
-      options: platformOptions,
-    );
+    // If default app already exists (auto-init), do nothing
+    try {
+      Firebase.app();
+      return;
+    } catch (_) {
+      // No default app yet; proceed to initialize
+    }
+    try {
+      await Firebase.initializeApp(
+        options: platformOptions,
+      );
+    } on FirebaseException catch (e) {
+      if (e.code == 'duplicate-app') {
+        // Another initializer raced us; treat as initialized
+        return;
+      }
+      rethrow;
+    }
   }
 }

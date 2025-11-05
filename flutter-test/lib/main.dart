@@ -13,27 +13,56 @@ import 'providers/theme_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Initialize Firebase
-  await FirebaseConfig.initialize();
-  
-  // Set preferred orientations
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
-  
-  // Set system UI overlay style
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-      systemNavigationBarColor: Color(AppConfig.backgroundColor),
-      systemNavigationBarIconBrightness: Brightness.light,
-    ),
-  );
-  
-  runApp(const MyApp());
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.dumpErrorToConsole(details);
+  };
+
+  try {
+    // Initialize Firebase
+    await FirebaseConfig.initialize();
+
+    // Set preferred orientations
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+
+    // Set system UI overlay style
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Color(AppConfig.backgroundColor),
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+    );
+
+    runApp(const MyApp());
+  } catch (e, st) {
+    // If something fails very early, still render a minimal error UI
+    debugPrint('Startup error: $e\n$st');
+    runApp(const _StartupErrorApp());
+  }
+}
+
+class _StartupErrorApp extends StatelessWidget {
+  const _StartupErrorApp();
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      home: Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Text(
+            'Failed to start app',
+            style: TextStyle(color: Colors.white),
+          ),
+        ),
+      ),
+      debugShowCheckedModeBanner: false,
+    );
+  }
 }
 
 class MyApp extends StatelessWidget {

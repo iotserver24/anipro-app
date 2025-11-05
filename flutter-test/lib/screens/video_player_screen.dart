@@ -205,8 +205,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                                           .firstWhere(
                                         (s) => s.quality == quality,
                                       );
-                                      await _videoPlayerController?.dispose();
-                                      await _chewieController?.dispose();
+                                      final vp = _videoPlayerController;
+                                      if (vp != null) {
+                                        await vp.dispose();
+                                      }
+                                      final ch = _chewieController;
+                                      if (ch != null) {
+                                        ch.dispose();
+                                      }
                                       await _initializePlayer(
                                           selectedSource.url);
                                     },
