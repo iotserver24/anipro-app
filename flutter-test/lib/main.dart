@@ -116,7 +116,6 @@ class MyApp extends StatelessWidget {
       colorScheme: ColorScheme.fromSeed(
         seedColor: const Color(AppConfig.primaryColor),
         brightness: isDarkMode ? Brightness.dark : Brightness.light,
-        background: const Color(AppConfig.backgroundColor),
         surface: const Color(AppConfig.cardColor),
       ),
       textTheme: const TextTheme(
