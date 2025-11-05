@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput, BackHandler, Platform, Linking, Modal, Alert, Animated, Image, Easing } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Text, Dimensions, ScrollView, Pressable, StatusBar, TextInput, BackHandler, Platform, Linking, Modal, Alert, Animated, Image, Easing, AppState } from 'react-native';
 import { useLocalSearchParams, router, Stack, useNavigation } from 'expo-router';
 import { useTheme } from '../../../hooks/useTheme';
 import Video from 'react-native-video';
@@ -915,6 +915,27 @@ export default function WatchEpisode() {
   const [showLangDropdown, setShowLangDropdown] = useState(false);
   const [mediaSessionActive, setMediaSessionActive] = useState(false);
   const [notificationRestored, setNotificationRestored] = useState(false);
+  const appStateRef = useRef(AppState.currentState);
+  const isComponentMountedRef = useRef(true);
+
+  // Safe wrappers to avoid calling orientation APIs when activity is gone/backgrounded
+  const safeLockOrientation = useCallback(async (lock: ScreenOrientation.OrientationLock) => {
+    try {
+      if (AppState.currentState !== 'active') return;
+      await ScreenOrientation.lockAsync(lock);
+    } catch (e) {
+      // Ignore when activity is unavailable during teardown
+    }
+  }, []);
+
+  const safeUnlockOrientation = useCallback(async () => {
+    try {
+      if (AppState.currentState !== 'active') return;
+      await ScreenOrientation.unlockAsync();
+    } catch (e) {
+      // Ignore when activity is unavailable during teardown
+    }
+  }, []);
 
   // Load preferred language and set initial batch based on current episode
   useEffect(() => {
@@ -1015,7 +1036,7 @@ export default function WatchEpisode() {
     const setupOrientation = async () => {
       try {
         // Set initial orientation to portrait
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        await safeLockOrientation(ScreenOrientation.OrientationLock.PORTRAIT_UP);
       } catch (error) {
         console.error('Failed to lock orientation:', error);
       }
@@ -1026,9 +1047,7 @@ export default function WatchEpisode() {
     // Cleanup function
     return () => {
       // Ensure we're back in portrait mode when leaving
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(error => {
-        console.error('Failed to reset orientation:', error);
-      });
+      safeLockOrientation(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
     };
   }, []);
 
@@ -1053,9 +1072,7 @@ export default function WatchEpisode() {
       deactivateKeepAwake();
       
       // Unlock orientation when component unmounts
-      ScreenOrientation.unlockAsync().catch((error) => {
-        console.error('🔔 Failed to unlock orientation on cleanup:', error);
-      });
+      safeUnlockOrientation().catch(() => {});
     };
   }, []);
 
@@ -1240,168 +1257,90 @@ export default function WatchEpisode() {
           throw new Error(`Failed to load SoftSub server: ${error instanceof Error ? error.message : String(error)}`);
         }
       } else if (selectedServer === 'hardSub') {
-        // HardSub server implementation
+        // HardSub server via AllManga API (see allmanga.md)
         try {
-          // First we need the anime's MAL ID or AniList ID
-          let malId = null;
-          let anilistId = null;
-          
-          // Check if we already have anime info with the IDs
+          // Resolve AniList ID from available fields
+          let anilistId: string | null = null;
           if (animeInfo) {
-            // Try to get MAL ID - may be in different properties depending on API response structure
-            if ((animeInfo as any).malID) malId = (animeInfo as any).malID;
-            else if ((animeInfo as any).mal_id) malId = (animeInfo as any).mal_id;
-            else if ((animeInfo as any).mappings && (animeInfo as any).mappings.mal) malId = (animeInfo as any).mappings.mal;
-            
-            // Try to get AniList ID - may be in different properties
-            if ((animeInfo as any).alID) anilistId = (animeInfo as any).alID;
-            else if ((animeInfo as any).al_id) anilistId = (animeInfo as any).al_id;
-            else if ((animeInfo as any).anilist_id) anilistId = (animeInfo as any).anilist_id;
-            else if ((animeInfo as any).mappings && (animeInfo as any).mappings.al) anilistId = (animeInfo as any).mappings.al;
+            if ((animeInfo as any).alID) anilistId = String((animeInfo as any).alID);
+            else if ((animeInfo as any).al_id) anilistId = String((animeInfo as any).al_id);
+            else if ((animeInfo as any).anilist_id) anilistId = String((animeInfo as any).anilist_id);
+            else if ((animeInfo as any).mappings && (animeInfo as any).mappings.al) anilistId = String((animeInfo as any).mappings.al);
           }
-          
-          // If we don't have the IDs yet, fetch the anime details
-          if ((!malId && !anilistId) && animeId) {
-            console.log("Fetching anime details to get MAL/AniList ID");
+          if (!anilistId && animeId) {
             const animeDetails = await animeAPI.getAnimeDetails(animeId as string);
-            
-            // Try to get MAL ID from different possible property names
-            if ((animeDetails as any).malID) malId = (animeDetails as any).malID;
-            else if ((animeDetails as any).mal_id) malId = (animeDetails as any).mal_id;
-            else if ((animeDetails as any).mappings && (animeDetails as any).mappings.mal) malId = (animeDetails as any).mappings.mal;
-            
-            // Try to get AniList ID from different possible property names
-            if ((animeDetails as any).alID) anilistId = (animeDetails as any).alID;
-            else if ((animeDetails as any).al_id) anilistId = (animeDetails as any).al_id;
-            else if ((animeDetails as any).anilist_id) anilistId = (animeDetails as any).anilist_id;
-            else if ((animeDetails as any).mappings && (animeDetails as any).mappings.al) anilistId = (animeDetails as any).mappings.al;
+            if ((animeDetails as any).alID) anilistId = String((animeDetails as any).alID);
+            else if ((animeDetails as any).al_id) anilistId = String((animeDetails as any).al_id);
+            else if ((animeDetails as any).anilist_id) anilistId = String((animeDetails as any).anilist_id);
+            else if ((animeDetails as any).mappings && (animeDetails as any).mappings.al) anilistId = String((animeDetails as any).mappings.al);
           }
-          
-          if (!malId && !anilistId) {
-            throw new Error("Neither MAL ID nor AniList ID available for this anime");
+          if (!anilistId) {
+            throw new Error('AniList ID not available for AllManga mapping');
           }
-          
-          // Log the IDs we found
-          console.log(`Using MAL ID: ${malId}, AniList ID: ${anilistId}`);
-          
-          // Step 1: Get the episode list from animepahe - try MAL ID first, then fall back to AniList ID
-          let response;
-          let episodes;
-          
-          try {
-            if (malId) {
-              response = await fetch(
-                `https://alt.anisurge.me/anime/episodes/mal/${malId}?provider=animepahe`
-              );
-              
-              if (response.ok) {
-                episodes = await response.json();
-                console.log(`Found ${episodes.length} episodes using MAL ID ${malId}`);
-              }
-            }
-          } catch (error) {
-            console.error("Error fetching with MAL ID:", error);
+
+          const base = 'https://anisurge.me/api/am';
+          const modeParam = currentCategory === 'dub' ? 'dub' : 'sub';
+
+          // 1) map anilist -> providerId
+          const mapRes = await fetch(`${base}?action=map&anilistId=${encodeURIComponent(anilistId)}&mode=${modeParam}`);
+          if (!mapRes.ok) {
+            throw new Error(`Map failed: ${mapRes.status}`);
           }
-          
-          // If MAL ID failed or wasn't available, try AniList ID
-          if (!episodes && anilistId) {
-            try {
-              response = await fetch(
-                `https://alt.anisurge.me/anime/episodes/anilist/${anilistId}?provider=animepahe`
-              );
-              
-              if (response.ok) {
-                episodes = await response.json();
-                console.log(`Found ${episodes.length} episodes using AniList ID ${anilistId}`);
-              }
-            } catch (error) {
-              console.error("Error fetching with AniList ID:", error);
-            }
+          const mapJson = await mapRes.json();
+          if (!mapJson || !mapJson.providerId) {
+            throw new Error('Provider ID not found for this anime');
           }
-          
-          if (!episodes || episodes.length === 0) {
-            throw new Error("No episodes found for this anime in animepahe");
+          const providerId: string = mapJson.providerId;
+
+          // 2) episodes list for provider
+          const epsRes = await fetch(`${base}?action=episodes&providerId=${encodeURIComponent(providerId)}&mode=${modeParam}`);
+          if (!epsRes.ok) {
+            throw new Error(`Episodes fetch failed: ${epsRes.status}`);
           }
-          
-          // Convert episode number to numeric value for comparison
+          const epsJson = await epsRes.json();
+          const amEpisodes: Array<{ id: string; episode_number: number }> = epsJson?.episodes || [];
+          if (!Array.isArray(amEpisodes) || amEpisodes.length === 0) {
+            throw new Error('No episodes returned from AllManga');
+          }
+
           const numericEpisodeNumber = Number(episodeNumber);
-          console.log(`Looking for episode number: ${numericEpisodeNumber}`);
-          
-          // Log the available episode numbers for debugging
-          console.log("Available episode numbers:", episodes.map((ep: any) => ep.number));
-          
-          // Find the matching episode by number
-          // For multi-season anime, we need to handle the case where animepahe treats episodes as continuous
-          // but our app expects episode numbers to start from 1 for each season
-          let targetEpisode;
-          
-          // First, try to find exact match (for single season anime)
-          targetEpisode = episodes.find(
-            (ep: any) => Number(ep.number) === numericEpisodeNumber
-          );
-          
-          // If no exact match found, try to find by relative position (for multi-season anime)
-          if (!targetEpisode && episodes.length > 0) {
-            // Get the minimum episode number from animepahe
-            const minEpisodeNumber = Math.min(...episodes.map((ep: any) => Number(ep.number)));
-            console.log(`Minimum episode number in animepahe: ${minEpisodeNumber}`);
-            
-            // Calculate the relative episode number (1-based index within this season)
-            const relativeEpisodeNumber = numericEpisodeNumber;
-            console.log(`Looking for relative episode number: ${relativeEpisodeNumber}`);
-            
-            // Find episode by relative position (1-based index)
-            if (relativeEpisodeNumber > 0 && relativeEpisodeNumber <= episodes.length) {
-              // Sort episodes by number to ensure correct order
-              const sortedEpisodes = episodes.sort((a: any, b: any) => Number(a.number) - Number(b.number));
-              targetEpisode = sortedEpisodes[relativeEpisodeNumber - 1];
-              console.log(`Found episode by relative position: ${targetEpisode.number} (relative: ${relativeEpisodeNumber})`);
-            }
+          const amTarget = amEpisodes.find(e => Number(e.episode_number) === numericEpisodeNumber) || amEpisodes[0];
+          if (!amTarget) {
+            throw new Error(`Episode ${episodeNumber} not found in AllManga episodes`);
           }
-          
-          if (!targetEpisode) {
-            throw new Error(`Episode ${episodeNumber} not found in animepahe (out of ${episodes.length} episodes). Available episodes: ${episodes.map((ep: any) => ep.number).join(', ')}`);
+
+          // 3) scrape streams for selected episode
+          const scrapeRes = await fetch(`${base}?action=scrape&episodeId=${encodeURIComponent(amTarget.id)}&mode=${modeParam}`);
+          if (!scrapeRes.ok) {
+            throw new Error(`Scrape failed: ${scrapeRes.status}`);
           }
-          
-          console.log(`Found target episode:`, targetEpisode);
-          
-          // Step 2: Get the streaming sources for this episode
-          const sourcesResponse = await fetch(
-            `https://con.anisurge.me/anime/animepahe/watch?episodeId=${targetEpisode.id}`
-          );
-          
-          if (!sourcesResponse.ok) {
-            throw new Error(`Failed to fetch sources: ${sourcesResponse.status}`);
+          const scrapeJson = await scrapeRes.json();
+          const streams: Array<{ url: string; quality: string; headers?: { Referer?: string } }> = scrapeJson?.streams || [];
+          if (!Array.isArray(streams) || streams.length === 0) {
+            throw new Error('No streams returned from AllManga');
           }
-          
-          sources = await sourcesResponse.json();
-          console.log("Sources response:", JSON.stringify(sources).substring(0, 200) + "...");
-          
-          // Filter sources based on dub preference if needed
-          if (currentCategory === 'dub') {
-            if (sources.sources) {
-              sources.sources = sources.sources.filter((source: any) => 
-                source.isDub === true || 
-                (source.quality && source.quality.toLowerCase().includes('eng'))
-              );
-            }
-          } else {
-            if (sources.sources) {
-              sources.sources = sources.sources.filter((source: any) => 
-                source.isDub !== true && 
-                (!source.quality || !source.quality.toLowerCase().includes('eng'))
-              );
-            }
-          }
-          
-          if (!sources.sources || sources.sources.length === 0) {
-            throw new Error(`No ${currentCategory} sources found for episode ${episodeNumber}`);
-          }
-          
-          console.log(`Found ${sources.sources.length} sources for ${currentCategory}`);
+
+          // Build sources in expected shape
+          const defaultHeaders = {
+            Referer: streams[0]?.headers?.Referer || 'https://allmanga.to/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          } as any;
+
+          sources = {
+            headers: defaultHeaders,
+            sources: streams.map(s => ({
+              url: s.url,
+              quality: s.quality,
+              isM3U8: s.url.includes('.m3u8'),
+            })),
+            subtitles: [],
+            download: null,
+          } as any;
+
+          console.log(`AllManga: found ${streams.length} stream variants for ep ${numericEpisodeNumber}`);
         } catch (error) {
-          console.error('Error fetching hardSub sources:', error);
-          throw new Error(`Failed to load HardSub server: ${error instanceof Error ? error.message : String(error)}`);
+          console.error('Error fetching HardSub (AllManga) sources:', error);
+          throw new Error(`Failed to load HardSub server (AllManga): ${error instanceof Error ? error.message : String(error)}`);
         }
       } else if (selectedServer === 'zen') {
         // Zen server implementation
@@ -2061,6 +2000,20 @@ export default function WatchEpisode() {
     };
   }, [mediaSessionActive, notificationRestored]);
 
+  // Stop media session and exit fullscreen when app backgrounded to remove notification
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (nextState) => {
+      appStateRef.current = nextState;
+      if (nextState === 'background' || nextState === 'inactive') {
+        try { await mediaSessionService.stopMediaSession(); } catch {}
+        setMediaSessionActive(false);
+        setIsFullscreen(false);
+        // Avoid orientation calls if not active; just update local state
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   // Live time updates for notification (every 5 seconds)
   useEffect(() => {
     if (!mediaSessionActive || !animeInfo) return;
@@ -2540,6 +2493,7 @@ export default function WatchEpisode() {
   // Consolidated cleanup effect
   useEffect(() => {
     return () => {
+      isComponentMountedRef.current = false;
       // Cleanup function
       setVideoUrl(null);
       setStreamingUrl(null);
@@ -2548,9 +2502,7 @@ export default function WatchEpisode() {
       deactivateKeepAwake();
       
       // Reset orientation to portrait
-      ScreenOrientation.lockAsync(
-        ScreenOrientation.OrientationLock.PORTRAIT_UP
-      ).catch(console.error);
+      safeLockOrientation(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
       
       StatusBar.setHidden(false);
       navigation.setOptions({
@@ -2591,9 +2543,7 @@ export default function WatchEpisode() {
       try { mediaSessionService.stopMediaSession(); } catch {}
       
       // Reset orientation
-      ScreenOrientation.lockAsync(
-        ScreenOrientation.OrientationLock.PORTRAIT_UP
-      ).catch(console.error);
+      safeLockOrientation(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
     });
 
     return () => {
@@ -2606,7 +2556,7 @@ export default function WatchEpisode() {
     const cleanup = async () => {
       try {
         // Reset to portrait when component unmounts
-        await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
+        await safeLockOrientation(ScreenOrientation.OrientationLock.PORTRAIT_UP);
         if (Platform.OS === 'android') {
           await NavigationBar.setVisibilityAsync('visible');
         }
