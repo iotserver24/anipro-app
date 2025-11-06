@@ -3,7 +3,7 @@ import { Stack, router, usePathname } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { View, BackHandler, Alert, Text, StyleSheet, TouchableOpacity, Image, ImageBackground } from 'react-native';
+import { View, BackHandler, Alert, Text, StyleSheet, TouchableOpacity, Image, ImageBackground, useWindowDimensions } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider as NavigationThemeProvider, DarkTheme } from '@react-navigation/native';
 import { ThemeProvider } from '../contexts/ThemeContext';
@@ -11,8 +11,9 @@ import { useTheme } from '../hooks/useTheme';
 import SearchBar from '../components/SearchBar';
 import { useWatchHistoryStore } from '../store/watchHistoryStore';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import BottomTabBar from '../components/BottomTabBar';
+import ResponsiveNav, { useIsLargeScreen } from '../components/ResponsiveNav';
 import { restoreUserSession, isEmailVerified, getCurrentUser } from '../services/userService';
+import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, db } from '../services/firebase';
 import { useGlobalStore } from '../store/globalStore';
@@ -361,6 +362,10 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
   const isVideoFullscreen = useGlobalStore(state => state.isVideoFullscreen);
   const isWatchPage = useGlobalStore(state => state.isWatchPage);
   const isChatPage = useGlobalStore(state => state.isChatPage);
+  const isLargeScreen = useIsLargeScreen();
+  
+  // Enable keyboard navigation for desktop/TV
+  useKeyboardNavigation();
 
   return (
     <NavigationThemeProvider value={DarkTheme}>
@@ -385,7 +390,8 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
                 },
               contentStyle: {
                 backgroundColor: 'transparent',
-                paddingBottom: isVideoFullscreen || isChatPage ? 0 : 60,
+                paddingBottom: isVideoFullscreen || isChatPage ? 0 : (isLargeScreen ? 0 : 60),
+                paddingLeft: isLargeScreen && !isVideoFullscreen ? 250 : 0,
               },
                 animation: 'none',
                 animationDuration: 0,
@@ -461,6 +467,22 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
             }}
           />
           <Stack.Screen
+            name="history"
+            options={{
+              title: 'Watch History',
+              headerShown: true,
+              headerRight: () => <HeaderRight />,
+            }}
+          />
+          <Stack.Screen
+            name="notifications"
+            options={{
+              title: 'Notifications',
+              headerShown: true,
+              headerRight: () => <HeaderRight />,
+            }}
+          />
+          <Stack.Screen
             name="mentions"
             options={{
               title: 'Mentions',
@@ -490,11 +512,81 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
               headerRight: () => <HeaderRight />, 
             }}
           />
+          <Stack.Screen
+            name="importExport"
+            options={{
+              title: 'Import/Export',
+              headerShown: true,
+              headerRight: () => <HeaderRight />,
+            }}
+          />
+          <Stack.Screen
+            name="theme-settings"
+            options={{
+              title: 'Theme Settings',
+              headerShown: true,
+              headerRight: () => <HeaderRight />,
+            }}
+          />
+          <Stack.Screen
+            name="gallery"
+            options={{
+              title: 'Gallery',
+              headerShown: true,
+              headerRight: () => <HeaderRight />,
+            }}
+          />
+          <Stack.Screen
+            name="aichat"
+            options={{
+              title: 'AI Chat',
+              headerShown: true,
+              headerRight: () => <HeaderRight />,
+            }}
+          />
+          <Stack.Screen
+            name="character-select"
+            options={{
+              title: 'Select Character',
+              headerShown: true,
+              headerRight: () => <HeaderRight />,
+            }}
+          />
+          <Stack.Screen
+            name="character-store"
+            options={{
+              title: 'Character Store',
+              headerShown: true,
+              headerRight: () => <HeaderRight />,
+            }}
+          />
+          <Stack.Screen
+            name="create-character"
+            options={{
+              title: 'Create Character',
+              headerShown: true,
+              headerRight: () => <HeaderRight />,
+            }}
+          />
+          <Stack.Screen
+            name="chat-history"
+            options={{
+              title: 'Chat History',
+              headerShown: true,
+              headerRight: () => <HeaderRight />,
+            }}
+          />
+          <Stack.Screen
+            name="continue"
+            options={{
+              title: 'Continue Watching',
+              headerShown: true,
+              headerRight: () => <HeaderRight />,
+            }}
+          />
             </Stack>
-            {/* Position the bottom tab bar with absolute positioning outside the Stack */}
-            <View style={styles.bottomTabContainer}>
-              {!isVideoFullscreen && !isChatPage && <BottomTabBar />}
-            </View>
+            {/* Responsive navigation - bottom bar for mobile, side bar for large screens */}
+            {!isVideoFullscreen && !isChatPage && <ResponsiveNav />}
           </View>
         </ImageBackground>
       ) : (
@@ -511,7 +603,8 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
               },
               contentStyle: {
                 backgroundColor: theme.colors.background,
-                paddingBottom: isVideoFullscreen || isChatPage ? 0 : 60,
+                paddingBottom: isVideoFullscreen || isChatPage ? 0 : (isLargeScreen ? 0 : 60),
+                paddingLeft: isLargeScreen && !isVideoFullscreen ? 250 : 0,
               },
               animation: 'none',
               animationDuration: 0,
@@ -574,6 +667,22 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
               }}
             />
             <Stack.Screen
+              name="history"
+              options={{
+                title: 'Watch History',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="notifications"
+              options={{
+                title: 'Notifications',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
               name="mentions"
               options={{
                 title: 'Mentions',
@@ -581,11 +690,81 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
                 headerRight: () => <HeaderRight />,
               }}
             />
+            <Stack.Screen
+              name="importExport"
+              options={{
+                title: 'Import/Export',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="theme-settings"
+              options={{
+                title: 'Theme Settings',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="gallery"
+              options={{
+                title: 'Gallery',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="aichat"
+              options={{
+                title: 'AI Chat',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="character-select"
+              options={{
+                title: 'Select Character',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="character-store"
+              options={{
+                title: 'Character Store',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="create-character"
+              options={{
+                title: 'Create Character',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="chat-history"
+              options={{
+                title: 'Chat History',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
+            <Stack.Screen
+              name="continue"
+              options={{
+                title: 'Continue Watching',
+                headerShown: true,
+                headerRight: () => <HeaderRight />,
+              }}
+            />
           </Stack>
-          {/* Position the bottom tab bar with absolute positioning outside the Stack */}
-          <View style={styles.bottomTabContainer}>
-            {!isVideoFullscreen && !isChatPage && <BottomTabBar />}
-          </View>
+          {/* Responsive navigation - bottom bar for mobile, side bar for large screens */}
+          {!isVideoFullscreen && !isChatPage && <ResponsiveNav />}
         </View>
       )}
     </NavigationThemeProvider>
