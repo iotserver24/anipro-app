@@ -1,0 +1,243 @@
+name: Flutter Multi-Platform Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g., 1.0.0)'
+        required: true
+        type: string
+      build_number:
+        description: 'Build number (e.g., 1)'
+        required: true
+        type: string
+      release_type:
+        description: 'Release type'
+        required: true
+        type: choice
+        options:
+          - draft
+          - prerelease
+          - latest
+
+jobs:
+  build-android:
+    name: Build Android APK & Bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+
+      - name: Update version in pubspec.yaml
+        working-directory: ./flutter
+        run: |
+          sed -i "s/version: .*/version: ${{ github.event.inputs.version }}+${{ github.event.inputs.build_number }}/" pubspec.yaml
+          cat pubspec.yaml | grep version
+
+      - name: Get dependencies
+        working-directory: ./flutter
+        run: flutter pub get
+
+      - name: Build APK
+        working-directory: ./flutter
+        run: flutter build apk --release
+
+      - name: Build App Bundle
+        working-directory: ./flutter
+        run: flutter build appbundle --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: flutter/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-bundle
+          path: flutter/build/app/outputs/bundle/release/app-release.aab
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+
+      - name: Update version in pubspec.yaml
+        working-directory: ./flutter
+        shell: pwsh
+        run: |
+          (Get-Content pubspec.yaml) -replace 'version: .*', 'version: ${{ github.event.inputs.version }}+${{ github.event.inputs.build_number }}' | Set-Content pubspec.yaml
+          Get-Content pubspec.yaml | Select-String "version"
+
+      - name: Get dependencies
+        working-directory: ./flutter
+        run: flutter pub get
+
+      - name: Build Windows
+        working-directory: ./flutter
+        run: flutter build windows --release
+
+      - name: Create Windows archive
+        working-directory: ./flutter/build/windows/x64/runner/Release
+        shell: pwsh
+        run: |
+          Compress-Archive -Path * -DestinationPath anisurge2-windows-${{ github.event.inputs.version }}.zip
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build
+          path: flutter/build/windows/x64/runner/Release/anisurge2-windows-${{ github.event.inputs.version }}.zip
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ninja-build libgtk-3-dev clang cmake pkg-config
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.5'
+          channel: 'stable'
+
+      - name: Update version in pubspec.yaml
+        working-directory: ./flutter
+        run: |
+          sed -i "s/version: .*/version: ${{ github.event.inputs.version }}+${{ github.event.inputs.build_number }}/" pubspec.yaml
+          cat pubspec.yaml | grep version
+
+      - name: Get dependencies
+        working-directory: ./flutter
+        run: flutter pub get
+
+      - name: Build Linux
+        working-directory: ./flutter
+        run: flutter build linux --release
+
+      - name: Create Linux tarball
+        working-directory: ./flutter/build/linux/x64/release/bundle
+        run: |
+          tar -czf anisurge2-linux-${{ github.event.inputs.version }}.tar.gz *
+
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: flutter/build/linux/x64/release/bundle/anisurge2-linux-${{ github.event.inputs.version }}.tar.gz
+
+  create-release:
+    name: Create GitHub Release
+    needs: [build-android, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R ./artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          
+          # Rename APK
+          cp ./artifacts/android-apk/app-release.apk ./release-assets/anisurge2-v${{ github.event.inputs.version }}-android.apk
+          
+          # Rename AAB
+          cp ./artifacts/android-bundle/app-release.aab ./release-assets/anisurge2-v${{ github.event.inputs.version }}-android.aab
+          
+          # Copy Windows
+          cp ./artifacts/windows-build/anisurge2-windows-${{ github.event.inputs.version }}.zip ./release-assets/
+          
+          # Copy Linux
+          cp ./artifacts/linux-build/anisurge2-linux-${{ github.event.inputs.version }}.tar.gz ./release-assets/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: Release v${{ github.event.inputs.version }}
+          draft: ${{ github.event.inputs.release_type == 'draft' }}
+          prerelease: ${{ github.event.inputs.release_type == 'prerelease' }}
+          body: |
+            ## Anisurge2 v${{ github.event.inputs.version }}
+            
+            ### Multi-Platform Anime Streaming Application
+            
+            **Build Number:** ${{ github.event.inputs.build_number }}
+            
+            ### Supported Platforms:
+            - 📱 **Android** (Mobile & TV with remote support)
+            - 🖥️ **Windows**
+            - 🐧 **Linux**
+            
+            ### Features:
+            - Browse and search anime
+            - Stream episodes with quality selection
+            - Sub/Dub audio track switching
+            - Watch history tracking
+            - Android TV D-pad/remote navigation
+            - Fullscreen video player with controls
+            - Responsive UI for all screen sizes
+            
+            ### Installation:
+            
+            #### Android:
+            - Download `anisurge2-v${{ github.event.inputs.version }}-android.apk`
+            - Enable "Install from unknown sources" in settings
+            - Install the APK
+            
+            #### Android TV:
+            - Transfer the APK to your Android TV device
+            - Use a file manager to install
+            - Navigate using your TV remote
+            
+            #### Windows:
+            - Download `anisurge2-windows-${{ github.event.inputs.version }}.zip`
+            - Extract the archive
+            - Run `anisurge2.exe`
+            
+            #### Linux:
+            - Download `anisurge2-linux-${{ github.event.inputs.version }}.tar.gz`
+            - Extract: `tar -xzf anisurge2-linux-${{ github.event.inputs.version }}.tar.gz`
+            - Run: `./anisurge2`
+            
+            ### API:
+            This app uses the anime API: `https://con.anisurge.me/anime/zoro`
+          files: |
+            ./release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
