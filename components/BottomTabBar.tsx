@@ -1,11 +1,23 @@
-import React, { useCallback, memo, useState } from 'react';
+import React, { useCallback, memo, useState, useRef } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet, Platform, Animated } from 'react-native';
 import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
 import { useTheme } from '../hooks/useTheme';
+import { getTVFocusProps } from '../hooks/useTVRemoteHandler';
+
+// Props interface for Tab
+interface TabProps {
+  path: string;
+  name: string;
+  icon: string;
+  IconComponent: any;
+  isActive: boolean;
+  onPress: () => void;
+  theme: any;
+}
 
 // Create a memoized tab component to prevent unnecessary re-renders
-const Tab = memo(({ path, name, icon, IconComponent, isActive, onPress, theme }) => {
+const Tab = memo(({ path, name, icon, IconComponent, isActive, onPress, theme }: TabProps) => {
   // Animation value for press feedback
   const [pressAnim] = useState(new Animated.Value(1));
   
@@ -36,6 +48,7 @@ const Tab = memo(({ path, name, icon, IconComponent, isActive, onPress, theme })
       delayPressIn={0}
       hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
       pressRetentionOffset={{ top: 20, left: 20, bottom: 20, right: 20 }}
+      {...getTVFocusProps(isActive)}
     >
       <Animated.View style={{ 
         transform: [{ scale: pressAnim }],
@@ -72,9 +85,9 @@ function BottomTabBar() {
       IconComponent: MaterialIcons
     },
     {
-      name: 'My List',
-      path: '/mylist',
-      icon: 'bookmark',
+      name: 'Schedule',
+      path: '/schedule',
+      icon: 'schedule',
       IconComponent: MaterialIcons
     }
   ];
@@ -82,21 +95,15 @@ function BottomTabBar() {
   // Navigation tabs for the right side
   const rightTabs = [
     {
-      name: 'Chat',
-      path: '/chat',
-      icon: 'chat',
+      name: 'History',
+      path: '/history',
+      icon: 'history',
       IconComponent: MaterialIcons
     },
-    // {
-    //   name: 'Gallery',
-    //   path: '/gallery',
-    //   icon: 'photo-library',
-    //   IconComponent: MaterialIcons
-    // },
     {
-      name: 'About',
-      path: '/about',
-      icon: 'info',
+      name: 'Profile',
+      path: '/profile',
+      icon: 'person',
       IconComponent: MaterialIcons
     }
   ];
@@ -163,6 +170,7 @@ function BottomTabBar() {
           delayPressIn={0}
           hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
           pressRetentionOffset={{ top: 20, left: 20, bottom: 20, right: 20 }}
+          {...getTVFocusProps(pathname === '/search')}
         >
           <Animated.View style={[
             styles.searchButton,
