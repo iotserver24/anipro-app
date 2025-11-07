@@ -40,7 +40,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.35.7'
+          flutter-version: '3.24.0'
           channel: 'stable'
 
       - name: Update version in pubspec.yaml
@@ -57,11 +57,21 @@ jobs:
         working-directory: flutter
         run: flutter build apk --release --build-name=${{ github.event.inputs.version }} --build-number=${{ github.event.inputs.build_number }}
 
+      - name: Build APK (Split by ABI)
+        working-directory: flutter
+        run: flutter build apk --release --split-per-abi --build-name=${{ github.event.inputs.version }} --build-number=${{ github.event.inputs.build_number }}
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
           path: flutter/build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Upload Split APKs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-split
+          path: flutter/build/app/outputs/flutter-apk/app-*-release.apk
 
   build-windows:
     name: Build Windows
@@ -73,7 +83,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.35.7'
+          flutter-version: '3.24.0'
           channel: 'stable'
 
       - name: Update version in pubspec.yaml
@@ -114,7 +124,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.35.7'
+          flutter-version: '3.24.0'
           channel: 'stable'
 
       - name: Update version in pubspec.yaml
@@ -140,9 +150,45 @@ jobs:
           name: linux-build
           path: linux-release.tar.gz
 
+  build-web:
+    name: Build Web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+
+      - name: Update version in pubspec.yaml
+        working-directory: flutter
+        run: |
+          sed -i "s/^version: .*/version: ${{ github.event.inputs.version }}+${{ github.event.inputs.build_number }}/" pubspec.yaml
+          cat pubspec.yaml | grep "^version:"
+
+      - name: Install dependencies
+        working-directory: flutter
+        run: flutter pub get
+
+      - name: Build Web
+        working-directory: flutter
+        run: flutter build web --release --build-name=${{ github.event.inputs.version }} --build-number=${{ github.event.inputs.build_number }}
+
+      - name: Archive Web build
+        run: tar -czvf web-release.tar.gz -C flutter/build/web .
+
+      - name: Upload Web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: web-release.tar.gz
+
   create-release:
     name: Create GitHub Release
-    needs: [build-android, build-windows, build-linux]
+    needs: [build-android, build-windows, build-linux, build-web]
     runs-on: ubuntu-latest
     steps:
       - name: Download Android artifact
@@ -163,11 +209,18 @@ jobs:
           name: linux-build
           path: ./artifacts
 
+      - name: Download Web artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: ./artifacts
+
       - name: Rename artifacts
         run: |
           mv ./artifacts/app-release.apk ./artifacts/AniSurge-${{ github.event.inputs.version }}-android.apk
           mv ./artifacts/windows-release.zip ./artifacts/AniSurge-${{ github.event.inputs.version }}-windows.zip
           mv ./artifacts/linux-release.tar.gz ./artifacts/AniSurge-${{ github.event.inputs.version }}-linux.tar.gz
+          mv ./artifacts/web-release.tar.gz ./artifacts/AniSurge-${{ github.event.inputs.version }}-web.tar.gz
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -180,28 +233,40 @@ jobs:
             ./artifacts/AniSurge-${{ github.event.inputs.version }}-android.apk
             ./artifacts/AniSurge-${{ github.event.inputs.version }}-windows.zip
             ./artifacts/AniSurge-${{ github.event.inputs.version }}-linux.tar.gz
+            ./artifacts/AniSurge-${{ github.event.inputs.version }}-web.tar.gz
           body: |
             ## AniSurge v${{ github.event.inputs.version }}
             
             ### Multi-Platform Anime Streaming Application
             
             #### Features
-            - 📱 Android (Mobile & TV with Remote Support)
-            - 🪟 Windows Desktop
-            - 🐧 Linux Desktop
+            - 📱 **Android** (Mobile & TV with Full Remote Navigation Support)
+            - 🪟 **Windows Desktop**
+            - 🐧 **Linux Desktop**
+            - 🌐 **Web** (Progressive Web App)
+            
+            #### Core Features
+            - 🎬 **Anime Streaming**: High-quality video playback with M3U8/HLS support
+            - 🔍 **Advanced Search**: Search with filters (genres, type, status, rating)
+            - 📺 **Android TV Support**: Full D-pad navigation with visual focus indicators
+            - 💬 **Public Chat**: Real-time chat with GIF support
+            - 🤖 **AI Chat**: Chat with anime characters (Aizen, Dazai, Gojo, etc.)
+            - 📸 **Gallery**: Waifu/Husbando gallery
+            - 📋 **My List**: Bookmark your favorite anime
+            - 📜 **Watch History**: Resume watching from where you left off
+            - 📅 **Schedule**: Daily airing schedule with countdown timers
+            - 🔔 **Notifications**: In-app notifications system
+            - 👤 **User Profiles**: Authentication with Firebase
+            - 🎨 **Theme Settings**: Customizable themes and background media
+            - 📤 **Import/Export**: Export your list in JSON, XML, or TXT format
+            - 💬 **Comments**: Comment on anime episodes
+            - 🔗 **Mentions**: Get notified when mentioned in chat
             
             #### Download
             - **Android**: AniSurge-${{ github.event.inputs.version }}-android.apk
             - **Windows**: AniSurge-${{ github.event.inputs.version }}-windows.zip (Extract and run)
             - **Linux**: AniSurge-${{ github.event.inputs.version }}-linux.tar.gz (Extract and run)
-            
-            #### What's New
-            - Multi-platform anime streaming
-            - Android TV support with remote control
-            - Browse trending, popular, and recent anime
-            - Search functionality
-            - High-quality video playback
-            - Modern UI with dark theme
+            - **Web**: AniSurge-${{ github.event.inputs.version }}-web.tar.gz (Extract and deploy)
             
             #### Installation
             
@@ -213,7 +278,8 @@ jobs:
             **Android TV:**
             1. Transfer the APK to your Android TV
             2. Install using a file manager
-            3. Navigate using your TV remote
+            3. Navigate using your TV remote (D-pad navigation fully supported)
+            4. All features accessible via remote control
             
             **Windows:**
             1. Download and extract the ZIP file
@@ -223,6 +289,39 @@ jobs:
             1. Download and extract the tar.gz file
             2. Run `./anisurge2`
             
-            Package Name: `com.r3ap3redit.anisurge2`
+            **Web:**
+            1. Extract the tar.gz file
+            2. Deploy to any web server
+            3. Access via browser
+            
+            #### Android TV Remote Navigation
+            - **D-Pad Up/Down**: Navigate menu items
+            - **D-Pad Left/Right**: Scroll horizontal lists
+            - **Select/OK**: Activate focused item
+            - **Back**: Go back to previous screen
+            - **Visual Focus Indicators**: Purple borders show focused items
+            
+            #### Technical Details
+            - **Framework**: Flutter 3.24.0
+            - **Package Name**: `com.r3ap3redit.anisurge2`
+            - **State Management**: Provider
+            - **Video Player**: Chewie with Video Player
+            - **Backend**: Firebase (Auth, Firestore, Realtime DB)
+            - **API**: Zoro Anime API (https://con.anisurge.me/anime/zoro)
+            
+            #### What's New in This Release
+            - ✅ Complete feature parity with Expo version
+            - ✅ Android TV remote navigation support
+            - ✅ Public Chat with real-time messaging
+            - ✅ AI Chat with multiple anime characters
+            - ✅ Gallery feature (Waifu/Husbando)
+            - ✅ Mentions and notifications system
+            - ✅ Import/Export functionality
+            - ✅ Theme customization
+            - ✅ Responsive navigation (desktop/mobile/TV)
+            - ✅ Enhanced video player controls
+            - ✅ Comments system
+            - ✅ Schedule with countdown timers
+            - ✅ Multi-platform support (Android, Windows, Linux, Web)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
