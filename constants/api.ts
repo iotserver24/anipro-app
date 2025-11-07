@@ -18,4 +18,11 @@ export const ENDPOINTS = {
   OVA: '/ova',
   SPECIALS: '/specials',
   TV: '/tv'
+};
+
+// AI API Endpoints
+export const AI_API = {
+  OPENAI: 'https://text.pollinations.ai/openai',
+  CLAUDE: '/claude/v1/messages',
+  CLAUDE_BASE: 'https://text.pollinations.ai'
 }; 

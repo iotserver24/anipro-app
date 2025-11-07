@@ -42,6 +42,10 @@ import { useFocusEffect } from '@react-navigation/native';
 const POLLINATIONS_TEXT_API_URL = 'https://text.pollinations.ai/openai?token=uNoesre5jXDzjhiY';
 const POLLINATIONS_API_KEY = 'uNoesre5jXDzjhiY';
 
+// NOTE: Claude SDK-compatible API is also available via services/claudeApi.ts
+// Import and use: import { claudeAPI } from '../services/claudeApi';
+// Example: await claudeAPI.sendMessage({ model: 'claude-3-5-sonnet-20241022', messages: [...] });
+
 // AI Character Configurations
 const AI_CONFIGS = {
   aizen: {
