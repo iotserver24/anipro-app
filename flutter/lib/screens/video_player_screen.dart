@@ -1,19 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:chewie/chewie.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock/wakelock.dart';
 import '../services/anime_api_service.dart';
+import '../providers/watch_history_provider.dart';
+import '../models/watch_history.dart';
 
 class VideoPlayerScreen extends StatefulWidget {
   final String episodeId;
   final int episodeNumber;
   final String animeTitle;
+  final String? animeId;
+  final String? animeImage;
+  final bool isDub;
 
   const VideoPlayerScreen({
     super.key,
     required this.episodeId,
     required this.episodeNumber,
     required this.animeTitle,
+    this.animeId,
+    this.animeImage,
+    this.isDub = false,
   });
 
   @override
@@ -26,29 +36,83 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   ChewieController? _chewieController;
   bool _isLoading = true;
   String? _error;
+  Duration _lastSavedPosition = Duration.zero;
 
   @override
   void initState() {
     super.initState();
+    Wakelock.enable();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
+      DeviceOrientation.portraitUp,
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _loadVideo();
+    _setupProgressTracking();
   }
 
   @override
   void dispose() {
+    Wakelock.disable();
+    _saveWatchHistory();
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    _videoPlayerController?.removeListener(_onVideoPositionChanged);
     _videoPlayerController?.dispose();
     _chewieController?.dispose();
     super.dispose();
+  }
+
+  void _setupProgressTracking() {
+    // Save progress every 5 seconds
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted && _videoPlayerController != null) {
+        _saveWatchHistory();
+        _setupProgressTracking();
+      }
+    });
+  }
+
+  void _onVideoPositionChanged() {
+    if (_videoPlayerController != null) {
+      final position = _videoPlayerController!.value.position;
+
+      // Save progress every 5 seconds
+      if ((position - _lastSavedPosition).inSeconds.abs() >= 5) {
+        _lastSavedPosition = position;
+        _saveWatchHistory();
+      }
+    }
+  }
+
+  Future<void> _saveWatchHistory() async {
+    if (_videoPlayerController == null || widget.animeId == null) return;
+
+    final watchHistoryProvider = Provider.of<WatchHistoryProvider>(context, listen: false);
+    final position = _videoPlayerController!.value.position;
+    final duration = _videoPlayerController!.value.duration;
+
+    if (duration.inSeconds == 0) return;
+
+    final historyItem = WatchHistoryItem(
+      id: widget.animeId!,
+      name: widget.animeTitle,
+      img: widget.animeImage ?? '',
+      episodeId: widget.episodeId,
+      episodeNumber: widget.episodeNumber,
+      timestamp: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      progress: position.inSeconds,
+      duration: duration.inSeconds,
+      lastWatched: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      subOrDub: widget.isDub ? 'dub' : 'sub',
+    );
+
+    await watchHistoryProvider.addToHistory(historyItem);
   }
 
   Future<void> _loadVideo() async {
@@ -59,7 +123,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
     try {
       final streamingData =
-          await _apiService.getEpisodeSources(widget.episodeId, false);
+          await _apiService.getEpisodeSources(widget.episodeId, widget.isDub);
 
       if (streamingData == null || streamingData.sources.isEmpty) {
         setState(() {
@@ -76,7 +140,20 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
         httpHeaders: streamingData.headers,
       );
 
+      _videoPlayerController!.addListener(_onVideoPositionChanged);
+
       await _videoPlayerController!.initialize();
+
+      // Try to resume from last position
+      final watchHistoryProvider = Provider.of<WatchHistoryProvider>(context, listen: false);
+      final historyItem = await watchHistoryProvider.getHistoryForAnime(widget.animeId ?? '');
+      
+      if (historyItem != null && historyItem.episodeId == widget.episodeId) {
+        final resumePosition = Duration(seconds: historyItem.progress);
+        if (resumePosition.inSeconds > 10) {
+          await _videoPlayerController!.seekTo(resumePosition);
+        }
+      }
 
       _chewieController = ChewieController(
         videoPlayerController: _videoPlayerController!,
@@ -153,7 +230,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                             IconButton(
                               icon: const Icon(Icons.arrow_back,
                                   color: Colors.white),
-                              onPressed: () => Navigator.pop(context),
+                              onPressed: () {
+                                _saveWatchHistory();
+                                Navigator.pop(context);
+                              },
                             ),
                             Expanded(
                               child: Column(

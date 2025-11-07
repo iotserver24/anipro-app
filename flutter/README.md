@@ -1,13 +1,14 @@
 # AniSurge Flutter - Multi-Platform Anime Streaming App
 
-A cross-platform anime streaming application built with Flutter, supporting Android, Android TV, Windows, and Linux.
+A cross-platform anime streaming application built with Flutter, supporting **Android, iOS, Linux, macOS, and Web**.
 
 ## 📱 Supported Platforms
 
-- ✅ Android (Mobile)
-- ✅ Android TV (with Remote Control Support)
-- ✅ Windows Desktop
-- ✅ Linux Desktop
+- ✅ **Android** (Mobile & TV with Remote Control Support)
+- ✅ **iOS** (iPhone & iPad)
+- ✅ **Linux** (Desktop)
+- ✅ **macOS** (Desktop)
+- ✅ **Web** (Progressive Web App - PWA)
 
 ## 🎯 Features
 
@@ -54,9 +55,11 @@ A cross-platform anime streaming application built with Flutter, supporting Andr
 ### Prerequisites
 
 1. Install Flutter SDK (3.35.7 or later)
-2. For Android: Android Studio with Android SDK
-3. For Linux: GTK development libraries
-4. For Windows: Visual Studio 2022
+2. **For Android:** Android Studio with Android SDK
+3. **For iOS:** macOS with Xcode 14+
+4. **For macOS:** macOS with Xcode 14+
+5. **For Linux:** GTK 3.0 development libraries
+6. **For Web:** Modern web browser (no additional setup)
 
 ### Build Commands
 
@@ -66,22 +69,37 @@ flutter build apk --release
 # Output: build/app/outputs/flutter-apk/app-release.apk
 ```
 
-#### Android (Split by ABI)
+#### Android (Split by ABI - Smaller Size)
 ```bash
 flutter build apk --release --split-per-abi
 # Generates separate APKs for arm64-v8a, armeabi-v7a, x86_64
 ```
 
-#### Windows
+#### iOS (macOS only)
 ```bash
-flutter build windows --release
-# Output: build/windows/x64/runner/Release/
+flutter build ios --release
+# Requires: macOS + Xcode
+# Output: build/ios/iphoneos/Runner.app
+```
+
+#### macOS (macOS only)
+```bash
+flutter build macos --release
+# Requires: macOS + Xcode
+# Output: build/macos/Build/Products/Release/AniSurge.app
 ```
 
 #### Linux
 ```bash
 flutter build linux --release
 # Output: build/linux/x64/release/bundle/
+```
+
+#### Web
+```bash
+flutter build web --release
+# Output: build/web/
+# Deploy to any web server
 ```
 
 ### Development
@@ -140,21 +158,17 @@ The app uses the following API endpoints:
 flutter/
 ├── lib/
 │   ├── main.dart                 # App entry point
-│   ├── models/
-│   │   └── anime.dart           # Data models
-│   ├── services/
-│   │   └── anime_api_service.dart # API service
-│   ├── screens/
-│   │   ├── home_screen.dart     # Home screen
-│   │   ├── search_screen.dart   # Search screen
-│   │   ├── anime_details_screen.dart # Details screen
-│   │   └── video_player_screen.dart  # Video player
-│   └── widgets/
-│       └── anime_card.dart      # Reusable anime card widget
-├── android/                     # Android configuration
-├── windows/                     # Windows configuration
-├── linux/                       # Linux configuration
-└── pubspec.yaml                # Dependencies
+│   ├── models/                   # Data models
+│   ├── services/                 # API & Firebase services
+│   ├── screens/                  # App screens
+│   ├── widgets/                  # Reusable widgets
+│   └── providers/                # State management
+├── android/                      # Android configuration
+├── ios/                          # iOS configuration
+├── linux/                        # Linux configuration
+├── macos/                        # macOS configuration
+├── web/                          # Web configuration
+└── pubspec.yaml                  # Dependencies
 ```
 
 ## 🎨 Theming
@@ -166,23 +180,12 @@ The app uses a modern dark theme:
 - **Background**: `#121212` (Dark Gray)
 - **Surface**: `#1F1F1F` (Slightly Lighter)
 
-## 🔄 GitHub Actions
+## 📚 Documentation
 
-The project includes automated builds via GitHub Actions:
-
-- Triggered manually with version and build number inputs
-- Builds for Android, Windows, and Linux simultaneously
-- Creates GitHub releases with all platform builds
-- Supports draft, pre-release, and latest release types
-
-### Trigger Build
-
-1. Go to Actions tab in GitHub
-2. Select "Flutter Multi-Platform Build"
-3. Click "Run workflow"
-4. Enter version (e.g., 1.0.0)
-5. Enter build number (e.g., 1)
-6. Select release type (draft/pre-release/latest)
+- **Non-Windows Build Guide:** See `NON_WINDOWS_BUILD_GUIDE.md` for detailed platform-specific instructions
+- **Firebase Setup:** See `FIREBASE_SETUP.md` for authentication and database configuration
+- **Platform Setup:** See `PLATFORM_SETUP_COMPLETE.md` for configuration status
+- **General Build Guide:** See `BUILD_GUIDE.md` for comprehensive build instructions
 
 ## 📄 License
 
