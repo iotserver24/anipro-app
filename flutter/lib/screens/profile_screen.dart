@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
+import '../services/firebase_service.dart';
 import 'auth_screen.dart';
+import 'theme_settings_screen.dart';
+import 'import_export_screen.dart';
+import 'about_screen.dart';
+import 'package:provider/provider.dart';
+import '../providers/my_list_provider.dart';
+import '../providers/watch_history_provider.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -102,6 +109,33 @@ class ProfileScreen extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 32),
+              if (isSignedIn) ...[
+                StreamBuilder(
+                  stream: FirebaseService.firestore
+                      .collection('users')
+                      .doc(user?.uid)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) {
+                      return const SizedBox.shrink();
+                    }
+                    final userData = snapshot.data!.data();
+                    final myListCount = Provider.of<MyListProvider>(context).myList.length;
+                    final historyCount = Provider.of<WatchHistoryProvider>(context).history.length;
+                    
+                    return Column(
+                      children: [
+                        _buildStatCard('My List', myListCount.toString()),
+                        const SizedBox(height: 8),
+                        _buildStatCard('Watch History', historyCount.toString()),
+                        const SizedBox(height: 8),
+                        _buildStatCard('Premium', userData?['isPremium'] == true ? 'Yes' : 'No'),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(height: 16),
+              ],
               ListTile(
                 leading: const Icon(Icons.bookmark_outline),
                 title: const Text('My List'),
@@ -120,11 +154,29 @@ class ProfileScreen extends StatelessWidget {
               ),
               const Divider(),
               ListTile(
-                leading: const Icon(Icons.settings_outlined),
-                title: const Text('Settings'),
+                leading: const Icon(Icons.palette_outlined),
+                title: const Text('Theme Settings'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
-                  // TODO: Navigate to settings
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ThemeSettingsScreen(),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.import_export),
+                title: const Text('Import/Export'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const ImportExportScreen(),
+                    ),
+                  );
                 },
               ),
               ListTile(
@@ -132,11 +184,11 @@ class ProfileScreen extends StatelessWidget {
                 title: const Text('About'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
-                  showAboutDialog(
-                    context: context,
-                    applicationName: 'AniSurge',
-                    applicationVersion: '1.0.0',
-                    applicationLegalese: '© 2024 AniSurge',
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AboutScreen(),
+                    ),
                   );
                 },
               ),
@@ -173,6 +225,31 @@ class ProfileScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildStatCard(String label, String value) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(fontSize: 16),
+            ),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF6C63FF),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
