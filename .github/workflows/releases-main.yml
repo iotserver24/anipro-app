@@ -1,4 +1,4 @@
-name: Build and Release Android App
+name: BUILD
 
 on:
   workflow_dispatch:
@@ -104,7 +104,7 @@ jobs:
         run: npm ci
 
       - name: Extract version from appConfig.ts
-        id: version
+        id: version_initial
         run: |
           VERSION=$(grep -oP "VERSION:\s*['\"]([^'\"]+)['\"]" constants/appConfig.ts | grep -oP "['\"]([^'\"]+)['\"]" | tr -d "'\"")
           VERSION_CODE=$(grep -oP "VERSION_CODE:\s*(\d+)" constants/appConfig.ts | grep -oP "\d+")
@@ -117,9 +117,24 @@ jobs:
         run: |
           VERSION="${{ github.event.inputs.version }}"
           BUILD_NUMBER="${{ github.event.inputs.build_number }}"
-          if [ -n "$BUILD_NUMBER" ]; then
-            node scripts/update-version.js "$VERSION" "$BUILD_NUMBER"
+          
+          # If build_number not provided, use the current version_code
+          if [ -z "$BUILD_NUMBER" ]; then
+            BUILD_NUMBER="${{ steps.version_initial.outputs.version_code }}"
+            echo "Build number not provided, using current version code: $BUILD_NUMBER"
           fi
+          
+          echo "Updating version to $VERSION with build number $BUILD_NUMBER"
+          node scripts/update-version.js "$VERSION" "$BUILD_NUMBER"
+
+      - name: Extract version from appConfig.ts (after update)
+        id: version
+        run: |
+          VERSION=$(grep -oP "VERSION:\s*['\"]([^'\"]+)['\"]" constants/appConfig.ts | grep -oP "['\"]([^'\"]+)['\"]" | tr -d "'\"")
+          VERSION_CODE=$(grep -oP "VERSION_CODE:\s*(\d+)" constants/appConfig.ts | grep -oP "\d+")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION (Build: $VERSION_CODE)"
 
       - name: Create assets directory
         run: mkdir -p android/app/src/main/assets
