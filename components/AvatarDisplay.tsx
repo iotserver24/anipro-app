@@ -77,6 +77,7 @@ const AvatarDisplay = memo(({
 const styles = StyleSheet.create({
   container: {
     position: 'relative',
+    overflow: 'hidden',
   },
   imageAvatar: {
     width: '100%',

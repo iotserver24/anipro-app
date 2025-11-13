@@ -1,9 +1,18 @@
-import React, { useCallback, memo, useState } from 'react';
-import { View, TouchableOpacity, Text, StyleSheet, Platform, Animated, ScrollView } from 'react-native';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import React, { useCallback, memo, useState, useEffect, useRef, useMemo } from 'react';
+import { View, TouchableOpacity, Text, StyleSheet, Platform, Animated, ScrollView, Modal } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
 import { useTheme } from '../hooks/useTheme';
 import { getTVFocusProps } from '../hooks/useTVRemoteHandler';
+import { useGlobalStore } from '../store/globalStore';
+import { openDonationPage } from '../services/donationService';
+import { onAuthStateChanged } from 'firebase/auth';
+import { auth, db } from '../services/firebase';
+import { getDoc, doc } from 'firebase/firestore';
+import { getCurrentUser } from '../services/userService';
+import AvatarDisplay from '../components/AvatarDisplay';
+import { DEFAULT_AVATARS } from '../constants/avatars';
+import { getAppVersion, getAppVersionCode } from '../constants/appConfig';
 
 // Props interface for NavItem
 interface NavItemProps {
@@ -14,6 +23,15 @@ interface NavItemProps {
   isActive: boolean;
   onPress: () => void;
   theme: any;
+}
+
+interface NavItemConfig {
+  name: string;
+  icon: string;
+  IconComponent: any;
+  category: string;
+  path?: string;
+  action?: () => void;
 }
 
 // Create a memoized nav item component to prevent unnecessary re-renders
@@ -75,12 +93,58 @@ const NavItem = memo(({ path, name, icon, IconComponent, isActive, onPress, them
   );
 });
 
+const toTranslucentColor = (color: string, alpha: number) => {
+  if (typeof color !== 'string') {
+    return `rgba(0, 0, 0, ${alpha})`;
+  }
+
+  const trimmed = color.trim();
+
+  if (trimmed.startsWith('#')) {
+    let hex = trimmed.slice(1);
+
+    if (hex.length === 3) {
+      hex = hex.split('').map((char) => char + char).join('');
+    }
+
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+
+      if (![r, g, b].some((value) => Number.isNaN(value))) {
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      }
+    }
+  }
+
+  if (trimmed.startsWith('rgb(')) {
+    const values = trimmed
+      .slice(4, -1)
+      .split(',')
+      .map((value) => parseInt(value.trim(), 10));
+
+    if (values.length >= 3 && values.every((value) => !Number.isNaN(value))) {
+      return `rgba(${values[0]}, ${values[1]}, ${values[2]}, ${alpha})`;
+    }
+  }
+
+  if (trimmed.startsWith('rgba(')) {
+    return trimmed.replace(
+      /rgba\(([^,]+),([^,]+),([^,]+),([^)]+)\)/,
+      (_, r, g, b) => `rgba(${r.trim()}, ${g.trim()}, ${b.trim()}, ${alpha})`
+    );
+  }
+
+  return trimmed;
+};
+
 function SideNavBar() {
   const { theme } = useTheme();
   const pathname = usePathname();
   
   // Navigation items - organized by category
-  const navItems = [
+  const navItems: NavItemConfig[] = [
     // Main Navigation
     {
       name: 'Home',
@@ -111,20 +175,41 @@ function SideNavBar() {
       category: 'main'
     },
     {
+      name: 'Chat',
+      path: '/chat',
+      icon: 'chat',
+      IconComponent: MaterialIcons,
+      category: 'main'
+    },
+    {
+      name: 'About',
+      path: '/about',
+      icon: 'info',
+      IconComponent: MaterialIcons,
+      category: 'user'
+    },
+    {
+      name: 'Profile',
+      path: '/profile',
+      icon: 'person',
+      IconComponent: MaterialIcons,
+      category: 'user'
+    },
+    {
       name: 'Schedule',
       path: '/schedule',
       icon: 'schedule',
       IconComponent: MaterialIcons,
       category: 'main'
     },
-    // Communication
     {
-      name: 'Chat',
-      path: '/chat',
-      icon: 'chat',
+      name: 'Gallery',
+      path: '/gallery',
+      icon: 'photo-library',
       IconComponent: MaterialIcons,
-      category: 'social'
+      category: 'main'
     },
+    // Communication
     {
       name: 'Notifications',
       path: '/notifications',
@@ -134,62 +219,309 @@ function SideNavBar() {
     },
     // User
     {
-      name: 'Profile',
-      path: '/profile',
-      icon: 'person',
+      name: 'Mentions',
+      path: '/mentions',
+      icon: 'alternate-email',
       IconComponent: MaterialIcons,
       category: 'user'
     },
     {
-      name: 'About',
-      path: '/about',
-      icon: 'info',
+      name: 'Theme Settings',
+      path: '/theme-settings',
+      icon: 'palette',
       IconComponent: MaterialIcons,
-      category: 'user'
+      category: 'settings'
+    },
+    {
+      name: 'Import / Export',
+      path: '/importExport',
+      icon: 'sync',
+      IconComponent: MaterialIcons,
+      category: 'settings'
+    },
+    {
+      name: 'Support AniSurge',
+      icon: 'volunteer-activism',
+      IconComponent: MaterialIcons,
+      category: 'support',
+      action: () => openDonationPage()
     }
   ];
 
+  const isMenuOpen = useGlobalStore(state => state.isMenuOpen);
+  const setIsMenuOpen = useGlobalStore(state => state.setIsMenuOpen);
+  const [shouldRender, setShouldRender] = useState(isMenuOpen);
+  const slideAnim = useRef(new Animated.Value(-250)).current; // Start off-screen
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  
+  // Profile avatar state
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isPremium, setIsPremium] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+  const user = getCurrentUser();
+  const translucentSurface = useMemo(() => {
+    const translucent = toTranslucentColor(theme.colors.surface, 0.92);
+    if (translucent === theme.colors.surface) {
+      return 'rgba(12, 12, 12, 0.92)';
+    }
+    return translucent;
+  }, [theme.colors.surface]);
+
+  const { versionLabel, buildLabel } = useMemo(() => {
+    const version = getAppVersion() || '0.0.0';
+    const build = getAppVersionCode();
+    return {
+      versionLabel: version,
+      buildLabel: build !== undefined ? build.toString() : '0',
+    };
+  }, []);
+
+  // Fetch user avatar
+  const fetchUserAvatar = useCallback(async () => {
+    try {
+      if (!initialized || !user) {
+        setAvatarUrl(DEFAULT_AVATARS[0].url);
+        setLoading(false);
+        return;
+      }
+
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      
+      if (!userDoc.exists()) {
+        setAvatarUrl(DEFAULT_AVATARS[0].url);
+        setLoading(false);
+        return;
+      }
+
+      const userData = userDoc.data();
+      const isPremiumUser = userData.isPremium || false;
+      const donationAmount = userData.donationAmount || userData.premiumAmount || 0;
+      setIsPremium(isPremiumUser || donationAmount > 0);
+
+      let finalAvatarUrl = userData.avatarUrl || userData.avatar || user.photoURL || DEFAULT_AVATARS[0].url;
+      setAvatarUrl(finalAvatarUrl);
+    } catch (error) {
+      console.error('[SideNav Avatar] Error fetching avatar:', error);
+      setAvatarUrl(DEFAULT_AVATARS[0].url);
+    } finally {
+      setLoading(false);
+    }
+  }, [initialized, user]);
+
+  // Listen for auth initialization
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setInitialized(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Fetch avatar when component mounts and auth is initialized
+  useEffect(() => {
+    if (initialized) {
+      fetchUserAvatar();
+    }
+  }, [initialized, user?.uid, fetchUserAvatar]);
+
+  // Animate menu slide in/out
+  useEffect(() => {
+    if (isMenuOpen) {
+      setShouldRender(true);
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(backdropOpacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else if (shouldRender) {
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: -250,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(backdropOpacity, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setShouldRender(false);
+      });
+    }
+  }, [isMenuOpen, shouldRender, slideAnim, backdropOpacity]);
+
   // Direct navigation callback - optimized for nav
   const navigateTo = useCallback((path) => {
-    if (pathname === path) return; // Don't navigate if already on the page
-    
-    // Use replace for main navigation to avoid building up navigation stack
-    router.replace(path);
-  }, [pathname]);
+    if (pathname === path) {
+      setIsMenuOpen(false);
+      return;
+    }
+
+    if (path === '/') {
+      router.replace(path);
+    } else {
+      router.push(path);
+    }
+    setIsMenuOpen(false);
+  }, [pathname, setIsMenuOpen]);
+
+  const handleCloseMenu = useCallback(() => {
+    setIsMenuOpen(false);
+  }, [setIsMenuOpen]);
+
+  const handleProfilePress = useCallback(() => {
+    router.push('/profile');
+    setIsMenuOpen(false);
+  }, [setIsMenuOpen]);
+
+  if (!shouldRender) {
+    return null; // Don't render anything when menu is closed
+  }
 
   return (
-    <View style={[styles.container, { 
-      backgroundColor: theme.colors.surface, 
-      borderRightColor: theme.colors.border 
-    }]}>
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* App title/logo */}
-        <View style={styles.header}>
-          <MaterialIcons name="play-circle-filled" size={32} color={theme.colors.primary} />
-          <Text style={[styles.appTitle, { color: theme.colors.text }]}>AniSurge</Text>
-        </View>
+    <Modal
+      transparent
+      visible={shouldRender}
+      animationType="none"
+      onRequestClose={handleCloseMenu}
+    >
+      <View style={styles.modalContainer}>
+        {/* Backdrop overlay */}
+        <Animated.View 
+          style={[
+            styles.backdrop,
+            { opacity: backdropOpacity }
+          ]}
+        >
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={handleCloseMenu}
+          />
+        </Animated.View>
 
-        {/* Navigation items */}
-        <View style={styles.navItemsContainer}>
-          {navItems.map((item) => (
-            <NavItem
-              key={item.path}
-              path={item.path}
-              name={item.name}
-              icon={item.icon}
-              IconComponent={item.IconComponent}
-              isActive={pathname === item.path}
-              onPress={() => navigateTo(item.path)}
-              theme={theme}
-            />
-          ))}
-        </View>
-      </ScrollView>
-    </View>
+        {/* Side menu */}
+        <Animated.View
+          style={[
+            styles.container,
+            {
+              backgroundColor: translucentSurface,
+              borderRightColor: theme.colors.border,
+              transform: [{ translateX: slideAnim }],
+            },
+          ]}
+        >
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Profile Avatar Section */}
+            <TouchableOpacity
+              onPress={handleProfilePress}
+              style={styles.profileSection}
+              activeOpacity={0.7}
+            >
+              <View style={styles.avatarContainer}>
+                {loading ? (
+                  <View style={styles.avatarPlaceholder}>
+                    <MaterialIcons name="person" size={32} color={theme.colors.textSecondary} />
+                  </View>
+                ) : (
+                  isPremium ? (
+                    <View style={styles.premiumAvatarBorderWrapper}>
+                      <View style={styles.premiumAvatarImageContainer}>
+                        <AvatarDisplay
+                          url={avatarUrl || DEFAULT_AVATARS[0].url}
+                          style={styles.premiumAvatarImageLarge}
+                          isPremium={isPremium}
+                          onError={() => {
+                            setAvatarUrl(DEFAULT_AVATARS[0].url);
+                          }}
+                        />
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.regularAvatarBorderWrapper}>
+                      <View style={styles.regularAvatarImageContainer}>
+                        <AvatarDisplay
+                          url={avatarUrl || DEFAULT_AVATARS[0].url}
+                          style={styles.avatarImageLarge}
+                          isPremium={isPremium}
+                          onError={() => {
+                            setAvatarUrl(DEFAULT_AVATARS[0].url);
+                          }}
+                        />
+                      </View>
+                    </View>
+                  )
+                )}
+                {isPremium && (
+                  <View style={styles.premiumBadge}>
+                    <MaterialIcons name="star" size={16} color="#FFD700" />
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.profileName, { color: theme.colors.text }]}>
+                {user?.email?.split('@')[0] || 'Guest'}
+              </Text>
+              {isPremium && (
+                <Text style={[styles.premiumLabel, { color: theme.colors.primary }]}>
+                  Premium
+                </Text>
+              )}
+              <Text
+                style={[
+                  styles.versionText,
+                  { color: theme.colors.textSecondary ?? 'rgba(255,255,255,0.6)' }
+                ]}
+              >
+                Version {versionLabel} (build {buildLabel})
+              </Text>
+            </TouchableOpacity>
+
+            {/* Navigation items */}
+            <View style={styles.navItemsContainer}>
+              {navItems.map((item) => {
+                const key = `${item.category}-${item.path ?? item.name}`;
+                const itemPath = item.path ?? '';
+                const isActive = item.path ? pathname === item.path : false;
+
+                const handleItemPress = () => {
+                  if (item.action) {
+                    item.action();
+                    setIsMenuOpen(false);
+                  } else if (item.path) {
+                    navigateTo(item.path);
+                  }
+                };
+
+                return (
+                  <NavItem
+                    key={key}
+                    path={itemPath}
+                    name={item.name}
+                    icon={item.icon}
+                    IconComponent={item.IconComponent}
+                    isActive={isActive}
+                    onPress={handleItemPress}
+                    theme={theme}
+                  />
+                );
+              })}
+            </View>
+          </ScrollView>
+        </Animated.View>
+      </View>
+    </Modal>
   );
 }
 
@@ -197,6 +529,13 @@ function SideNavBar() {
 export default memo(SideNavBar);
 
 const styles = StyleSheet.create({
+  modalContainer: {
+    flex: 1,
+  },
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
   container: {
     width: 250,
     height: '100%',
@@ -205,7 +544,7 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    zIndex: 999,
+    zIndex: 1000,
     elevation: Platform.OS === 'android' ? 8 : 0,
     shadowColor: '#000',
     shadowOffset: { width: 3, height: 0 },
@@ -218,17 +557,115 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingVertical: 20,
   },
-  header: {
-    flexDirection: 'row',
+  profileSection: {
     alignItems: 'center',
-    paddingHorizontal: 20,
     paddingVertical: 20,
+    paddingHorizontal: 20,
     marginBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
   },
-  appTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginLeft: 12,
+  avatarContainer: {
+    position: 'relative',
+    width: 64,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+    marginTop: -5,
+  },
+  regularAvatarBorderWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    borderColor: '#f4511e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  regularAvatarImageContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    borderColor: '#f4511e',
+    overflow: 'hidden',
+  },
+  avatarImageLarge: {
+    width: 74,
+    height: 74,
+    borderRadius: 37,
+    borderWidth: 0,
+    overflow: 'hidden',
+    transform: [{ translateX: -2 }, { translateY: -5 }],
+  },
+  premiumAvatarImageLarge: {
+    width: 78,
+    height: 78,
+    borderRadius: 39,
+    borderWidth: 0,
+    overflow: 'hidden',
+    transform: [{ translateX: -2 }, { translateY: -5 }],
+  },
+  premiumAvatarBorderWrapper: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 3,
+    borderColor: '#FFD700',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  premiumAvatarImageContainer: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    overflow: 'hidden',
+  },
+  avatarPlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#555',
+  },
+  premiumBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    backgroundColor: '#121212',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFD700',
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  premiumLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  versionText: {
+    fontSize: 12,
+    opacity: 0.7,
   },
   navItemsContainer: {
     paddingHorizontal: 10,

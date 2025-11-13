@@ -20,7 +20,7 @@ type AnimeInfo = {
     img: string;
     description: string;
     episodes: {
-      sub: number;
+      sub: number;cc
       dub: number;
       total?: number;
     };

@@ -917,6 +917,7 @@ export default function WatchEpisode() {
   const [notificationRestored, setNotificationRestored] = useState(false);
   const appStateRef = useRef(AppState.currentState);
   const isComponentMountedRef = useRef(true);
+  const isProcessingFullscreenRef = useRef(false);
 
   // Safe wrappers to avoid calling orientation APIs when activity is gone/backgrounded
   const safeLockOrientation = useCallback(async (lock: ScreenOrientation.OrientationLock) => {
@@ -2163,9 +2164,16 @@ export default function WatchEpisode() {
     setError('Video playback failed. Please try refreshing the page.');
   };
 
-  const handleFullscreenChange = (fullscreenState: boolean) => {
-    setIsFullscreen(fullscreenState);
-  };
+  // Use a ref to track previous fullscreen state to prevent duplicate updates
+  const prevFullscreenRef = useRef(isFullscreen);
+  
+  const handleFullscreenChange = useCallback((fullscreenState: boolean) => {
+    // Only update if state actually changed
+    if (prevFullscreenRef.current !== fullscreenState) {
+      prevFullscreenRef.current = fullscreenState;
+      setIsFullscreen(fullscreenState);
+    }
+  }, []);
 
   // Add skip handlers
   const handleSkipIntro = useCallback(() => {
@@ -2187,59 +2195,125 @@ export default function WatchEpisode() {
     setDuration(videoDuration);
 
     // Debug incoming progress
-    try { console.log('[Progress] time:', currentTime, 'duration:', videoDuration); } catch {}
+    console.log('[Progress] Received progress update:', { currentTime, videoDuration, animeId, episodeId });
 
     // Save progress if we have valid data
     if (currentTime > 0 && videoDuration > 0) {
       const now = Date.now();
 
-      // Save progress every 2 seconds or if position changed significantly
-      if (now - lastProgressUpdateRef.current >= 2000 || Math.abs(currentTime - lastProgressValueRef.current) > 5) {
-        // Build safe history item even if animeInfo hasn't loaded yet
-        const safeTitle = (animeInfo?.title || (title as string) || 'Unknown Anime') as string;
-        const safeImage = (animeInfo?.image || (animeInfo as any)?.info?.image || '') as string;
-        const epId = (typeof episodeId === 'string' ? episodeId : episodeId[0]) as string;
-        const epNum = Number(episodeNumber) || 0;
+      // Save progress every 5 seconds or if position changed significantly (more than 10 seconds)
+      const timeSinceLastSave = now - lastProgressUpdateRef.current;
+      const timeDiff = Math.abs(currentTime - lastProgressValueRef.current);
+      const shouldSave = timeSinceLastSave >= 5000 || timeDiff > 10;
+      
+      if (!shouldSave) {
+        console.log('[Progress] Throttled - waiting for save interval', {
+          timeSinceLastSave,
+          timeDiff,
+          nextSaveIn: 5000 - timeSinceLastSave
+        });
+        return;
+      }
+      
+      console.log('[Progress] Save condition met:', { timeSinceLastSave, timeDiff, shouldSave });
+      
+      // Build safe history item even if animeInfo hasn't loaded yet
+      const safeTitle = (animeInfo?.title || (title as string) || 'Unknown Anime').trim();
+      const safeImage = (animeInfo?.image || (animeInfo as any)?.info?.image || '').trim();
+      
+      // Ensure episodeId is always a valid string
+      let epId: string;
+      if (typeof episodeId === 'string' && episodeId.trim()) {
+        epId = episodeId.trim();
+      } else if (Array.isArray(episodeId) && episodeId.length > 0 && typeof episodeId[0] === 'string') {
+        epId = episodeId[0].trim();
+      } else {
+        console.warn('[History] Invalid episodeId, skipping save');
+        return;
+      }
 
-        // Resolve actual anime id if it's missing in params
-        let actualAnimeId = animeId as string;
-        if ((!actualAnimeId || typeof actualAnimeId !== 'string') && typeof episodeId === 'string') {
-          const withoutCategory = (episodeId as string).split('$category=')[0];
-          if (withoutCategory.includes('$episode$')) {
-            actualAnimeId = withoutCategory.split('$episode$')[0];
-          } else if (withoutCategory.includes('$ep=')) {
-            actualAnimeId = withoutCategory.split('$ep=')[0];
-          } else {
-            actualAnimeId = (episodeId as string).split('$')[0];
-          }
-        }
+      // Ensure episodeNumber is a valid number
+      const epNum = Number(episodeNumber);
+      if (isNaN(epNum) || epNum < 0) {
+        console.warn('[History] Invalid episodeNumber, skipping save');
+        return;
+      }
 
-        const historyItem: WatchHistoryItem = {
-          id: actualAnimeId,
-          name: safeTitle,
-          img: safeImage,
-          episodeId: epId,
-          episodeNumber: epNum,
-          timestamp: now,
-          progress: Math.max(0, Math.floor(currentTime)),
-          duration: Math.max(0, Math.floor(videoDuration)),
-          lastWatched: now,
-          subOrDub: mode
-        };
-
-        try {
-          console.log('[History] saving progress:', historyItem);
-          await (addToHistory as (item: WatchHistoryItem) => Promise<void>)(historyItem);
-          lastProgressUpdateRef.current = now;
-          lastProgressValueRef.current = currentTime;
-        } catch (err) {
-          console.error('[History] save failed:', err);
+      // Resolve actual anime id - ensure it's never empty
+      let actualAnimeId: string = '';
+      if (typeof animeId === 'string' && animeId.trim()) {
+        actualAnimeId = animeId.trim();
+      } else if (typeof episodeId === 'string' && episodeId.trim()) {
+        // Try to extract from episodeId
+        const withoutCategory = episodeId.split('$category=')[0];
+        if (withoutCategory.includes('$episode$')) {
+          actualAnimeId = withoutCategory.split('$episode$')[0].trim();
+        } else if (withoutCategory.includes('$ep=')) {
+          actualAnimeId = withoutCategory.split('$ep=')[0].trim();
+        } else {
+          actualAnimeId = episodeId.split('$')[0].trim();
         }
       }
+      
+      // Fallback: use episodeId as animeId if extraction failed
+      if (!actualAnimeId || actualAnimeId === '') {
+        actualAnimeId = epId.split('$')[0].trim() || epId;
+      }
+
+      // Final validation before creating history item
+      if (!actualAnimeId || !safeTitle || !epId) {
+        console.warn('[History] Missing required fields:', { actualAnimeId, safeTitle, epId });
+        return;
+      }
+
+      const historyItem: WatchHistoryItem = {
+        id: actualAnimeId,
+        name: safeTitle,
+        img: safeImage,
+        episodeId: epId,
+        episodeNumber: epNum,
+        timestamp: now,
+        progress: Math.max(0, Math.floor(currentTime)),
+        duration: Math.max(0, Math.floor(videoDuration)),
+        lastWatched: now,
+        subOrDub: mode
+      };
+
+      try {
+        console.log('[History] Attempting to save progress:', {
+          animeId: actualAnimeId,
+          episodeId: epId,
+          progress: Math.floor(currentTime),
+          duration: Math.floor(videoDuration),
+          progressPercent: Math.floor((currentTime / videoDuration) * 100)
+        });
+        await (addToHistory as (item: WatchHistoryItem) => Promise<void>)(historyItem);
+        lastProgressUpdateRef.current = now;
+        lastProgressValueRef.current = currentTime;
+        console.log('[History] ✅ Progress saved successfully!', {
+          episodeId: epId,
+          progress: Math.floor(currentTime),
+          duration: Math.floor(videoDuration)
+        });
+      } catch (err) {
+        console.error('[History] ❌ Save failed:', err);
+        console.error('[History] Failed item:', historyItem);
+      }
     } else {
-      try { console.log('[Progress] Skipped save due to invalid times'); } catch {}
+      console.log('[Progress] Skipped save - invalid times:', { currentTime, videoDuration });
     }
   }, [animeInfo, title, animeId, episodeId, episodeNumber, mode, addToHistory]);
+
+  // Debug: Log when handleVideoProgress changes
+  useEffect(() => {
+    console.log('[WatchPage] handleVideoProgress callback updated', {
+      hasAnimeInfo: !!animeInfo,
+      animeId,
+      episodeId,
+      episodeNumber,
+      mode
+    });
+  }, [handleVideoProgress, animeInfo, animeId, episodeId, episodeNumber, mode]);
 
   // Memoize video props
   const videoPlayerProps = useMemo(() => {
@@ -2330,17 +2404,14 @@ export default function WatchEpisode() {
   // Update the dimension change listener
   useEffect(() => {
     const dimensionsChangeHandler = ({ window }: { window: { width: number; height: number } }) => {
-      if (isFullscreen) {
-        // In fullscreen/landscape mode
+      // Only update dimensions if not in fullscreen mode
+      // In fullscreen, VideoPlayer handles its own dimensions
+      if (!isFullscreen) {
+        // In portrait mode - ensure proper aspect ratio
+        const windowWidth = window.width;
         setPlayerDimensions({
-          width: Math.max(window.width, window.height), // Always use the larger dimension as width in fullscreen
-          height: Math.min(window.width, window.height)  // Always use the smaller dimension as height in fullscreen
-        });
-      } else {
-        // In portrait mode
-        setPlayerDimensions({
-          width: window.width,
-          height: window.width * (9/16)
+          width: windowWidth,
+          height: windowWidth * (9/16)
         });
       }
     };
@@ -2348,7 +2419,10 @@ export default function WatchEpisode() {
     const subscription = Dimensions.addEventListener('change', dimensionsChangeHandler);
 
     // Force an immediate update when fullscreen state changes
-    dimensionsChangeHandler({ window: Dimensions.get('window') });
+    if (!isFullscreen) {
+      const window = Dimensions.get('window');
+      dimensionsChangeHandler({ window });
+    }
 
     return () => {
       subscription.remove();
@@ -2516,7 +2590,19 @@ export default function WatchEpisode() {
     const backAction = () => {
       if (isFullscreen) {
         // If fullscreen, exit fullscreen first
-        setIsFullscreen(false);
+        // Trigger fullscreen change through VideoPlayer if available
+        if (videoRef.current) {
+          // The VideoPlayer will handle the fullscreen exit
+          setIsFullscreen(false);
+        } else {
+          setIsFullscreen(false);
+        }
+        // Reset dimensions immediately
+        const windowWidth = Dimensions.get('window').width;
+        setPlayerDimensions({
+          width: windowWidth,
+          height: windowWidth * (9/16)
+        });
         return true;
       }
       return false;
@@ -2722,15 +2808,41 @@ export default function WatchEpisode() {
 
   // Add this to hide header in fullscreen mode - optimize for responsiveness
   useEffect(() => {
-    // Update params immediately when fullscreen changes
-    if (router && router.setParams) {
-      requestAnimationFrame(() => {
-        router.setParams({
-          headerShown: !isFullscreen ? 'true' : 'false'
-        });
+    // Prevent infinite loops by checking if we're already processing
+    if (isProcessingFullscreenRef.current) return;
+    
+    // When exiting fullscreen, ensure proper reset
+    if (!isFullscreen && prevFullscreenRef.current) {
+      isProcessingFullscreenRef.current = true;
+      
+      // Reset dimensions to normal portrait mode
+      const windowWidth = Dimensions.get('window').width;
+      setPlayerDimensions({
+        width: windowWidth,
+        height: windowWidth * (9/16)
+      });
+      
+      // Ensure status bar is visible
+      StatusBar.setHidden(false, 'fade');
+      
+      // Ensure navigation bar is visible on Android
+      if (Platform.OS === 'android') {
+        NavigationBar.setVisibilityAsync('visible').catch(() => {});
+      }
+      
+      // Reset processing flag after a short delay
+      setTimeout(() => {
+        isProcessingFullscreenRef.current = false;
+      }, 200);
+    }
+    
+    // Update header visibility (only if not processing)
+    if (!isProcessingFullscreenRef.current && navigation && navigation.setOptions) {
+      navigation.setOptions({
+        headerShown: !isFullscreen
       });
     }
-  }, [isFullscreen]);
+  }, [isFullscreen, navigation]);
 
   // Define a VideoErrorDisplay component
   const VideoErrorDisplay = React.memo(({ error, onRetry }: { error: string, onRetry: () => void }) => {
@@ -2802,15 +2914,21 @@ export default function WatchEpisode() {
         <View style={[
           styles.container,
           { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background },
-          isFullscreen && {
+          isFullscreen ? {
             ...styles.fullscreenContainer,
             position: 'absolute',
             top: 0,
             left: 0,
             right: 0,
             bottom: 0,
+            width: '100%',
+            height: '100%',
             backgroundColor: '#000',
             zIndex: 9999,
+          } : {
+            // Normal mode - ensure no absolute positioning
+            position: 'relative',
+            flex: 1,
           }
         ]}>
           {/* Show video player or error based on videoError state */}
@@ -3128,6 +3246,7 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#000',
     zIndex: 1000,
+    elevation: 1000, // For Android
   },
   video: {
     width: '100%',

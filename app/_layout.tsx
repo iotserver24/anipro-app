@@ -19,125 +19,30 @@ import { auth, db } from '../services/firebase';
 import { useGlobalStore } from '../store/globalStore';
 import { MaterialIcons } from '@expo/vector-icons';
 import { getDoc, doc } from 'firebase/firestore';
-import { getAvatarById, DEFAULT_AVATARS } from '../constants/avatars';
 import { Tabs } from 'expo-router';
 import { NativeStackNavigationOptions } from '@react-navigation/native-stack';
-import AvatarDisplay from '../components/AvatarDisplay';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 // Make sure SplashScreen is prevented from auto-hiding
 SplashScreen.preventAutoHideAsync();
 
-// Optimized header component with profile avatar - simplified for performance
+// Header component with hamburger menu button for large screens (moved to top right)
 const HeaderRight = () => {
   const { theme } = useTheme();
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isPremium, setIsPremium] = useState(false);
-  const [initialized, setInitialized] = useState(false);
-  const user = getCurrentUser();
+  const isLargeScreen = useIsLargeScreen();
+  const toggleMenu = useGlobalStore(state => state.toggleMenu);
 
-  // Simplified avatar fetching - no complex caching for performance
-  const fetchUserAvatar = async () => {
-    try {
-      if (!initialized || !user) {
-        setAvatarUrl(DEFAULT_AVATARS[0].url);
-        setLoading(false);
-        return;
-      }
-
-      // Quick user data fetch
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      
-      if (!userDoc.exists()) {
-        setAvatarUrl(DEFAULT_AVATARS[0].url);
-        setLoading(false);
-        return;
-      }
-
-      const userData = userDoc.data();
-      
-      // Check premium status
-      const isPremiumUser = userData.isPremium || false;
-      const donationAmount = userData.donationAmount || userData.premiumAmount || 0;
-      setIsPremium(isPremiumUser || donationAmount > 0);
-
-      // Simple avatar resolution - no caching for performance
-      let finalAvatarUrl = userData.avatarUrl || userData.avatar || user.photoURL || DEFAULT_AVATARS[0].url;
-      setAvatarUrl(finalAvatarUrl);
-
-    } catch (error) {
-      console.error('[Header Avatar] Error fetching avatar:', error);
-      setAvatarUrl(DEFAULT_AVATARS[0].url);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Listen for auth initialization
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setInitialized(true);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  // Fetch avatar when component mounts and auth is initialized
-  useEffect(() => {
-    if (initialized) {
-      fetchUserAvatar();
-    }
-  }, [initialized, user?.uid]);
-
-  const handleProfilePress = () => {
-    router.push('/profile');
-  };
+  if (!isLargeScreen) {
+    return null;
+  }
 
   return (
-    <TouchableOpacity 
-      style={styles.profileButton} 
-      onPress={handleProfilePress}
-      activeOpacity={0.7}
+    <TouchableOpacity
+      onPress={toggleMenu}
+      style={{ marginRight: 16 }}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
     >
-      <View style={styles.avatarContainer}>
-        {loading ? (
-          <View style={styles.avatarPlaceholder}>
-            <MaterialIcons name="person" size={24} color="#aaa" />
-          </View>
-        ) : (
-          isPremium ? (
-            <View style={styles.premiumAvatarBorderWrapper}>
-                          <AvatarDisplay
-              url={avatarUrl || DEFAULT_AVATARS[0].url}
-              style={styles.avatarImage}
-              isPremium={isPremium}
-              onError={() => {
-                console.error('[Header Avatar] Error loading avatar');
-                console.log('[Header Avatar] Falling back to default avatar');
-                setAvatarUrl(DEFAULT_AVATARS[0].url);
-              }}
-            />
-            </View>
-          ) : (
-            <AvatarDisplay
-              url={avatarUrl || DEFAULT_AVATARS[0].url}
-              style={styles.avatarImage}
-              isPremium={isPremium}
-              onError={() => {
-                console.error('[Header Avatar] Error loading avatar');
-                console.log('[Header Avatar] Falling back to default avatar');
-                setAvatarUrl(DEFAULT_AVATARS[0].url);
-              }}
-            />
-          )
-        )}
-        {isPremium && (
-          <View style={styles.premiumBadge}>
-            <MaterialIcons name="star" size={14} color="#FFD700" />
-          </View>
-        )}
-      </View>
+      <MaterialIcons name="menu" size={24} color={theme.colors.text} />
     </TouchableOpacity>
   );
 };
@@ -380,7 +285,7 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
           <View style={styles.contentContainer} onLayout={onLayoutRootView}>
             <StatusBar style={statusBarStyle} />
             <Stack 
-              screenOptions={{ 
+            screenOptions={{ 
                 headerStyle: {
                   backgroundColor: 'transparent',
                 },
@@ -391,8 +296,9 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
               contentStyle: {
                 backgroundColor: 'transparent',
                 paddingBottom: isVideoFullscreen || isChatPage ? 0 : (isLargeScreen ? 0 : 60),
-                paddingLeft: isLargeScreen && !isVideoFullscreen ? 250 : 0,
+                paddingLeft: 0, // Menu now overlays, doesn't push content
               },
+              headerRight: () => <HeaderRight />,
                 animation: 'none',
                 animationDuration: 0,
               }}
@@ -402,7 +308,7 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
             options={{
               title: 'AniSurge',
               headerBackVisible: false, // Hide back button on home page
-              headerLeft: () => null, // Remove headerLeft completely
+              headerLeft: () => null,
               headerRight: () => <HeaderRight />,
             }}
           />
@@ -604,8 +510,9 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
               contentStyle: {
                 backgroundColor: theme.colors.background,
                 paddingBottom: isVideoFullscreen || isChatPage ? 0 : (isLargeScreen ? 0 : 60),
-                paddingLeft: isLargeScreen && !isVideoFullscreen ? 250 : 0,
+                paddingLeft: 0, // Menu now overlays, doesn't push content
               },
+              headerRight: () => <HeaderRight />,
               animation: 'none',
               animationDuration: 0,
             }}
@@ -615,7 +522,7 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
               options={{
                 title: 'AniSurge',
                 headerBackVisible: false, // Hide back button on home page
-                headerLeft: () => null, // Remove headerLeft completely
+                headerLeft: () => null,
                 headerRight: () => <HeaderRight />,
               }}
             />
@@ -772,60 +679,6 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  profileButton: {
-    marginRight: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 4,
-    marginTop: '-2%', // Move avatar up by 2%
-  },
-  avatarImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#f4511e', // Only for non-premium
-  },
-  premiumAvatarBorderWrapper: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 2,
-    borderColor: '#FFD700',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
-  },
-  avatarPlaceholder: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#333',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#555',
-  },
-  avatarContainer: {
-    position: 'relative',
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  premiumBadge: {
-    position: 'absolute',
-    bottom: -5,
-    right: -5,
-    backgroundColor: '#121212',
-    borderRadius: 10,
-    width: 20,
-    height: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#FFD700',
-  },
   bottomTabContainer: {
     position: 'absolute',
     bottom: 0,

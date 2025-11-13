@@ -20,7 +20,12 @@ function ResponsiveNav() {
   
   const shouldUseSideNav = isLargeScreen || isTV || isDesktop;
   
-  return shouldUseSideNav ? <SideNavBar /> : <BottomTabBar />;
+  return (
+    <>
+      {shouldUseSideNav && <SideNavBar />}
+      {!shouldUseSideNav && <BottomTabBar />}
+    </>
+  );
 }
 
 // Export memoized component

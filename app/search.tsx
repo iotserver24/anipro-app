@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, TextInput, ScrollView, Platform, Modal } from 'react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useTheme } from '../hooks/useTheme';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -186,8 +186,23 @@ const GenreDropdown = ({ label, options, values, onChange, open, setOpen }: { la
 
 export default function Search() {
   const { theme, hasBackgroundMedia } = useTheme();
-  const { query } = useLocalSearchParams();
-  const [searchText, setSearchText] = useState(decodeURIComponent(query as string));
+  const params = useLocalSearchParams<{ query?: string | string[] }>();
+
+  const normalizedQuery = useMemo(() => {
+    const rawQuery = Array.isArray(params.query)
+      ? params.query[0]
+      : params.query;
+    if (typeof rawQuery !== 'string' || rawQuery.trim().length === 0 || rawQuery === 'undefined') {
+      return '';
+    }
+    try {
+      return decodeURIComponent(rawQuery);
+    } catch {
+      return rawQuery;
+    }
+  }, [params.query]);
+
+  const [searchText, setSearchText] = useState(normalizedQuery);
   const [results, setResults] = useState<SearchAnime[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -232,8 +247,9 @@ export default function Search() {
     console.log('[Search] handleSearch called with text:', text);
     setSearchText(text);
     setCurrentPage(1);
-    const apiQuery = text.toLowerCase().trim().replace(/\s+/g, '-');
-    router.setParams({ query: apiQuery });
+    const trimmed = text.trim();
+    const apiQuery = trimmed.length > 0 ? trimmed.toLowerCase().replace(/\s+/g, '-') : undefined;
+    router.setParams(apiQuery ? { query: apiQuery } : {});
   };
 
   // Add genre toggle handler
@@ -281,6 +297,11 @@ export default function Search() {
     // (Removed searchAnime call from here)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appliedFilters]);
+
+  useEffect(() => {
+    setSearchText(normalizedQuery);
+    setCurrentPage(1);
+  }, [normalizedQuery]);
 
   // NEW: Trigger search when searchText, appliedFilters, or currentPage changes
   useEffect(() => {

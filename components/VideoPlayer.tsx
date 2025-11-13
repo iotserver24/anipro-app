@@ -985,6 +985,17 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 const data = JSON.parse(event.nativeEvent.data);
                 console.log('WebView message received:', data);
                 
+                // Debug: ALWAYS log megacloud messages
+                if (data && data.channel === 'megacloud') {
+                  console.log('[VideoPlayer] 🔍 MEGACLOUD DETECTED:', JSON.stringify({ 
+                    channel: data.channel, 
+                    event: data.event, 
+                    time: data.time,
+                    duration: data.duration,
+                    hasOnProgress: !!onProgress
+                  }));
+                }
+                
                 // Handle Zen server messages
                 if (data.type === 'progress') {
                   handleProgress({
@@ -1021,17 +1032,39 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   });
                 }
                 
-                // Handle SoftSub (megaplay.buzz) messages
-                if (data.channel === 'megacloud' && data.event === 'time') {
-                  console.log('SoftSub time update:', data.time, data.duration);
+                // Handle SoftSub (megaplay.buzz) messages - MUST BE AFTER OTHER CHECKS
+                if (data && data.channel === 'megacloud' && data.event === 'time') {
+                  console.log('[VideoPlayer] ✅✅✅ MEGACLOUD TIME EVENT:', JSON.stringify({
+                    time: data.time,
+                    duration: data.duration,
+                    hasOnProgress: !!onProgress,
+                    onProgressType: typeof onProgress
+                  }));
+                  
                   handleProgress({
                     currentTime: data.time,
                     playableDuration: data.duration,
                     seekableDuration: data.duration
                   });
+                  
                   // Bypass internal debounce for embedded SoftSub to save precise timing upstream
-                  if (onProgress && typeof data.time === 'number' && typeof data.duration === 'number') {
-                    onProgress(data.time, data.duration);
+                  if (onProgress && typeof data.time === 'number' && typeof data.duration === 'number' && data.duration > 0) {
+                    console.log('[VideoPlayer] 🔄 CALLING onProgress NOW:', { time: data.time, duration: data.duration });
+                    try {
+                      onProgress(data.time, data.duration);
+                      console.log('[VideoPlayer] ✅✅✅ onProgress CALLED SUCCESSFULLY');
+                    } catch (error) {
+                      console.error('[VideoPlayer] ❌❌❌ onProgress ERROR:', error);
+                    }
+                  } else {
+                    console.warn('[VideoPlayer] ⚠️⚠️⚠️ onProgress BLOCKED:', JSON.stringify({ 
+                      hasOnProgress: !!onProgress, 
+                      time: data.time, 
+                      duration: data.duration,
+                      timeType: typeof data.time,
+                      durationType: typeof data.duration,
+                      durationValid: data.duration > 0
+                    }));
                   }
                 } else if (data.type === 'watching-log') {
                   console.log('SoftSub watching log:', data.currentTime, data.duration);

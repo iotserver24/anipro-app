@@ -121,7 +121,8 @@ export const useWatchHistoryStore = create<WatchHistoryState>((set, get) => ({
   addToHistory: async (item: WatchHistoryItem) => {
     // Validate the item before proceeding
     if (!validateHistoryItem(item)) {
-      logger.error('Invalid history item:', item);
+      logger.error('Invalid history item:', JSON.stringify(item, null, 2));
+      console.error('[WatchHistoryStore] Validation failed for item:', item);
       return;
     }
 

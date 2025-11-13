@@ -110,10 +110,12 @@ function BottomTabBar() {
 
   // Direct navigation callback - optimized for tab navigation
   const navigateTo = useCallback((path) => {
-    if (pathname === path) return; // Don't navigate if already on the page
-    
-    // Use replace for tab navigation to avoid building up navigation stack
-    router.replace(path);
+    if (pathname === path) return;
+    if (path === '/') {
+      router.replace(path);
+    } else {
+      router.push(path);
+    }
   }, [pathname]);
 
   // Search button animation
