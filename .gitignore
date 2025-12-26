@@ -94,3 +94,4 @@ yarn-error.*
 # Releases folder containing APKs
 /releases/
 /website/
+/rewind/
