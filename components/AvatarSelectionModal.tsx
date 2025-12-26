@@ -11,7 +11,8 @@ import {
   ScrollView,
   Alert,
   Linking,
-  Platform
+  Platform,
+  TextInput
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { AVATARS, Avatar, getMediaTypeFromUrl } from '../constants/avatars';
@@ -46,7 +47,10 @@ const AvatarSelectionModal = ({
   const [loading, setLoading] = useState(false);
   const [avatars, setAvatars] = useState<Avatar[]>(AVATARS);
   const [premiumAvatars, setPremiumAvatars] = useState<PremiumAvatar[]>([]);
-  const [activeTab, setActiveTab] = useState<'regular' | 'premium'>('regular');
+  const [activeTab, setActiveTab] = useState<'regular' | 'premium' | 'custom'>('regular');
+  const [customUrl, setCustomUrl] = useState('');
+  const [validatingUrl, setValidatingUrl] = useState(false);
+  const [urlError, setUrlError] = useState<string | null>(null);
   const [showDonationPrompt, setShowDonationPrompt] = useState(false);
   const [selectedPremiumAvatar, setSelectedPremiumAvatar] = useState<PremiumAvatar | null>(null);
   const [hasPremiumAccess, setHasPremiumAccess] = useState(false);
@@ -64,22 +68,21 @@ const AvatarSelectionModal = ({
   const checkPremiumAccess = async () => {
     setCheckingAccess(true);
     try {
-      // Check if the current user has premium status
+      // Since this is the last update, give all logged-in users access to premium avatars
       const user = getCurrentUser();
       if (!user) {
         setHasPremiumAccess(false);
         return;
       }
 
-      // Get user document and check isPremium field
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      const isPremium = userDoc.exists() && userDoc.data().isPremium === true;
-      setHasPremiumAccess(isPremium);
-      
-      logger.info('AvatarModal', `User has premium avatar access: ${isPremium}`);
+      // All users now have premium avatar access
+      setHasPremiumAccess(true);
+
+      logger.info('AvatarModal', `User has premium avatar access: true (unlocked for all users)`);
     } catch (error) {
       logger.error('AvatarModal', `Error checking premium access: ${error}`);
-      setHasPremiumAccess(false);
+      // Still grant access even on error since this is the last update
+      setHasPremiumAccess(true);
     } finally {
       setCheckingAccess(false);
     }
@@ -135,7 +138,7 @@ const AvatarSelectionModal = ({
       mediaType: mediaType,
       isPremium: 'isGif' in avatar || 'isVideo' in avatar
     });
-    
+
     // Check if it's a premium avatar
     if ('isGif' in avatar || 'isVideo' in avatar) {
       if (!getCurrentUser()) {
@@ -148,14 +151,14 @@ const AvatarSelectionModal = ({
         );
         return;
       }
-      
+
       // First check if user has premium access
       if (!hasPremiumAccess) {
         setSelectedPremiumAvatar(avatar);
         setShowDonationPrompt(true);
         return;
       }
-      
+
       // User has premium access, proceed with selection
       onSelect({
         ...avatar,
@@ -163,7 +166,7 @@ const AvatarSelectionModal = ({
       });
       return;
     }
-    
+
     // For regular avatars, proceed as normal
     onSelect({
       ...avatar,
@@ -173,6 +176,83 @@ const AvatarSelectionModal = ({
 
   const openDonationLink = () => {
     donationService.openDonationPage(100); // Suggest a minimum donation of 100
+  };
+
+  // Validate custom avatar URL
+  const validateCustomUrl = async (url: string): Promise<{ valid: boolean; error?: string }> => {
+    // Check if URL is provided
+    if (!url.trim()) {
+      return { valid: false, error: 'Please enter a URL' };
+    }
+
+    // Check for valid URL format
+    try {
+      new URL(url);
+    } catch {
+      return { valid: false, error: 'Invalid URL format' };
+    }
+
+    // Check for allowed file extensions
+    const allowedExtensions = ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.mp4'];
+    const urlLower = url.toLowerCase();
+    const hasValidExtension = allowedExtensions.some(ext => urlLower.endsWith(ext));
+
+    if (!hasValidExtension) {
+      return { valid: false, error: 'URL must end with .png, .jpg, .jpeg, .webp, .gif, or .mp4' };
+    }
+
+    // Check file size (2MB limit)
+    try {
+      const response = await fetch(url, { method: 'HEAD' });
+      const contentLength = response.headers.get('content-length');
+
+      if (contentLength) {
+        const sizeInMB = parseInt(contentLength) / (1024 * 1024);
+        if (sizeInMB > 2) {
+          return { valid: false, error: `File size (${sizeInMB.toFixed(2)}MB) exceeds 2MB limit` };
+        }
+      }
+
+      // Also check if the URL is accessible
+      if (!response.ok) {
+        return { valid: false, error: 'Could not access the URL. Make sure it is publicly accessible.' };
+      }
+    } catch (error) {
+      // If HEAD request fails, try to just proceed (some servers don't support HEAD)
+      console.warn('Could not verify file size, proceeding anyway:', error);
+    }
+
+    return { valid: true };
+  };
+
+  // Handle custom avatar submission
+  const handleCustomAvatarSubmit = async () => {
+    if (!getCurrentUser()) {
+      Alert.alert('Login Required', 'You need to be logged in to use custom avatars.');
+      return;
+    }
+
+    setValidatingUrl(true);
+    setUrlError(null);
+
+    const result = await validateCustomUrl(customUrl);
+
+    if (!result.valid) {
+      setUrlError(result.error || 'Invalid URL');
+      setValidatingUrl(false);
+      return;
+    }
+
+    // Create a custom avatar object - use the URL as the id
+    // so that updateUserAvatar in userService can detect it's a custom URL
+    const customAvatar: Avatar = {
+      id: customUrl.trim(), // Pass URL as id - userService will detect http:// prefix
+      name: 'Custom Avatar',
+      url: customUrl.trim()
+    };
+
+    setValidatingUrl(false);
+    onSelect(customAvatar);
   };
 
   const renderItem = ({ item }: { item: Avatar | PremiumAvatar }) => {
@@ -200,18 +280,18 @@ const AvatarSelectionModal = ({
               console.warn('Failed to load avatar:', item.url);
             }}
           />
-          
+
           {/* Media type indicator */}
           {(mediaType === 'video' || mediaType === 'gif') && (
             <View style={styles.mediaTypeIndicator}>
-              <MaterialIcons 
-                name={mediaType === 'video' ? 'play-arrow' : 'gif'} 
-                size={12} 
-                color="#fff" 
+              <MaterialIcons
+                name={mediaType === 'video' ? 'play-arrow' : 'gif'}
+                size={12}
+                color="#fff"
               />
             </View>
           )}
-          
+
           {/* Add blur overlay for premium avatars unless user has access or it's already selected */}
           {isPremiumAvatar && !canSelectPremium && (
             <View style={styles.premiumOverlay}>
@@ -221,13 +301,13 @@ const AvatarSelectionModal = ({
             </View>
           )}
         </View>
-        
+
         {isSelected && (
           <View style={styles.selectedIndicator}>
             <MaterialIcons name="check-circle" size={24} color="#f4511e" />
           </View>
         )}
-        
+
         {isPremiumAvatar && (
           <View style={styles.premiumBadge}>
             <MaterialIcons name="star" size={16} color="#FFD700" />
@@ -239,7 +319,7 @@ const AvatarSelectionModal = ({
 
   const renderPremiumBanner = () => {
     if (activeTab !== 'premium') return null;
-    
+
     if (checkingAccess) {
       return (
         <View style={styles.premiumInfoBanner}>
@@ -250,26 +330,19 @@ const AvatarSelectionModal = ({
         </View>
       );
     }
-    
+
     if (hasPremiumAccess) {
       return (
         <View style={[styles.premiumInfoBanner, { backgroundColor: 'rgba(0, 128, 0, 0.1)', borderColor: 'rgba(0, 128, 0, 0.3)' }]}>
-          <MaterialIcons name="verified" size={20} color="#4CAF50" />
+          <MaterialIcons name="celebration" size={20} color="#4CAF50" />
           <Text style={styles.premiumInfoText}>
-            Thank you for your support! You have access to all premium avatars.
+            🎉 Premium avatars are now free for all users! Enjoy!
           </Text>
         </View>
       );
     }
-    
-    return (
-      <View style={styles.premiumInfoBanner}>
-        <MaterialIcons name="info" size={20} color="#FFD700" />
-        <Text style={styles.premiumInfoText}>
-          Premium avatars are exclusive to donors. Support the app to unlock!
-        </Text>
-      </View>
-    );
+
+    return null;
   };
 
   return (
@@ -306,6 +379,15 @@ const AvatarSelectionModal = ({
               </Text>
               <MaterialIcons name="star" size={16} color={activeTab === 'premium' ? "#f4511e" : "#FFD700"} style={styles.tabIcon} />
             </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, activeTab === 'custom' && styles.activeTab]}
+              onPress={() => setActiveTab('custom')}
+            >
+              <Text style={[styles.tabText, activeTab === 'custom' && styles.activeTabText]}>
+                Custom
+              </Text>
+              <MaterialIcons name="add-photo-alternate" size={16} color={activeTab === 'custom' ? "#f4511e" : "#888"} style={styles.tabIcon} />
+            </TouchableOpacity>
           </View>
 
           {loading ? (
@@ -313,17 +395,91 @@ const AvatarSelectionModal = ({
               <ActivityIndicator size="large" color="#f4511e" />
               <Text style={styles.loadingText}>Loading avatars...</Text>
             </View>
+          ) : activeTab === 'custom' ? (
+            <ScrollView style={styles.scrollView} contentContainerStyle={styles.customTabContent}>
+              <View style={styles.customAvatarContainer}>
+                <MaterialIcons name="add-photo-alternate" size={48} color="#f4511e" />
+                <Text style={styles.customTitle}>Custom Avatar</Text>
+                <Text style={styles.customDescription}>
+                  Enter a direct link to your avatar image or video. The URL must end with .png, .jpg, .jpeg, .webp, .gif, or .mp4 and be under 2MB.
+                </Text>
+
+                <View style={styles.inputContainer}>
+                  <TextInput
+                    style={[styles.urlInput, urlError && styles.urlInputError]}
+                    placeholder="https://example.com/avatar.png"
+                    placeholderTextColor="#666"
+                    value={customUrl}
+                    onChangeText={(text) => {
+                      setCustomUrl(text);
+                      setUrlError(null);
+                    }}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                  />
+                  {customUrl.length > 0 && (
+                    <TouchableOpacity
+                      style={styles.clearButton}
+                      onPress={() => {
+                        setCustomUrl('');
+                        setUrlError(null);
+                      }}
+                    >
+                      <MaterialIcons name="close" size={20} color="#888" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {urlError && (
+                  <View style={styles.errorContainer}>
+                    <MaterialIcons name="error" size={16} color="#ff4444" />
+                    <Text style={styles.errorText}>{urlError}</Text>
+                  </View>
+                )}
+
+                {/* Preview */}
+                {customUrl.length > 0 && !urlError && (
+                  <View style={styles.previewContainer}>
+                    <Text style={styles.previewLabel}>Preview:</Text>
+                    <View style={styles.previewImageContainer}>
+                      <AvatarDisplay
+                        url={customUrl}
+                        style={styles.previewImage}
+                        isPremium={false}
+                        onError={() => setUrlError('Failed to load image preview')}
+                      />
+                    </View>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={[styles.submitButton, (!customUrl.trim() || validatingUrl) && styles.submitButtonDisabled]}
+                  onPress={handleCustomAvatarSubmit}
+                  disabled={!customUrl.trim() || validatingUrl}
+                >
+                  {validatingUrl ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <MaterialIcons name="check" size={20} color="#fff" />
+                      <Text style={styles.submitButtonText}>Use This Avatar</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           ) : (
             <>
               {renderPremiumBanner()}
-              
+
               <ScrollView style={styles.scrollView}>
                 <View style={styles.avatarGrid}>
                   {(activeTab === 'regular' ? avatars : premiumAvatars).map((avatar) => renderItem({ item: avatar }))}
                 </View>
-                
+
                 {activeTab === 'premium' && !hasPremiumAccess && (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.donateButton}
                     onPress={openDonationLink}
                   >
@@ -343,7 +499,7 @@ const AvatarSelectionModal = ({
           )}
         </View>
       </View>
-      
+
       {/* Donation Prompt Modal */}
       <Modal
         visible={showDonationPrompt}
@@ -357,13 +513,13 @@ const AvatarSelectionModal = ({
               <MaterialIcons name="stars" size={28} color="#FFD700" />
               <Text style={styles.donationTitle}>Premium Feature</Text>
             </View>
-            
+
             <Text style={styles.donationDescription}>
               Premium avatars are exclusive to donors who support the app. Your contribution helps keep the app running ad-free and enables new features!
             </Text>
-            
+
             <View style={styles.donationOptions}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.primaryDonateButton}
                 onPress={() => {
                   setShowDonationPrompt(false);
@@ -380,8 +536,8 @@ const AvatarSelectionModal = ({
                   <Text style={styles.donateText}>Donate Now</Text>
                 </LinearGradient>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={styles.cancelButton}
                 onPress={() => setShowDonationPrompt(false)}
               >
@@ -626,6 +782,107 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 16,
     fontWeight: '500',
+  },
+  // Custom avatar styles
+  customTabContent: {
+    flexGrow: 1,
+    padding: 20,
+  },
+  customAvatarContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+  },
+  customTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  customDescription: {
+    color: '#888',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+    paddingHorizontal: 10,
+  },
+  inputContainer: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2a2a2a',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#444',
+    paddingHorizontal: 12,
+  },
+  urlInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 14,
+    paddingVertical: 14,
+  },
+  urlInputError: {
+    borderColor: '#ff4444',
+  },
+  clearButton: {
+    padding: 8,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  errorText: {
+    color: '#ff4444',
+    fontSize: 13,
+    marginLeft: 6,
+  },
+  previewContainer: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  previewLabel: {
+    color: '#888',
+    fontSize: 14,
+    marginBottom: 10,
+  },
+  previewImageContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#f4511e',
+    backgroundColor: '#2a2a2a',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  submitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f4511e',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 24,
+    minWidth: 180,
+  },
+  submitButtonDisabled: {
+    backgroundColor: '#555',
+    opacity: 0.7,
+  },
+  submitButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginLeft: 8,
   },
 });
 

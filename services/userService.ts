@@ -1,8 +1,8 @@
 import { auth } from './firebase';
-import { 
-  createUserWithEmailAndPassword, 
-  signInWithEmailAndPassword, 
-  updateProfile, 
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  updateProfile,
   signOut as firebaseSignOut,
   User,
   onAuthStateChanged,
@@ -38,14 +38,14 @@ export const storeUserSession = async (user: User & { birthdate?: string }, cred
       lastLoginAt: user.metadata.lastSignInTime,
       birthdate: user.birthdate || undefined // Save birthdate if present
     };
-    
+
     await AsyncStorage.setItem(USER_AUTH_KEY, JSON.stringify(userData));
-    
+
     // If provided, securely store credentials for session restoration
     if (credentials) {
       await AsyncStorage.setItem(USER_CREDENTIALS_KEY, JSON.stringify(credentials));
     }
-    
+
     // Also fetch and store Firestore user data if available
     try {
       const userDoc = await getDoc(doc(db, 'users', user.uid));
@@ -55,7 +55,7 @@ export const storeUserSession = async (user: User & { birthdate?: string }, cred
     } catch (error) {
       console.warn('Could not store Firestore user data:', error);
     }
-    
+
     console.log('User session stored successfully');
   } catch (error) {
     console.error('Error storing user session:', error);
@@ -79,11 +79,11 @@ export const restoreUserSession = async (): Promise<boolean> => {
   try {
     // Check for stored credentials first
     const storedCredentials = await AsyncStorage.getItem(USER_CREDENTIALS_KEY);
-    
+
     if (storedCredentials) {
       const credentials = JSON.parse(storedCredentials);
       console.log('[DEBUG] Restoring session using stored credentials');
-      
+
       try {
         // Try to silently sign in with stored credentials
         await signInWithEmailAndPassword(auth, credentials.email, credentials.password);
@@ -95,13 +95,13 @@ export const restoreUserSession = async (): Promise<boolean> => {
         await AsyncStorage.removeItem(USER_CREDENTIALS_KEY);
       }
     }
-    
+
     // If no credentials or sign-in failed, check if user is already authenticated
     if (auth.currentUser) {
       console.log('[DEBUG] User already authenticated in Firebase');
       return true;
     }
-    
+
     // Fallback: check for stored user data
     const userData = await AsyncStorage.getItem(USER_AUTH_KEY);
     if (userData) {
@@ -110,7 +110,7 @@ export const restoreUserSession = async (): Promise<boolean> => {
       // but we can let the app know there was a previous session
       return false;
     }
-    
+
     return false;
   } catch (error) {
     console.error('Error restoring user session:', error);
@@ -145,7 +145,7 @@ export const registerUser = async (email: string, password: string, username: st
     // If username is available, create the user
     const userCredential = await createUserWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
-    
+
     try {
       // Try to save user data to Firestore
       await setDoc(doc(db, 'users', user.uid), {
@@ -156,19 +156,19 @@ export const registerUser = async (email: string, password: string, username: st
         emailVerified: false, // Track email verification status
         birthdate: birthdate // Save birthdate
       });
-      
+
       // Send verification email
       await sendEmailVerification(user);
-      
+
     } catch (error) {
       // If saving to Firestore fails, delete the auth user
       await user.delete();
       throw error;
     }
-    
+
     // Store session with credentials for auto-login, include birthdate
-    await storeUserSession({...user, birthdate}, { email, password });
-    
+    await storeUserSession({ ...user, birthdate }, { email, password });
+
     return user;
   } catch (error: any) {
     console.error('Registration error:', error);
@@ -176,7 +176,7 @@ export const registerUser = async (email: string, password: string, username: st
   }
 };
 
-// Update user's avatar
+// Update user's avatar - supports both avatar IDs and custom URLs
 export const updateUserAvatar = async (avatarId: string) => {
   try {
     const currentUser = getCurrentUser();
@@ -187,38 +187,53 @@ export const updateUserAvatar = async (avatarId: string) => {
     // Ensure avatarId is a string
     const validAvatarId = String(avatarId);
 
-    // Check if it's a premium avatar
-    if (validAvatarId.startsWith('premium_')) {
-      // Check if user has premium access directly in their user document
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      
-      if (!userDoc.exists() || userDoc.data().isPremium !== true) {
-        logger.warn('UserService', `User ${currentUser.uid} attempted to use premium avatar without permission`);
-        throw new Error('Premium avatars are only available to premium users');
-      }
-    }
+    // Check if it's a custom URL (starts with http/https)
+    const isCustomUrl = validAvatarId.startsWith('http://') || validAvatarId.startsWith('https://');
 
-    // Fetch the full avatar URL
     let avatarUrl = '';
-    try {
-      // Use the existing getAvatarById function which handles both regular and premium avatars properly
-      const { getAvatarById } = await import('../constants/avatars');
-      avatarUrl = await getAvatarById(validAvatarId);
-      
-      if (!avatarUrl) {
-        throw new Error('Avatar not found');
+    let finalAvatarId = validAvatarId;
+
+    if (isCustomUrl) {
+      // For custom URLs, use the URL directly
+      avatarUrl = validAvatarId;
+      // Use a custom_ prefix for the ID to identify it as a custom avatar
+      finalAvatarId = `custom_${Date.now()}`;
+
+      logger.info('UserService', `Setting custom avatar URL for user ${currentUser.uid}`);
+    } else {
+      // Check if it's a premium avatar
+      if (validAvatarId.startsWith('premium_')) {
+        // Check if user has premium access directly in their user document
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+
+        if (!userDoc.exists() || userDoc.data().isPremium !== true) {
+          logger.warn('UserService', `User ${currentUser.uid} attempted to use premium avatar without permission`);
+          throw new Error('Premium avatars are only available to premium users');
+        }
       }
-    } catch (error) {
-      logger.error('UserService', `Error fetching avatar URL: ${error}`);
-      throw new Error('Failed to fetch avatar URL');
+
+      // Fetch the full avatar URL from the avatar ID
+      try {
+        // Use the existing getAvatarById function which handles both regular and premium avatars properly
+        const { getAvatarById } = await import('../constants/avatars');
+        avatarUrl = await getAvatarById(validAvatarId);
+
+        if (!avatarUrl) {
+          throw new Error('Avatar not found');
+        }
+      } catch (error) {
+        logger.error('UserService', `Error fetching avatar URL: ${error}`);
+        throw new Error('Failed to fetch avatar URL');
+      }
     }
 
     // Update both avatarId and avatarUrl fields
     await updateDoc(doc(db, 'users', currentUser.uid), {
-      avatarId: validAvatarId,
+      avatarId: finalAvatarId,
       avatarUrl: avatarUrl
     });
 
+    logger.info('UserService', `Avatar updated successfully: ${finalAvatarId}`);
     return true;
   } catch (error) {
     console.error('[Avatar] Error updating avatar:', error);
@@ -231,10 +246,10 @@ export const canUpdateAvatar = async (userId: string): Promise<boolean> => {
   try {
     // Make sure there's a userId
     if (!userId) return false;
-    
+
     // Check if the user document exists
     const userDoc = await getDoc(doc(db, 'users', userId));
-    
+
     // User must exist to update avatar
     return userDoc.exists();
   } catch (error) {
@@ -244,33 +259,33 @@ export const canUpdateAvatar = async (userId: string): Promise<boolean> => {
 };
 
 // Helper function to update all comments made by a user with their new avatar URL
-const updateUserCommentsWithAvatar = async (userId: string, avatarUrl: string): Promise<{success: boolean, count: number, error?: any}> => {
+const updateUserCommentsWithAvatar = async (userId: string, avatarUrl: string): Promise<{ success: boolean, count: number, error?: any }> => {
   try {
     console.log(`[AvatarUpdate] Updating comments for user ${userId} with new avatar: ${avatarUrl}`);
-    
+
     // Query all comments by this user
     const commentsQuery = query(
       collection(db, 'comments'),
       where('userId', '==', userId)
     );
-    
+
     const querySnapshot = await getDocs(commentsQuery);
     console.log(`[AvatarUpdate] Found ${querySnapshot.size} comments to update`);
-    
+
     // Use a batch to update all comments at once
     const MAX_BATCH_SIZE = 500; // Firestore limit
     let totalUpdated = 0;
     let batchCount = 0;
-    
+
     if (querySnapshot.size > 0) {
       let batch = writeBatch(db);
       let batchSize = 0;
-      
+
       querySnapshot.forEach((commentDoc) => {
         batch.update(commentDoc.ref, { userAvatar: avatarUrl });
         batchSize++;
         totalUpdated++;
-        
+
         // If we reach the batch limit, commit and start a new batch
         if (batchSize >= MAX_BATCH_SIZE) {
           batchCount++;
@@ -280,14 +295,14 @@ const updateUserCommentsWithAvatar = async (userId: string, avatarUrl: string): 
           batchSize = 0;
         }
       });
-      
+
       // Commit any remaining updates
       if (batchSize > 0) {
         batchCount++;
         console.log(`[AvatarUpdate] Committing final batch ${batchCount} with ${batchSize} updates`);
         await batch.commit();
       }
-      
+
       console.log(`[AvatarUpdate] Successfully updated ${totalUpdated} comments with new avatar`);
       return { success: true, count: totalUpdated };
     } else {
@@ -306,10 +321,10 @@ export const signInUser = async (email: string, password: string): Promise<User>
   try {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const { user } = userCredential;
-    
+
     // Store session with credentials for auto-login
     await storeUserSession(user, { email, password });
-    
+
     // Check if email is verified
     if (!user.emailVerified) {
       // Update Firestore to match auth verification status
@@ -317,7 +332,7 @@ export const signInUser = async (email: string, password: string): Promise<User>
       await updateDoc(userRef, {
         emailVerified: false
       });
-      
+
       // Option: Send a new verification email if not verified
       // Uncomment below if you want to always send a new verification email on login
       // await sendEmailVerification(user);
@@ -328,19 +343,19 @@ export const signInUser = async (email: string, password: string): Promise<User>
         emailVerified: true
       });
     }
-    
+
     // Initialize stores and sync data
     const { useWatchHistoryStore } = await import('../store/watchHistoryStore');
     const { useMyListStore } = await import('../store/myListStore');
-    
+
     // Initialize both stores which will handle merging local and cloud data
     await Promise.all([
       useWatchHistoryStore.getState().initializeHistory(),
       useMyListStore.getState().initializeList()
     ]);
-    
+
     logger.info('User signed in and data synced successfully');
-    
+
     return user;
   } catch (error) {
     console.error('Error signing in user:', error);
@@ -353,19 +368,19 @@ export const signOut = async (): Promise<void> => {
   try {
     // Import syncService here to avoid circular dependency
     const { syncService } = await import('./syncService');
-    
+
     // Clear all pending sync operations first
     syncService.clearSyncQueue();
-    
+
     // Sign out from Firebase
     await firebaseSignOut(auth);
-    
+
     // Clear local storage
     await clearUserSession();
-    
+
     // Clear any in-memory caches
     await clearInMemoryCaches();
-    
+
     logger.info('User signed out successfully');
   } catch (error) {
     console.error('Error signing out:', error);
@@ -379,11 +394,11 @@ async function clearInMemoryCaches() {
     // Clear watch history store
     const { useWatchHistoryStore } = await import('../store/watchHistoryStore');
     useWatchHistoryStore.getState().clearHistory();
-    
+
     // Clear watchlist store
     const { useMyListStore } = await import('../store/myListStore');
     useMyListStore.getState().clearList();
-    
+
     logger.info('In-memory caches cleared successfully');
   } catch (error) {
     console.error('Error clearing in-memory caches:', error);
@@ -407,7 +422,7 @@ export const sendVerificationEmail = async (): Promise<void> => {
     if (!currentUser) {
       throw new Error('No user is currently signed in');
     }
-    
+
     await sendEmailVerification(currentUser);
     logger.info('Verification email sent successfully');
   } catch (error) {
@@ -429,12 +444,12 @@ export const reloadUser = async (): Promise<boolean> => {
     if (!currentUser) {
       throw new Error('No user is currently signed in');
     }
-    
+
     await currentUser.reload();
-    
+
     // Force token refresh after reload to update email verification status
     await currentUser.getIdToken(true);
-    
+
     // If email is now verified, update Firestore
     if (currentUser.emailVerified) {
       const userRef = doc(db, 'users', currentUser.uid);
@@ -442,7 +457,7 @@ export const reloadUser = async (): Promise<boolean> => {
         emailVerified: true
       });
     }
-    
+
     return currentUser.emailVerified;
   } catch (error) {
     logger.error('Error reloading user:', error);

@@ -3,7 +3,7 @@ import { Stack, router, usePathname } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { View, BackHandler, Alert, Text, StyleSheet, TouchableOpacity, Image, ImageBackground, useWindowDimensions } from 'react-native';
+import { View, BackHandler, Alert, Text, StyleSheet, TouchableOpacity, Image, ImageBackground, useWindowDimensions, TextInput } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider as NavigationThemeProvider, DarkTheme } from '@react-navigation/native';
 import { ThemeProvider } from '../contexts/ThemeContext';
@@ -47,6 +47,84 @@ const HeaderRight = () => {
   );
 };
 
+// Functional search bar for home screen header
+const HomeSearchBar = () => {
+  const { theme } = useTheme();
+  const { width } = useWindowDimensions();
+  const [searchText, setSearchText] = useState('');
+
+  const handleSearch = () => {
+    if (searchText.trim()) {
+      // Pass the original text - search page will handle formatting for API
+      router.push({ pathname: '/search', params: { query: searchText.trim() } });
+      setSearchText(''); // Clear input after navigation
+    } else {
+      router.push('/search');
+    }
+  };
+
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: theme.colors.surface,
+        borderRadius: 20,
+        paddingHorizontal: 14,
+        paddingVertical: 4,
+        width: Math.min(width * 0.5, 280),
+        borderWidth: 1,
+        borderColor: theme.colors.border || 'rgba(255,255,255,0.1)',
+      }}
+    >
+      <MaterialIcons name="search" size={20} color={theme.colors.textSecondary || '#888'} />
+      <TextInput
+        style={{
+          color: theme.colors.text,
+          marginLeft: 8,
+          fontSize: 14,
+          flex: 1,
+          paddingVertical: 6,
+        }}
+        placeholder="Search anime..."
+        placeholderTextColor={theme.colors.textSecondary || '#888'}
+        value={searchText}
+        onChangeText={setSearchText}
+        onSubmitEditing={handleSearch}
+        returnKeyType="search"
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+      {searchText.length > 0 && (
+        <TouchableOpacity onPress={() => setSearchText('')}>
+          <MaterialIcons name="close" size={18} color={theme.colors.textSecondary || '#888'} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+};
+
+// Home screen header with search bar in center and menu on right
+const HomeHeaderRight = () => {
+  const { theme } = useTheme();
+  const isLargeScreen = useIsLargeScreen();
+  const toggleMenu = useGlobalStore(state => state.toggleMenu);
+
+  if (!isLargeScreen) {
+    return null;
+  }
+
+  return (
+    <TouchableOpacity
+      onPress={toggleMenu}
+      style={{ marginRight: 16 }}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+    >
+      <MaterialIcons name="menu" size={24} color={theme.colors.text} />
+    </TouchableOpacity>
+  );
+};
+
 export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     // Temporarily comment out fonts until we have them
@@ -65,14 +143,14 @@ export default function RootLayout() {
   const initializeHistory = useWatchHistoryStore(state => state.initializeHistory);
   const [authInitialized, setAuthInitialized] = useState(false);
   const [verificationChecked, setVerificationChecked] = useState(false);
-  
+
   // Store email verification status in global store
   const setEmailVerificationStatus = useGlobalStore(state => state.setEmailVerificationStatus);
-  
+
   // Handle authentication state
   useEffect(() => {
     console.log('[DEBUG] App: Setting up auth state initialization');
-    
+
     // First try to restore from AsyncStorage - this will sign in the user 
     // if there are stored credentials
     const initAuth = async () => {
@@ -80,14 +158,14 @@ export default function RootLayout() {
         const restored = await restoreUserSession();
         if (restored) {
           console.log('[DEBUG] App: Successfully restored auth session');
-          
+
           // Check email verification status
           const user = getCurrentUser();
           if (user) {
             const verified = isEmailVerified();
             console.log('[DEBUG] App: Email verification status:', verified);
             setEmailVerificationStatus(verified);
-            
+
             // If not verified, navigate to profile page to show verification banner
             if (!verified) {
               // Use setTimeout to ensure navigation happens after app is fully loaded
@@ -97,8 +175,8 @@ export default function RootLayout() {
                   "Please verify your email to access all app features. A verification link has been sent to your email.",
                   [
                     { text: "Later", style: "cancel" },
-                    { 
-                      text: "Go to Profile", 
+                    {
+                      text: "Go to Profile",
                       onPress: () => router.push('/profile')
                     }
                   ]
@@ -118,9 +196,9 @@ export default function RootLayout() {
         setAuthInitialized(true);
       }
     };
-    
+
     initAuth();
-    
+
     // Then set up the Firebase auth state listener for future changes
     const unsubscribe = onAuthStateChanged(auth, user => {
       if (user) {
@@ -132,24 +210,24 @@ export default function RootLayout() {
         setEmailVerificationStatus(false);
       }
     });
-    
+
     return () => unsubscribe();
   }, []);
 
   // Initialize app data after authentication is handled
   useEffect(() => {
     if (!authInitialized) return;
-    
+
     // Function to initialize all app data
     const initializeAppData = async () => {
       console.log('[DEBUG] App: Starting app data initialization');
-      
+
       try {
         // Load watch history
         console.log('[DEBUG] App: Initializing watch history store');
         await initializeHistory();
         console.log('[DEBUG] App: Watch history initialized successfully');
-        
+
         // Initialize avatars - critical for comment display
         try {
           // Avatar fetching and migration disabled for performance reasons
@@ -162,9 +240,9 @@ export default function RootLayout() {
         console.error('[DEBUG] App: Error initializing app data:', error);
       }
     };
-    
+
     initializeAppData();
-    
+
     // Set up refresh interval for watch history
     const refreshInterval = setInterval(() => {
       console.log('[DEBUG] App: Refreshing watch history');
@@ -172,7 +250,7 @@ export default function RootLayout() {
         console.error('[DEBUG] App: Error refreshing watch history:', error);
       });
     }, 60000); // Refresh every minute
-    
+
     return () => {
       clearInterval(refreshInterval);
     };
@@ -185,7 +263,7 @@ export default function RootLayout() {
         router.back(); // Let the normal back navigation happen
         return true;
       }
-      
+
       // If we're at the root screen, show exit dialog
       Alert.alert(
         'Exit App',
@@ -196,7 +274,7 @@ export default function RootLayout() {
             onPress: () => null,
             style: 'cancel',
           },
-          { 
+          {
             text: 'Exit',
             onPress: () => BackHandler.exitApp(),
             style: 'destructive'
@@ -221,12 +299,12 @@ export default function RootLayout() {
   const pathname = usePathname();
   const isWatchPage = pathname?.includes('/anime/watch/');
   const isChatPage = pathname?.includes('/chat');
-  
+
   // Update global store with current page states
   const setIsVideoFullscreenGlobal = useGlobalStore(state => state.setIsVideoFullscreen);
   const setIsWatchPageGlobal = useGlobalStore(state => state.setIsWatchPage);
   const setIsChatPageGlobal = useGlobalStore(state => state.setIsChatPage);
-  
+
   useEffect(() => {
     setIsVideoFullscreenGlobal(isVideoFullscreen);
     setIsWatchPageGlobal(isWatchPage);
@@ -268,7 +346,7 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
   const isWatchPage = useGlobalStore(state => state.isWatchPage);
   const isChatPage = useGlobalStore(state => state.isChatPage);
   const isLargeScreen = useIsLargeScreen();
-  
+
   // Enable keyboard navigation for desktop/TV
   useKeyboardNavigation();
 
@@ -284,8 +362,8 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
           <View style={[styles.backgroundOverlay, { opacity: 1 - backgroundMedia.opacity }]} />
           <View style={styles.contentContainer} onLayout={onLayoutRootView}>
             <StatusBar style={statusBarStyle} />
-            <Stack 
-            screenOptions={{ 
+            <Stack
+              screenOptions={{
                 headerStyle: {
                   backgroundColor: 'transparent',
                 },
@@ -293,203 +371,204 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
                 headerTitleStyle: {
                   fontWeight: 'bold',
                 },
-              contentStyle: {
-                backgroundColor: 'transparent',
-                paddingBottom: isVideoFullscreen || isChatPage ? 0 : (isLargeScreen ? 0 : 60),
-                paddingLeft: 0, // Menu now overlays, doesn't push content
-              },
-              headerRight: () => <HeaderRight />,
+                contentStyle: {
+                  backgroundColor: 'transparent',
+                  paddingBottom: isVideoFullscreen || isChatPage ? 0 : (isLargeScreen ? 0 : 60),
+                  paddingLeft: 0, // Menu now overlays, doesn't push content
+                },
+                headerRight: () => <HeaderRight />,
                 animation: 'none',
                 animationDuration: 0,
               }}
             >
-          <Stack.Screen
-            name="index"
-            options={{
-              title: 'AniSurge',
-              headerBackVisible: false, // Hide back button on home page
-              headerLeft: () => null,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="schedule"
-            options={{
-              title: 'Schedule',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="anime/[id]"
-            options={{
-              title: '',
-              headerTransparent: true,
-              headerTintColor: '#fff',
-              headerBackTitle: ' ',
-              headerStyle: {
-                backgroundColor: 'transparent',
-              },
-              headerShadowVisible: false,
-            }}
-          />
-          <Stack.Screen
-            name="anime/watch/[episodeId]"
-            options={({ route }) => ({
-              title: 'Watch',
-              headerShown: (route.params as any)?.headerShown !== false,
-              presentation: 'card',
-            })}
-          />
-          <Stack.Screen
-            name="search"
-            options={{
-              title: 'Search',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="mylist"
-            options={{
-              title: 'My List',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="about"
-            options={{
-              title: 'About',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="profile"
-            options={{
-              title: 'Profile',
-              headerShown: true,
-            }}
-          />
-          <Stack.Screen
-            name="history"
-            options={{
-              title: 'Watch History',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="notifications"
-            options={{
-              title: 'Notifications',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="mentions"
-            options={{
-              title: 'Mentions',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="chat"
-            options={{
-              title: 'Chat',
-              headerShown: true,
-              headerLeft: () => (
-                <TouchableOpacity
-                  onPress={() => {
-                    if (router.canGoBack()) {
-                      router.back();
-                    } else {
-                      router.replace('/');
-                    }
-                  }}
-                  style={{ marginLeft: 12 }}
-                >
-                  <MaterialIcons name="arrow-back" size={24} color="#fff" />
-                </TouchableOpacity>
-              ),
-              headerRight: () => <HeaderRight />, 
-            }}
-          />
-          <Stack.Screen
-            name="importExport"
-            options={{
-              title: 'Import/Export',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="theme-settings"
-            options={{
-              title: 'Theme Settings',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="gallery"
-            options={{
-              title: 'Gallery',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="aichat"
-            options={{
-              title: 'AI Chat',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="character-select"
-            options={{
-              title: 'Select Character',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="character-store"
-            options={{
-              title: 'Character Store',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="create-character"
-            options={{
-              title: 'Create Character',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="chat-history"
-            options={{
-              title: 'Chat History',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
-          <Stack.Screen
-            name="continue"
-            options={{
-              title: 'Continue Watching',
-              headerShown: true,
-              headerRight: () => <HeaderRight />,
-            }}
-          />
+              <Stack.Screen
+                name="index"
+                options={{
+                  title: 'AniSurge',
+                  headerBackVisible: false, // Hide back button on home page
+                  headerLeft: () => null,
+                  headerTitle: () => <HomeSearchBar />,
+                  headerRight: () => <HomeHeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="schedule"
+                options={{
+                  title: 'Schedule',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="anime/[id]"
+                options={{
+                  title: '',
+                  headerTransparent: true,
+                  headerTintColor: '#fff',
+                  headerBackTitle: ' ',
+                  headerStyle: {
+                    backgroundColor: 'transparent',
+                  },
+                  headerShadowVisible: false,
+                }}
+              />
+              <Stack.Screen
+                name="anime/watch/[episodeId]"
+                options={({ route }) => ({
+                  title: 'Watch',
+                  headerShown: (route.params as any)?.headerShown !== false,
+                  presentation: 'card',
+                })}
+              />
+              <Stack.Screen
+                name="search"
+                options={{
+                  title: 'Search',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="mylist"
+                options={{
+                  title: 'My List',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="about"
+                options={{
+                  title: 'About',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="profile"
+                options={{
+                  title: 'Profile',
+                  headerShown: true,
+                }}
+              />
+              <Stack.Screen
+                name="history"
+                options={{
+                  title: 'Watch History',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="notifications"
+                options={{
+                  title: 'Notifications',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="mentions"
+                options={{
+                  title: 'Mentions',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="chat"
+                options={{
+                  title: 'Chat',
+                  headerShown: true,
+                  headerLeft: () => (
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (router.canGoBack()) {
+                          router.back();
+                        } else {
+                          router.replace('/');
+                        }
+                      }}
+                      style={{ marginLeft: 12 }}
+                    >
+                      <MaterialIcons name="arrow-back" size={24} color="#fff" />
+                    </TouchableOpacity>
+                  ),
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="importExport"
+                options={{
+                  title: 'Import/Export',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="theme-settings"
+                options={{
+                  title: 'Theme Settings',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="gallery"
+                options={{
+                  title: 'Gallery',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="aichat"
+                options={{
+                  title: 'AI Chat',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="character-select"
+                options={{
+                  title: 'Select Character',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="character-store"
+                options={{
+                  title: 'Character Store',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="create-character"
+                options={{
+                  title: 'Create Character',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="chat-history"
+                options={{
+                  title: 'Chat History',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
+              <Stack.Screen
+                name="continue"
+                options={{
+                  title: 'Continue Watching',
+                  headerShown: true,
+                  headerRight: () => <HeaderRight />,
+                }}
+              />
             </Stack>
             {/* Responsive navigation - bottom bar for mobile, side bar for large screens */}
             {!isVideoFullscreen && !isChatPage && <ResponsiveNav />}
@@ -498,8 +577,8 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
       ) : (
         <View style={styles.contentContainer} onLayout={onLayoutRootView}>
           <StatusBar style={statusBarStyle} />
-          <Stack 
-            screenOptions={{ 
+          <Stack
+            screenOptions={{
               headerStyle: {
                 backgroundColor: theme.colors.surface,
               },
@@ -523,7 +602,8 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
                 title: 'AniSurge',
                 headerBackVisible: false, // Hide back button on home page
                 headerLeft: () => null,
-                headerRight: () => <HeaderRight />,
+                headerTitle: () => <HomeSearchBar />,
+                headerRight: () => <HomeHeaderRight />,
               }}
             />
             <Stack.Screen

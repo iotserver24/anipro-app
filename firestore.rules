@@ -17,7 +17,9 @@ service cloud.firestore {
         // Regular avatar format
         avatarId.matches('^[a-zA-Z0-9_-]+$') ||
         // Premium avatar format (must start with 'premium_')
-        avatarId.matches('^premium_[0-9]+$')
+        avatarId.matches('^premium_[0-9]+$') ||
+        // Custom avatar format (must start with 'custom_')
+        avatarId.matches('^custom_[0-9]+$')
       );
     }
 
@@ -35,12 +37,9 @@ service cloud.firestore {
 
     // Function to validate avatar update
     function canUseAvatar(avatarId) {
-      return isValidAvatarId(avatarId) && (
-        // If it's a premium avatar, check for premium access
-        (avatarId.matches('^premium_.*$') && hasPremiumAvatarAccess()) ||
-        // If not a premium avatar, it's fine to use
-        !avatarId.matches('^premium_.*$')
-      );
+      return isValidAvatarId(avatarId);
+      // Since this is the last update, all users can use any avatar
+      // Premium and custom avatars are now available to everyone
     }
 
     // Notifications collection

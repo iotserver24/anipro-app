@@ -604,8 +604,8 @@ const Avatar = memo(({ userAvatar }: { userAvatar: string }) => {
 
 // Helper function to render message content with mentions and formatting
 const renderMessageContent = (
-  content: string, 
-  mentions?: string[], 
+  content: string,
+  mentions?: string[],
   onMentionPress?: (username: string) => void,
   isAdmin?: boolean,
   onFullscreenImage?: (url: string) => void
@@ -617,7 +617,7 @@ const renderMessageContent = (
   if (thinkMatch) {
     const thinkContent = thinkMatch[1];
     const mainContent = content.replace(/<think>[\s\S]*?<\/think>/, '').trim();
-    
+
     return (
       <View>
         <View style={styles.thinkContainer}>
@@ -715,9 +715,9 @@ const renderFormattedContent = (
         );
       } else if (url.startsWith('anisurge://')) {
         elements.push(
-          <View key={`deeplink-${i}`} style={{flexDirection: 'row', alignItems: 'center', marginVertical: 2}}>
+          <View key={`deeplink-${i}`} style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 2 }}>
             <Text style={styles.deepLinkText}>{url}</Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.deepLinkButtonInlineBlue}
               onPress={() => Linking.openURL(url)}
             >
@@ -788,9 +788,9 @@ const GifMedia = memo(({ url, style }: { url: string; style: any }) => {
 });
 
 // Memoized Message component with optimized rendering
-const MessageItem = memo(({ 
-  item, 
-  onUserPress, 
+const MessageItem = memo(({
+  item,
+  onUserPress,
   isOwnMessage,
   showAvatar,
   isLastInSequence,
@@ -801,8 +801,8 @@ const MessageItem = memo(({
   isFromArtGen,
   onFullscreenImage,
   isAdmin
-}: { 
-  item: ChatMessage; 
+}: {
+  item: ChatMessage;
   onUserPress: (userId: string) => void;
   isOwnMessage: boolean;
   showAvatar: boolean;
@@ -820,14 +820,14 @@ const MessageItem = memo(({
   isAdmin?: boolean;
 }) => {
   const usernameColor = useMemo(() => getUsernameColor(item.userId), [item.userId]);
-  
+
   const handlePress = useCallback(() => {
     onUserPress(item.userId);
   }, [item.userId, onUserPress]);
 
   return (
     <View style={[
-      styles.messageItem, 
+      styles.messageItem,
       isOwnMessage && styles.ownMessageItem,
       !isLastInSequence && styles.consecutiveMessage
     ]}>
@@ -839,7 +839,7 @@ const MessageItem = memo(({
         )}
       </View>
       <View style={[
-        styles.messageContent, 
+        styles.messageContent,
         isOwnMessage && styles.ownMessageContent,
         !isLastInSequence && styles.consecutiveMessageContent
       ]}>
@@ -852,17 +852,17 @@ const MessageItem = memo(({
         {/* Render AI art image if present */}
         {item.imageUrl && (
           <View style={{ marginTop: 8, alignItems: 'center' }}>
-            <TouchableOpacity 
+            <TouchableOpacity
               activeOpacity={0.9}
               onPress={() => onFullscreenImage && onFullscreenImage(item.imageUrl as string)}
             >
-              <Image 
-                source={{ uri: item.imageUrl }} 
-                style={{ width: 240, height: 240, borderRadius: 12, backgroundColor: '#222' }} 
-                resizeMode="cover" 
+              <Image
+                source={{ uri: item.imageUrl }}
+                style={{ width: 240, height: 240, borderRadius: 12, backgroundColor: '#222' }}
+                resizeMode="cover"
               />
             </TouchableOpacity>
-            
+
             {isFromArtGen && (
               <View style={{ flexDirection: 'row', marginTop: 8, justifyContent: 'center' }}>
                 <TouchableOpacity
@@ -896,10 +896,10 @@ const MessageItem = memo(({
           </View>
         )}
         <Text style={styles.messageTime}>
-          {new Date(item.timestamp).toLocaleTimeString([], { 
-            hour: '2-digit', 
+          {new Date(item.timestamp).toLocaleTimeString([], {
+            hour: '2-digit',
             minute: '2-digit',
-            hour12: true 
+            hour12: true
           })}
         </Text>
       </View>
@@ -986,7 +986,7 @@ const getAllCommands = (): Command[] => {
 // Filter commands based on query - position sensitive for better UX
 const filterCommands = (query: string): Command[] => {
   if (!query) return getAllCommands();
-  
+
   const lowerQuery = query.toLowerCase();
   return getAllCommands().filter(command => {
     const commandKey = command.key.toLowerCase();
@@ -1004,12 +1004,12 @@ interface CommandSuggestionsProps {
   onClose: () => void;
 }
 
-const CommandSuggestions: React.FC<CommandSuggestionsProps> = ({ 
-  visible, 
-  commands, 
-  selectedIndex, 
-  onSelectCommand, 
-  onClose 
+const CommandSuggestions: React.FC<CommandSuggestionsProps> = ({
+  visible,
+  commands,
+  selectedIndex,
+  onSelectCommand,
+  onClose
 }) => {
   if (!visible || commands.length === 0) return null;
 
@@ -1019,8 +1019,8 @@ const CommandSuggestions: React.FC<CommandSuggestionsProps> = ({
         <Text style={styles.commandSuggestionsTitle}>Commands</Text>
         <Text style={styles.commandSuggestionsCount}>{commands.length} available</Text>
       </View>
-      
-      <ScrollView 
+
+      <ScrollView
         style={styles.commandSuggestionsList}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -1093,7 +1093,7 @@ const AIProfileModal: React.FC<AIProfileModalProps> = ({ visible, onClose, aiCon
       visible={visible}
       transparent={true}
       animationType="fade"
-      onRequestClose={() => {}}
+      onRequestClose={() => { }}
     >
       <View style={styles.modalOverlay}>
         <View style={styles.aiModalContent}>
@@ -1135,7 +1135,7 @@ const AIProfileModal: React.FC<AIProfileModalProps> = ({ visible, onClose, aiCon
 // Add WelcomeTutorialModal component before PublicChat component
 const WelcomeTutorialModal = ({ visible, onClose }: { visible: boolean; onClose: () => void }) => {
   const [currentStep, setCurrentStep] = useState(0);
-  
+
   const tutorialSteps = [
     {
       title: "Welcome to Public Chat! 👋",
@@ -1176,9 +1176,9 @@ const WelcomeTutorialModal = ({ visible, onClose }: { visible: boolean; onClose:
     >
       <View style={styles.tutorialModalOverlay}>
         <View style={styles.tutorialModalContent}>
-          <MaterialIcons 
-            name={tutorialSteps[currentStep].icon as any} 
-            size={48} 
+          <MaterialIcons
+            name={tutorialSteps[currentStep].icon as any}
+            size={48}
             color="#f4511e"
             style={styles.tutorialIcon}
           />
@@ -1276,7 +1276,7 @@ function getPreviousChatMemory(aiType: string, userId: string, messages: ChatMes
 const CHAT_TUTORIAL_VERSION = '2'; // Increment this when you update the tutorial
 
 // Admin user IDs with @ symbol
-const ADMIN_USER_IDS = ["@R3AP3Redit","@merxy7697","@nyt92", /* add more admin users here */];
+const ADMIN_USER_IDS = ["@R3AP3Redit", "@merxy7697", "@nyt92", /* add more admin users here */];
 
 const PublicChat = () => {
   const { theme } = useTheme();
@@ -1328,7 +1328,7 @@ const PublicChat = () => {
   // Initialize Firebase Realtime Database
   const database = getDatabase();
   const messagesRef = ref(database, 'public_chat');
-  
+
   // Define scrollToBottom before it's used in useEffect
   const scrollToBottom = useCallback(() => {
     if (flatListRef.current && messages.length > 0) {
@@ -1340,11 +1340,11 @@ const PublicChat = () => {
   useEffect(() => {
     // Subscribe to first 1000 messages - using orderByChild with negativeTimestamp
     const messagesQuery = dbQuery(
-      messagesRef, 
+      messagesRef,
       orderByChild('negativeTimestamp'),
       limitToFirst(30)
     );
-    
+
     onValue(messagesQuery, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -1357,7 +1357,7 @@ const PublicChat = () => {
         // Sort messages in chronological order for UI (oldest first)
         const sortedMessages = messageList.sort((a, b) => a.timestamp - b.timestamp);
         setMessages(sortedMessages);
-        
+
         // Only scroll to bottom on first load
         if (isFirstLoad) {
           setTimeout(() => {
@@ -1393,7 +1393,7 @@ const PublicChat = () => {
       setIsLoadingUsers(true); // Add this line
       const usersRef = collection(db, 'users');
       let userQuery;
-      
+
       // Always fetch a larger set of users first, then filter client-side
       // This is more efficient than creating complex queries that might need new indexes
       userQuery = query(
@@ -1404,7 +1404,7 @@ const PublicChat = () => {
 
       const querySnapshot = await getDocs(userQuery);
       let suggestions: UserSuggestion[] = [];
-      
+
       querySnapshot.forEach((doc) => {
         const userData = doc.data();
         if (userData.username) {
@@ -1415,19 +1415,19 @@ const PublicChat = () => {
           });
         }
       });
-      
+
       // If there's search text, filter the results
       if (searchText.trim()) {
         const lowerSearchText = searchText.toLowerCase();
-        suggestions = suggestions.filter(user => 
+        suggestions = suggestions.filter(user =>
           user.username.toLowerCase().includes(lowerSearchText) ||
           user.userId.toLowerCase().includes(lowerSearchText)
         );
       }
-      
+
       // Sort alphabetically by username
       suggestions.sort((a, b) => a.username.localeCompare(b.username));
-      
+
       setUserSuggestions(suggestions);
     } catch (error) {
       console.error('Error fetching user suggestions:', error);
@@ -1439,7 +1439,7 @@ const PublicChat = () => {
   // Handle input changes and detect @ mentions and command suggestions
   const handleInputChange = (text: string) => {
     setMessageText(text);
-    
+
     if (text.endsWith('@')) {
       setShowMentionsModal(true);
       setMentionQuery('');
@@ -1447,13 +1447,13 @@ const PublicChat = () => {
       setShowCommandSuggestions(false);
       return;
     }
-    
+
     // Handle command suggestions
     const lastSlashIndex = text.lastIndexOf('/');
     if (lastSlashIndex !== -1) {
       const afterSlash = text.slice(lastSlashIndex + 1);
       const hasSpaceAfterSlash = afterSlash.includes(' ');
-      
+
       if (!hasSpaceAfterSlash) {
         // Show command suggestions
         setCommandQuery(afterSlash);
@@ -1462,7 +1462,7 @@ const PublicChat = () => {
         setSelectedCommandIndex(0);
         setShowCommandSuggestions(true);
         setShowMentionsModal(false);
-        
+
         // Special handling for anime search
         if (text === '/anime') {
           setShowAnimeSearchModal(true);
@@ -1494,7 +1494,7 @@ const PublicChat = () => {
       }
       return;
     }
-    
+
     // Only clear anime-related states if we're not in anime mode or don't have a selection
     if (!text.startsWith('/anime') && !selectedAnime) {
       setIsAnimeSearchMode(false);
@@ -1502,12 +1502,12 @@ const PublicChat = () => {
       setAnimeResults([]);
       setShowAnimeSearchModal(false);
     }
-    
+
     const lastAtIndex = text.lastIndexOf('@');
     if (lastAtIndex !== -1) {
       const query = text.slice(lastAtIndex + 1);
       const hasSpaceAfterAt = query.includes(' ');
-      
+
       if (!hasSpaceAfterAt) {
         setMentionQuery(query);
         setShowMentionsModal(false);
@@ -1546,12 +1546,12 @@ const PublicChat = () => {
 
     if (event.nativeEvent.key === 'ArrowDown') {
       event.preventDefault();
-      setSelectedCommandIndex(prev => 
+      setSelectedCommandIndex(prev =>
         prev < filteredCommands.length - 1 ? prev + 1 : 0
       );
     } else if (event.nativeEvent.key === 'ArrowUp') {
       event.preventDefault();
-      setSelectedCommandIndex(prev => 
+      setSelectedCommandIndex(prev =>
         prev > 0 ? prev - 1 : filteredCommands.length - 1
       );
     } else if (event.nativeEvent.key === 'Enter' || event.nativeEvent.key === ' ') {
@@ -1574,7 +1574,7 @@ const PublicChat = () => {
         where('username', '==', username.toLowerCase()),
         limit(1)
       );
-      
+
       const querySnapshot = await getDocs(userQuery);
       if (!querySnapshot.empty) {
         const doc = querySnapshot.docs[0];
@@ -1660,37 +1660,37 @@ const PublicChat = () => {
   const sendAIMessage = async (messageData: Partial<ChatMessage> & { id?: string; timestamp?: number; negativeTimestamp?: number }) => {
     const database = getDatabase();
     const chatRef = ref(database, 'public_chat');
-    
+
     // If id is provided in messageData, use it, otherwise generate a new key
     const messageKey = messageData.id || generateReverseOrderKey();
-    
+
     // If timestamp is not provided, generate one
     const timestamp = messageData.timestamp || Date.now();
     const negTimestamp = messageData.negativeTimestamp || -timestamp;
-    
+
     // Create a new object without the id field for Firebase
     const { id, ...dataToSend } = messageData;
-    
+
     // Ensure timestamp and negativeTimestamp are set
     dataToSend.timestamp = timestamp;
     dataToSend.negativeTimestamp = negTimestamp;
-    
+
     return set(ref(database, `public_chat/${messageKey}`), dataToSend);
   };
 
   // Update the handleAIResponse function
   const handleAIResponse = async (question: string, aiType: 'aizen' | 'dazai' | 'lelouch' | 'gojo' | 'mikasa' | 'marin' | 'power' | 'makima' | 'dfla' | 'zero-two') => {
     const config = AI_CONFIGS[aiType];
-    
+
     try {
       setIsAizenTyping(true);
       setAiRequestCount(prev => prev + 1);
-      
+
       // Get current user for mentioning in the response
       const currentUser = getCurrentUser();
       let userMention = '';
       let username = '';
-      
+
       if (currentUser) {
         // Get username for mention
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
@@ -1702,17 +1702,17 @@ const PublicChat = () => {
           }
         }
       }
-      
+
       // Prepare previous chat memory for this AI
       const previousContextMessages = getPreviousChatMemory(aiType, currentUser ? currentUser.uid : '', messages, 3);
-      
+
       // Compose OpenAI messages array
       const openaiMessages = [
         { role: 'system', content: config.systemPrompt },
         ...previousContextMessages,
         { role: 'user', content: question }
       ];
-      
+
       // Call the OpenAI-compatible endpoint
       const url = `${POLLINATIONS_TEXT_API_URL}`;
       const payload = {
@@ -1721,7 +1721,7 @@ const PublicChat = () => {
       };
       let response = await fetch(url, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${POLLINATIONS_API_KEY}`
         },
@@ -1738,7 +1738,7 @@ const PublicChat = () => {
       const data = await response.json();
       const content = data.choices?.[0]?.message?.content || '';
       console.log('AI Response Content:', content);
-      
+
       // Add character-specific formatting and user mention
       let formattedContent = `\n${userMention}${content}`;
 
@@ -1755,7 +1755,7 @@ const PublicChat = () => {
         timestamp,
         negativeTimestamp: -timestamp
       });
-      
+
       // Send notification only if we have a valid user to mention
       if (currentUser && username) {
         try {
@@ -1770,7 +1770,7 @@ const PublicChat = () => {
             timestamp: serverTimestamp(),
             read: false
           };
-          
+
           // Create a new document with auto-generated ID
           await addDoc(notificationsRef, notification);
         } catch (error) {
@@ -1785,12 +1785,12 @@ const PublicChat = () => {
         stack: error.stack,
         name: error.name
       });
-      
+
       // Get current user for mentioning in the error message
       const currentUser = getCurrentUser();
       let userMention = '';
       let username = '';
-      
+
       if (currentUser) {
         // Get username for mention
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
@@ -1802,25 +1802,25 @@ const PublicChat = () => {
           }
         }
       }
-      
-      const errorMessage = aiType === 'aizen' 
+
+      const errorMessage = aiType === 'aizen'
         ? `${userMention}How amusing... Even this momentary disruption was part of my grand design. *adjusts glasses* We shall continue this conversation another time.`
         : aiType === 'dazai'
-        ? `${userMention}Ah, seems like my attempt to die by API failure didn't work either... *laughs* Let's try this conversation again later~`
-        : aiType === 'power'
-        ? `${userMention}BLOOD DEMON POWER CANNOT BE STOPPED BY MERE TECHNICAL DIFFICULTIES! But... maybe we should try again later...`
-        : aiType === 'makima'
-        ? `${userMention}This minor setback is of no consequence. We shall continue our conversation when the time is right.`
-        : aiType === 'dfla'
-        ? `${userMention}You're not ready for this conversation yet. Maybe some other time.`
-        : aiType === 'zero-two'
-        ? `${userMention}Darling~ Looks like something broke... But don't worry, I'll come back for you soon.`
-        : `${userMention}Even in failure, this too is part of my strategy. We shall regroup and continue this conversation when the time is right.`;
-      
+          ? `${userMention}Ah, seems like my attempt to die by API failure didn't work either... *laughs* Let's try this conversation again later~`
+          : aiType === 'power'
+            ? `${userMention}BLOOD DEMON POWER CANNOT BE STOPPED BY MERE TECHNICAL DIFFICULTIES! But... maybe we should try again later...`
+            : aiType === 'makima'
+              ? `${userMention}This minor setback is of no consequence. We shall continue our conversation when the time is right.`
+              : aiType === 'dfla'
+                ? `${userMention}You're not ready for this conversation yet. Maybe some other time.`
+                : aiType === 'zero-two'
+                  ? `${userMention}Darling~ Looks like something broke... But don't worry, I'll come back for you soon.`
+                  : `${userMention}Even in failure, this too is part of my strategy. We shall regroup and continue this conversation when the time is right.`;
+
       // Create message and add to chat
       const messageId = generateReverseOrderKey();
       const timestamp = Date.now();
-      
+
       await sendAIMessage({
         id: messageId,
         userId: config.userId,
@@ -1830,7 +1830,7 @@ const PublicChat = () => {
         timestamp,
         negativeTimestamp: -timestamp
       });
-      
+
       // Send notification for error message too
       if (currentUser && username) {
         try {
@@ -1845,7 +1845,7 @@ const PublicChat = () => {
             timestamp: serverTimestamp(),
             read: false
           };
-          
+
           // Create a new document with auto-generated ID
           await addDoc(notificationsRef, notification);
         } catch (error) {
@@ -1866,7 +1866,7 @@ const PublicChat = () => {
 
     try {
       setIsProcessingAnimeRec(true);
-      
+
       // Get current user
       const currentUser = getCurrentUser();
       if (!currentUser) {
@@ -1881,7 +1881,12 @@ const PublicChat = () => {
 
       // Get user avatar
       let userAvatarUrl = '';
-      if (userData.avatarId) {
+
+      // For custom avatars (ID starts with custom_), use avatarUrl directly
+      if (userData.avatarId && userData.avatarId.startsWith('custom_')) {
+        userAvatarUrl = userData.avatarUrl || '';
+      } else if (userData.avatarId) {
+        // For regular/premium avatars, look up by ID
         try {
           userAvatarUrl = await getAvatarById(userData.avatarId);
         } catch (error) {
@@ -1889,11 +1894,12 @@ const PublicChat = () => {
         }
       }
 
+      // Fallback options if avatar URL is still not set
       if (!userAvatarUrl) {
-        if (userData.customAvatar) {
-          userAvatarUrl = userData.customAvatar;
-        } else if (userData.avatarUrl) {
+        if (userData.avatarUrl) {
           userAvatarUrl = userData.avatarUrl;
+        } else if (userData.customAvatar) {
+          userAvatarUrl = userData.customAvatar;
         } else if (AVATARS.length > 0) {
           userAvatarUrl = AVATARS[0].url;
         }
@@ -1919,11 +1925,11 @@ const PublicChat = () => {
 
       // Prepare the function calling payload
       const url = `${POLLINATIONS_TEXT_API_URL}`;
-      const headers = { 
+      const headers = {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${POLLINATIONS_API_KEY}`
       };
-      
+
       // Fetch user_data from Firestore
       let userDataDoc = null;
       try {
@@ -2088,7 +2094,7 @@ const PublicChat = () => {
       if (aiConfig.model !== 'gemini-search' && responseMessage.tool_calls) {
         const toolCall = responseMessage.tool_calls[0];
         const functionName = toolCall.function.name;
-        
+
         if (functionName === "recommend_anime") {
           const args = JSON.parse(toolCall.function.arguments) as AnimeRecommendation;
           const animeName = args.anime_name;
@@ -2129,7 +2135,7 @@ const PublicChat = () => {
           } else {
             // Validate which anime result best matches the recommendation
             const validationResult = await validateAnimeMatch(animeResults, animeName, aiConfig.model);
-            
+
             // Post the recommendation message with the validated anime
             if (validationResult) {
               const recMessageKey = generateReverseOrderKey();
@@ -2167,15 +2173,15 @@ const PublicChat = () => {
           // Parse Gemini response to extract anime recommendation
           const content = responseMessage.content;
           console.log('Gemini response content:', content);
-          
+
           // Look for <search>anime_name</search> tags
           const searchMatch = content.match(/<search>(.+?)<\/search>/i);
           console.log('Search tag match:', searchMatch);
-          
+
           if (searchMatch) {
             const animeName = searchMatch[1].trim();
             console.log('Extracted anime name from search tags:', animeName);
-            
+
             // Show intermediate "thinking" message
             const thinkingMessageKey = generateReverseOrderKey();
             await set(ref(database, `public_chat/${thinkingMessageKey}`), {
@@ -2208,7 +2214,7 @@ const PublicChat = () => {
               // Validate which anime result best matches the recommendation
               const validationResult = await validateAnimeMatch(animeResults, animeName, aiConfig.model);
               console.log('Validation result:', validationResult);
-              
+
               // Post the recommendation message with the validated anime
               if (validationResult) {
                 console.log('Posting anime card with:', validationResult);
@@ -2256,14 +2262,14 @@ const PublicChat = () => {
         } else {
           // Handle direct response for other models
           const content = responseMessage.content;
-          
+
           // Check if other models also use <search> tags (for consistency)
           const searchMatch = content.match(/<search>(.+?)<\/search>/i);
-          
+
           if (searchMatch) {
             const animeName = searchMatch[1].trim();
             console.log('Other model search tag found:', animeName);
-            
+
             // Show intermediate "thinking" message
             const thinkingMessageKey = generateReverseOrderKey();
             await set(ref(database, `public_chat/${thinkingMessageKey}`), {
@@ -2282,7 +2288,7 @@ const PublicChat = () => {
             if (animeResults.length > 0) {
               // Validate which anime result best matches the recommendation
               const validationResult = await validateAnimeMatch(animeResults, animeName, aiConfig.model);
-              
+
               // Post the recommendation message with the validated anime
               if (validationResult) {
                 const recMessageKey = generateReverseOrderKey();
@@ -2339,14 +2345,14 @@ const PublicChat = () => {
       }
     } catch (error) {
       console.error('Error in anime recommendation:', error);
-      
+
       // Get the AI config for error message
       const aiConfig = AI_CONFIGS.animerec;
       if (!aiConfig) {
         console.error('AI configuration not found for error message');
         return;
       }
-      
+
       // Send a more user-friendly error message
       const errorMessageKey = generateReverseOrderKey();
       await set(ref(database, `public_chat/${errorMessageKey}`), {
@@ -2369,7 +2375,7 @@ const PublicChat = () => {
       const url = `${API_BASE}${ENDPOINTS.SEARCH.replace(':query', apiQuery)}?page=1`;
       const response = await fetch(url);
       const data = await response.json();
-      
+
       // Map API results to our interface
       return (data?.results || [])
         .slice(0, limit)
@@ -2386,13 +2392,13 @@ const PublicChat = () => {
 
   // Function to validate which anime best matches the recommendation
   const validateAnimeMatch = async (
-    animeResults: AnimeSearchResult[], 
+    animeResults: AnimeSearchResult[],
     recommendedTitle: string,
     model: string
   ): Promise<AnimeSearchResult | null> => {
     try {
       console.log('validateAnimeMatch called with:', { animeResults, recommendedTitle, model });
-      
+
       // If only one result, return it
       if (animeResults.length === 1) {
         console.log('Only one result, returning:', animeResults[0]);
@@ -2400,7 +2406,7 @@ const PublicChat = () => {
       }
 
       // If one result title exactly matches the recommended title
-      const exactMatch = animeResults.find(anime => 
+      const exactMatch = animeResults.find(anime =>
         anime.title.toLowerCase() === recommendedTitle.toLowerCase()
       );
       if (exactMatch) {
@@ -2409,7 +2415,7 @@ const PublicChat = () => {
       }
 
       // Prepare the titles as a simplified JSON list
-      const titlesList = animeResults.map((anime, index) => 
+      const titlesList = animeResults.map((anime, index) =>
         `${index + 1}. "${anime.title}"`
       ).join('\n');
 
@@ -2432,7 +2438,7 @@ const PublicChat = () => {
 
       const response = await fetch(url, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${POLLINATIONS_API_KEY}`
         },
@@ -2445,12 +2451,12 @@ const PublicChat = () => {
 
       const data = await response.json();
       const aiResponse = data.choices[0].message.content.trim();
-      
+
       // Extract the number from the response
       const numberMatch = aiResponse.match(/^(\d+)/);
       console.log('AI validation response:', aiResponse);
       console.log('Number match:', numberMatch);
-      
+
       if (numberMatch) {
         const selectedIndex = parseInt(numberMatch[1], 10) - 1;
         console.log('Selected index:', selectedIndex);
@@ -2459,7 +2465,7 @@ const PublicChat = () => {
           return animeResults[selectedIndex];
         }
       }
-      
+
       // Default to first result if parsing fails
       console.log('Parsing failed, returning first result:', animeResults[0]);
       return animeResults[0];
@@ -2489,7 +2495,7 @@ const PublicChat = () => {
 
       // Check if the message contains links
       const containsLink = /(https?:\/\/|anisurge:\/\/)/i.test(messageText);
-      
+
       // Get current user
       const currentUser = getCurrentUser();
       if (!currentUser) {
@@ -2503,7 +2509,7 @@ const PublicChat = () => {
       const userData = userDoc.data();
       const username = userData.username || 'user';
       const userId = '@' + username;
-      
+
       // Check if user is admin
       const isAdminLocal = ADMIN_USER_IDS.includes(userId);
 
@@ -2570,25 +2576,32 @@ const PublicChat = () => {
         // Send user's message first
         // We already have the currentUser and userData from above
         let userAvatarUrl = '';
-        if (userData.avatarId) {
+
+        // For custom avatars (ID starts with custom_), use avatarUrl directly
+        if (userData.avatarId && userData.avatarId.startsWith('custom_')) {
+          userAvatarUrl = userData.avatarUrl || '';
+        } else if (userData.avatarId) {
+          // For regular/premium avatars, look up by ID
           try {
             userAvatarUrl = await getAvatarById(userData.avatarId);
           } catch (error) {
             console.warn('Error getting avatar by ID:', error);
           }
         }
+
+        // Fallback options if avatar URL is still not set
         if (!userAvatarUrl) {
-          if (userData.customAvatar) {
-            userAvatarUrl = userData.customAvatar;
-          } else if (userData.avatarUrl) {
+          if (userData.avatarUrl) {
             userAvatarUrl = userData.avatarUrl;
+          } else if (userData.customAvatar) {
+            userAvatarUrl = userData.customAvatar;
           } else if (AVATARS.length > 0) {
             userAvatarUrl = AVATARS[0].url;
           }
         }
-        
+
         // We already have username from above
-        
+
         const timestamp = Date.now();
         const reverseKey = generateReverseOrderKey();
         await set(ref(database, `public_chat/${reverseKey}`), {
@@ -2599,13 +2612,13 @@ const PublicChat = () => {
           timestamp,
           negativeTimestamp: -timestamp
         });
-        
+
         // Generate image URL using Pollinations.AI
         const negativePrompt = '((bad anatomy, deformed, extra limbs, fused limbs, poorly drawn hands, missing fingers, extra fingers, mutated, cloned face, distorted genitals, penis on female, vagina on male, wrong gender, fused gender, blurry, low resolution, jpeg artifacts, watermark, text, signature))';
         const qualityPrompts = ', masterpiece, best quality, high detail, 8k, ultra sharp, dynamic lighting, vibrant colors, clean lines, highly detailed, cinematic, artstation';
         const fullPrompt = `${prompt}${qualityPrompts}, --no ${negativePrompt}`;
         const imageUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(fullPrompt)}?model=turbo&width=1024&height=1024&nologo=true&enhance=true&token=uNoesre5jXDzjhiY`;
-        
+
         // Post ArtGen's message with the image - now with @username mention
         const artgenMessageId = generateReverseOrderKey();
         await sendAIMessage({
@@ -2619,23 +2632,23 @@ const PublicChat = () => {
           negativeTimestamp: -Date.now(),
           mentions: [currentUser.uid]  // Add mentions to trigger notification
         });
-        
+
         setMessageText('');
         setIsSending(false);
         return;
       }
 
       // Check for AI commands
-      if (messageText.startsWith('/aizen ') || 
-          messageText.startsWith('/dazai ') || 
-          messageText.startsWith('/lelouch ') || 
-          messageText.startsWith('/gojo ') || 
-          messageText.startsWith('/mikasa ') ||
-          messageText.startsWith('/marin ') ||
-          messageText.startsWith('/power ') ||
-          messageText.startsWith('/makima ') ||
-          messageText.startsWith('/dfla ') ||
-          messageText.startsWith('/zero-two ')) {
+      if (messageText.startsWith('/aizen ') ||
+        messageText.startsWith('/dazai ') ||
+        messageText.startsWith('/lelouch ') ||
+        messageText.startsWith('/gojo ') ||
+        messageText.startsWith('/mikasa ') ||
+        messageText.startsWith('/marin ') ||
+        messageText.startsWith('/power ') ||
+        messageText.startsWith('/makima ') ||
+        messageText.startsWith('/dfla ') ||
+        messageText.startsWith('/zero-two ')) {
         const [command, ...questionParts] = messageText.split(' ');
         const question = questionParts.join(' ').trim();
         const aiType = command.slice(1) as 'aizen' | 'dazai' | 'lelouch' | 'gojo' | 'mikasa' | 'marin' | 'power' | 'makima' | 'dfla' | 'zero-two';
@@ -2660,7 +2673,12 @@ const PublicChat = () => {
         // Send user's message first
         // We already have the currentUser, userData, username, and other variables from above
         let userAvatarUrl = '';
-        if (userData.avatarId) {
+
+        // For custom avatars (ID starts with custom_), use avatarUrl directly
+        if (userData.avatarId && userData.avatarId.startsWith('custom_')) {
+          userAvatarUrl = userData.avatarUrl || '';
+        } else if (userData.avatarId) {
+          // For regular/premium avatars, look up by ID
           try {
             userAvatarUrl = await getAvatarById(userData.avatarId);
           } catch (error) {
@@ -2668,11 +2686,12 @@ const PublicChat = () => {
           }
         }
 
+        // Fallback options if avatar URL is still not set
         if (!userAvatarUrl) {
-          if (userData.customAvatar) {
-            userAvatarUrl = userData.customAvatar;
-          } else if (userData.avatarUrl) {
+          if (userData.avatarUrl) {
             userAvatarUrl = userData.avatarUrl;
+          } else if (userData.customAvatar) {
+            userAvatarUrl = userData.customAvatar;
           } else if (AVATARS.length > 0) {
             userAvatarUrl = AVATARS[0].url;
           }
@@ -2699,7 +2718,12 @@ const PublicChat = () => {
       // Regular message sending
       // We already have currentUser, userData, username from above
       let userAvatarUrl = '';
-      if (userData.avatarId) {
+
+      // For custom avatars (ID starts with custom_), use avatarUrl directly
+      if (userData.avatarId && userData.avatarId.startsWith('custom_')) {
+        userAvatarUrl = userData.avatarUrl || '';
+      } else if (userData.avatarId) {
+        // For regular/premium avatars, look up by ID
         try {
           userAvatarUrl = await getAvatarById(userData.avatarId);
         } catch (error) {
@@ -2707,11 +2731,12 @@ const PublicChat = () => {
         }
       }
 
+      // Fallback options if avatar URL is still not set
       if (!userAvatarUrl) {
-        if (userData.customAvatar) {
-          userAvatarUrl = userData.customAvatar;
-        } else if (userData.avatarUrl) {
+        if (userData.avatarUrl) {
           userAvatarUrl = userData.avatarUrl;
+        } else if (userData.customAvatar) {
+          userAvatarUrl = userData.customAvatar;
         } else if (AVATARS.length > 0) {
           userAvatarUrl = AVATARS[0].url;
         }
@@ -2719,7 +2744,7 @@ const PublicChat = () => {
 
       const timestamp = Date.now();
       const reverseKey = generateReverseOrderKey();
-      
+
       // Create message object without undefined values
       const messageData: any = {
         userId: currentUser.uid,
@@ -2839,23 +2864,23 @@ const PublicChat = () => {
   const renderMessage = useCallback(({ item, index }: { item: ChatMessage; index: number }) => {
     const currentUser = getCurrentUser();
     const isOwnMessage = !!currentUser && currentUser.uid === item.userId;
-    
+
     // Check if this message is part of a consecutive sequence
     const nextMessage = messages[index + 1];
     const prevMessage = messages[index - 1];
-    
+
     const isLastInSequence = !nextMessage || nextMessage.userId !== item.userId;
     const isFirstInSequence = !prevMessage || prevMessage.userId !== item.userId;
-    
+
     // Only show avatar for the last message in a sequence
     const showAvatar = isLastInSequence;
-    
+
     // Check if message is from ArtGen
     const isFromArtGen = item.userId === 'artgen-ai';
 
     return (
-      <MessageItem 
-        item={item} 
+      <MessageItem
+        item={item}
         onUserPress={handleUserPress}
         isOwnMessage={isOwnMessage}
         showAvatar={showAvatar}
@@ -2871,9 +2896,9 @@ const PublicChat = () => {
     );
   }, [messages, handleUserPress, handleMentionPress, handleOpenAnime, isAdmin]);
 
-  const keyExtractor = useCallback((item: ChatMessage) => 
+  const keyExtractor = useCallback((item: ChatMessage) =>
     item.id || Math.random().toString()
-  , []);
+    , []);
 
   const getItemLayout = useCallback((data: any, index: number) => ({
     length: 80,
@@ -2883,12 +2908,12 @@ const PublicChat = () => {
 
   // Render mention suggestions
   const renderMentionSuggestion = ({ item }: { item: UserSuggestion }) => (
-    <Pressable 
-      style={styles.mentionItem} 
+    <Pressable
+      style={styles.mentionItem}
       onPress={() => handleSelectMention(item)}
     >
-      <Image 
-        source={{ uri: item.avatarUrl }} 
+      <Image
+        source={{ uri: item.avatarUrl }}
         style={styles.mentionAvatar}
       />
       <Text style={styles.mentionUsername}>@{item.username}</Text>
@@ -2911,10 +2936,10 @@ const PublicChat = () => {
     const contentHeight = event.nativeEvent.contentSize.height;
     const scrollViewHeight = event.nativeEvent.layoutMeasurement.height;
     const isScrolledToBottom = contentHeight - currentOffset - scrollViewHeight < 20;
-    
+
     // Only show/hide scroll button based on position
     setShowScrollButton(!isScrolledToBottom);
-    
+
     lastContentOffset.current = currentOffset;
   }, []);
 
@@ -2930,7 +2955,7 @@ const PublicChat = () => {
         console.error('Error checking tutorial status:', error);
       }
     };
-    
+
     checkFirstTimeUser();
   }, []);
 
@@ -2949,9 +2974,9 @@ const PublicChat = () => {
     try {
       const currentUser = getCurrentUser();
       if (!currentUser) return;
-      
+
       setIsCheckingMentions(true);
-      
+
       // Query the notifications collection for unread mention notifications
       const notificationsRef = collection(db, 'notifications');
       const mentionsQuery = query(
@@ -2960,7 +2985,7 @@ const PublicChat = () => {
         where('type', '==', 'mention'),
         where('read', '==', false)
       );
-      
+
       const snapshot = await getDocs(mentionsQuery);
       const count = snapshot.size;
       setUnreadMentionsCount(count);
@@ -2971,14 +2996,14 @@ const PublicChat = () => {
       setIsCheckingMentions(false);
     }
   }, []);
-  
+
   // Check for unread mentions when the component mounts
   useEffect(() => {
     checkUnreadMentions();
-    
+
     // Set up an interval to periodically check for new mentions (every 30 seconds)
     const mentionsInterval = setInterval(checkUnreadMentions, 30000);
-    
+
     return () => {
       clearInterval(mentionsInterval);
     };
@@ -3000,14 +3025,14 @@ const PublicChat = () => {
       }
       const fileUri = FileSystem.cacheDirectory + filename;
       const { uri } = await FileSystem.downloadAsync(url, fileUri);
-      
+
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permission required', 'Please allow access to save images.');
         setIsDownloading(false);
         return;
       }
-      
+
       const asset = await MediaLibrary.createAssetAsync(uri);
       await MediaLibrary.createAlbumAsync('AniPro', asset, false);
       Alert.alert('Success', 'Image saved to your gallery!');
@@ -3057,8 +3082,8 @@ const PublicChat = () => {
     }, []));
 
   return (
-    <View style={[styles.container, { paddingBottom: 60, backgroundColor: theme.colors.background }]}> 
-      <KeyboardAvoidingView 
+    <View style={[styles.container, { paddingBottom: 60, backgroundColor: theme.colors.background }]}>
+      <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
@@ -3087,7 +3112,7 @@ const PublicChat = () => {
             <>
               {/* Add mentions notification banner */}
               {hasUnreadMentions && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.mentionsBanner}
                   onPress={handleViewMentions}
                 >
@@ -3120,7 +3145,7 @@ const PublicChat = () => {
                 style={styles.flatList}
               />
               {showScrollButton && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.scrollToBottomButton}
                   onPress={scrollToBottom}
                 >
@@ -3157,9 +3182,9 @@ const PublicChat = () => {
               maxLength={500}
               editable={!isSending && !isProcessingAnimeRec}
             />
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
-                styles.sendButton, 
+                styles.sendButton,
                 (isSending || isProcessingAnimeRec) && styles.sendButtonDisabled
               ]}
               onPress={handleSendMessage}
@@ -3181,13 +3206,13 @@ const PublicChat = () => {
           />
         </View>
 
-        <AuthModal 
+        <AuthModal
           isVisible={showAuthModal}
           onClose={() => setShowAuthModal(false)}
           onAuthSuccess={() => setShowAuthModal(false)}
         />
 
-        <GifPicker 
+        <GifPicker
           isVisible={showGifPicker}
           onClose={() => setShowGifPicker(false)}
           onSelectGif={(gifUrl) => {
@@ -3197,7 +3222,7 @@ const PublicChat = () => {
         />
 
         {selectedUserId && (
-          <UserProfileModal 
+          <UserProfileModal
             visible={Boolean(selectedUserId)}
             onClose={() => setSelectedUserId(null)}
             userId={selectedUserId}
@@ -3233,13 +3258,13 @@ const PublicChat = () => {
                 onChangeText={setAnimeSearchText}
                 autoFocus
               />
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => {
                   setShowAnimeSearchModal(false);
                   setIsAnimeSearchMode(false);
                   setAnimeSearchText('');
                   setAnimeResults([]);
-                }} 
+                }}
                 style={styles.fullscreenModalClose}
               >
                 <MaterialIcons name="close" size={28} color="#fff" />
@@ -3281,11 +3306,11 @@ const PublicChat = () => {
                 }}
                 autoFocus
               />
-              <TouchableOpacity 
+              <TouchableOpacity
                 onPress={() => {
                   setShowMentionsModal(false);
                   setMentionQuery('');
-                }} 
+                }}
                 style={styles.fullscreenModalClose}
               >
                 <MaterialIcons name="close" size={28} color="#fff" />
@@ -3301,15 +3326,15 @@ const PublicChat = () => {
                 data={userSuggestions}
                 keyExtractor={(item) => item.userId}
                 renderItem={({ item }) => (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.mentionResultItem}
                     onPress={() => {
                       handleSelectMention(item);
                       setShowMentionsModal(false);
                     }}
                   >
-                    <Image 
-                      source={{ uri: item.avatarUrl }} 
+                    <Image
+                      source={{ uri: item.avatarUrl }}
                       style={styles.mentionResultAvatar}
                     />
                     <View style={styles.mentionResultInfo}>
@@ -3343,7 +3368,7 @@ const PublicChat = () => {
             justifyContent: 'center',
             alignItems: 'center',
           }}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={{
                 position: 'absolute',
                 top: 40,
@@ -3357,15 +3382,15 @@ const PublicChat = () => {
             >
               <MaterialIcons name="close" size={30} color="#fff" />
             </TouchableOpacity>
-            
+
             {fullscreenImageUrl && (
-              <Image 
-                source={{ uri: fullscreenImageUrl }} 
+              <Image
+                source={{ uri: fullscreenImageUrl }}
                 style={{ width: '90%', height: '70%', borderRadius: 12 }}
                 resizeMode="contain"
               />
             )}
-            
+
             <TouchableOpacity
               style={{
                 marginTop: 20,

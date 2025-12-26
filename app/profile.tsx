@@ -7,11 +7,11 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import { DOMParser } from 'xmldom';
-import { 
-  isAuthenticated, 
-  getCurrentUser, 
-  signOut, 
-  updateUserAvatar, 
+import {
+  isAuthenticated,
+  getCurrentUser,
+  signOut,
+  updateUserAvatar,
   isEmailVerified,
   reloadUser,
   sendVerificationEmail
@@ -113,10 +113,10 @@ export default function ProfileScreen() {
   useEffect(() => {
     const fetchCommentCount = async () => {
       if (!authenticated || !getCurrentUser()) return;
-      
+
       const userId = getCurrentUser()?.uid;
       if (!userId) return;
-      
+
       setCommentLoading(true);
       try {
         const commentsQuery = query(
@@ -124,7 +124,7 @@ export default function ProfileScreen() {
           where('userId', '==', userId),
           limit(100) // We just want to count, not fetch all
         );
-        
+
         const commentsSnapshot = await getDocs(commentsQuery);
         setCommentCount(commentsSnapshot.size);
         logger.info('ProfileScreen', `Comment count fetched: ${commentsSnapshot.size}`);
@@ -134,7 +134,7 @@ export default function ProfileScreen() {
         setCommentLoading(false);
       }
     };
-    
+
     fetchCommentCount();
   }, [authenticated]);
 
@@ -142,7 +142,7 @@ export default function ProfileScreen() {
   useEffect(() => {
     const fetchDonationStatus = async () => {
       if (!authenticated || !getCurrentUser()) return;
-      
+
       setDonationLoading(true);
       try {
         // Get current user data to check donation amount
@@ -154,7 +154,7 @@ export default function ProfileScreen() {
             // Check for both fields for backward compatibility
             const totalDonated = userData.donationAmount || userData.premiumAmount || 0;
             const isPremium = userData.isPremium || false;
-            
+
             // Convert to UserDonation format for backward compatibility
             const status: UserDonation = {
               tier: isPremium ? DonationTier.VIP : DonationTier.NONE,
@@ -166,7 +166,7 @@ export default function ProfileScreen() {
                 customThemes: isPremium
               }
             };
-            
+
             setDonationStatus(status);
             logger.info('ProfileScreen', `Premium status fetched: ${isPremium}, Donation amount: ${totalDonated}`);
           }
@@ -177,7 +177,7 @@ export default function ProfileScreen() {
         setDonationLoading(false);
       }
     };
-    
+
     fetchDonationStatus();
   }, [authenticated]);
 
@@ -211,12 +211,19 @@ export default function ProfileScreen() {
     // Extract extension from URL, handling various formats
     const urlParts = originalUrl.split('.');
     const extension = urlParts.length > 1 ? urlParts.pop()?.toLowerCase() : 'jpg';
-    
+
     // Handle common avatar formats
     const validExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'webm'];
     const finalExtension = validExtensions.includes(extension || '') ? extension : 'jpg';
-    
-    return `avatar_${avatarId}_${Date.now()}.${finalExtension}`;
+
+    // Sanitize avatarId - remove or replace invalid filename characters
+    // This handles custom URLs which may contain :// and /
+    const sanitizedId = avatarId
+      .replace(/https?:\/\//g, '') // Remove http:// or https://
+      .replace(/[\/\\:*?"<>|]/g, '_') // Replace invalid characters with underscore
+      .substring(0, 50); // Limit length to avoid too long filenames
+
+    return `avatar_${sanitizedId}_${Date.now()}.${finalExtension}`;
   };
 
   // Cache avatar media to local storage (supports images, gifs, videos)
@@ -242,7 +249,7 @@ export default function ProfileScreen() {
 
       // Download and cache the media file
       const downloadResult = await FileSystem.downloadAsync(mediaUrl, destinationUri);
-      
+
       if (downloadResult.status === 200) {
         // Validate the downloaded file exists and has content
         const fileInfo = await FileSystem.getInfoAsync(destinationUri);
@@ -265,16 +272,16 @@ export default function ProfileScreen() {
   const validateCachedAvatar = async (uri: string): Promise<boolean> => {
     try {
       const fileInfo = await FileSystem.getInfoAsync(uri);
-      
+
       // Check if file exists and has content
       if (!fileInfo.exists || !fileInfo.size || fileInfo.size === 0) {
         console.log('Cached avatar is missing or empty:', uri);
         return false;
       }
-      
+
       // Additional validation for different file types
       const extension = uri.split('.').pop()?.toLowerCase();
-      
+
       // For video files, we might want to do additional checks
       if (extension === 'mp4' || extension === 'webm') {
         // Basic size check for videos (should be larger than a few KB)
@@ -283,7 +290,7 @@ export default function ProfileScreen() {
           return false;
         }
       }
-      
+
       console.log('Cached avatar validation passed:', uri, fileInfo.size, 'bytes');
       return true;
     } catch (error) {
@@ -300,10 +307,10 @@ export default function ProfileScreen() {
 
       const avatarsDir = documentDir + 'avatars/';
       const dirInfo = await FileSystem.getInfoAsync(avatarsDir);
-      
+
       if (dirInfo.exists) {
         const files = await FileSystem.readDirectoryAsync(avatarsDir);
-        
+
         // Delete files that are not the current avatar
         for (const file of files) {
           const fileUri = avatarsDir + file;
@@ -327,7 +334,7 @@ export default function ProfileScreen() {
       // Check if we have a cached version first
       const cachedAvatarKey = `cached_avatar_${avatarId}`;
       const cachedAvatarUri = await AsyncStorage.getItem(cachedAvatarKey);
-      
+
       if (cachedAvatarUri) {
         // Validate cached avatar still exists
         const isValid = await validateCachedAvatar(cachedAvatarUri);
@@ -341,19 +348,35 @@ export default function ProfileScreen() {
         }
       }
 
-      // Get the original URL
-      const originalUrl = await getAvatarById(avatarId);
-      
+      let originalUrl = '';
+
+      // Check if it's a custom avatar - get URL from user document
+      if (avatarId.startsWith('custom_')) {
+        const currentUser = getCurrentUser();
+        if (currentUser) {
+          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+          if (userDoc.exists() && userDoc.data().avatarUrl) {
+            originalUrl = userDoc.data().avatarUrl;
+            console.log('Using custom avatar URL from user document:', originalUrl);
+          }
+        }
+      }
+
+      // If not a custom avatar or URL not found, use getAvatarById
+      if (!originalUrl) {
+        originalUrl = await getAvatarById(avatarId);
+      }
+
       // Cache the avatar media locally (supports images, gifs, videos)
       try {
         const cachedUri = await cacheAvatarImage(avatarId, originalUrl);
-        
+
         // Save the cached URI to AsyncStorage
         await AsyncStorage.setItem(cachedAvatarKey, cachedUri);
-        
+
         // Clean up old avatars
         await cleanupOldAvatars(cachedUri);
-        
+
         setAvatarUrl(cachedUri);
         console.log('Avatar cached and set:', cachedUri);
       } catch (cacheError) {
@@ -372,27 +395,27 @@ export default function ProfileScreen() {
   const checkAuthStatus = async () => {
     const isAuth = isAuthenticated();
     setAuthenticated(isAuth);
-    
+
     if (isAuth) {
       const currentUser = getCurrentUser();
       if (currentUser) {
         // Set email verification status
         setEmailVerified(currentUser.emailVerified);
-        
+
         try {
           // Fetch user data from Firestore
           const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
           if (userDoc.exists()) {
             const data = userDoc.data() as UserData;
             setUserData(data);
-            
+
             // Update Firestore if auth email verification status has changed
             if (data.emailVerified !== currentUser.emailVerified) {
               await updateDoc(doc(db, 'users', currentUser.uid), {
                 emailVerified: currentUser.emailVerified
               });
             }
-            
+
             if (data.birthdate) setBirthdateInput(data.birthdate);
           }
         } catch (error) {
@@ -410,13 +433,13 @@ export default function ProfileScreen() {
   const handleLogout = async () => {
     try {
       setLoading(true);
-      
+
       // Clear avatar cache on logout
       if (userData?.avatarId) {
         const cachedAvatarKey = `cached_avatar_${userData.avatarId}`;
         await AsyncStorage.removeItem(cachedAvatarKey);
       }
-      
+
       await signOut();
       setAuthenticated(false);
       setUserData(null);
@@ -443,16 +466,16 @@ export default function ProfileScreen() {
     try {
       setUpdatingAvatar(true);
       setShowAvatarModal(false); // Close modal immediately to show loading state
-      
+
       // Clear old avatar cache if changing avatars
       if (userData?.avatarId && userData.avatarId !== avatar.id) {
         const oldCachedAvatarKey = `cached_avatar_${userData.avatarId}`;
         await AsyncStorage.removeItem(oldCachedAvatarKey);
       }
-      
+
       // Update the avatar
       const success = await updateUserAvatar(avatar.id);
-      
+
       if (success) {
         // Update local state
         if (userData) {
@@ -460,7 +483,7 @@ export default function ProfileScreen() {
         }
         // Fetch the new avatar URL (this will cache it)
         await fetchAvatarUrl(avatar.id);
-        
+
         // Show success message
         if (Platform.OS === 'android') {
           ToastAndroid.show('Avatar updated successfully!', ToastAndroid.SHORT);
@@ -490,17 +513,17 @@ export default function ProfileScreen() {
     // Reload the user to get the latest verification status
     const isVerified = await reloadUser();
     setEmailVerified(isVerified);
-    
+
     // Update the UI
     if (isVerified) {
       Alert.alert('Success', 'Your email has been verified successfully!');
       checkAuthStatus(); // Refresh user data
-      
+
       // Show a toast message about enabled features
       showToast('All app features are now enabled!');
     }
   };
-  
+
   // Helper function to show toast or alert based on platform
   const showToast = (message: string) => {
     if (Platform.OS === 'android') {
@@ -510,7 +533,7 @@ export default function ProfileScreen() {
       Alert.alert('Notice', message);
     }
   };
-  
+
   // Function to handle resending verification email
   const handleResendVerificationEmail = async () => {
     try {
@@ -532,13 +555,13 @@ export default function ProfileScreen() {
 
     // Create a callback URL for deep linking back to the app
     const callbackUrl = Linking.createURL('profile/premium-success');
-    
+
     // Create the payment URL with user information
     const paymentUrl = `https://mg.anishkumar.tech/anime-premium.html?userId=${user.uid}&email=${encodeURIComponent(userData?.email || '')}&callback=${encodeURIComponent(callbackUrl)}`;
-    
+
     // Log the attempt
     logger.info('Premium', `Opening payment page for user: ${user.uid}`);
-    
+
     // Open the payment page in the device's browser
     Linking.openURL(paymentUrl).catch(err => {
       logger.error('Premium', `Error opening payment URL: ${err}`);
@@ -557,13 +580,13 @@ export default function ProfileScreen() {
 
     // Create a callback URL for deep linking back to the app
     const callbackUrl = Linking.createURL('profile/donation-success');
-    
+
     // Create the donation URL with user information
     const donationUrl = `https://mg.anishkumar.tech/donate.html?userId=${user.uid}&email=${encodeURIComponent(userData?.email || '')}&callback=${encodeURIComponent(callbackUrl)}`;
-    
+
     // Log the attempt
     logger.info('Donation', `Opening donation page for user: ${user.uid}`);
-    
+
     // Open the donation page in the device's browser
     Linking.openURL(donationUrl).catch(err => {
       logger.error('Donation', `Error opening donation URL: ${err}`);
@@ -575,7 +598,7 @@ export default function ProfileScreen() {
   useEffect(() => {
     // Subscribe to deep link events
     const subscription = Linking.addEventListener('url', handleDeepLink);
-    
+
     // Check for initial URL that launched the app
     const getInitialURL = async () => {
       const initialUrl = await Linking.getInitialURL();
@@ -585,7 +608,7 @@ export default function ProfileScreen() {
     };
 
     getInitialURL();
-    
+
     return () => {
       // Clean up event listener on unmount
       subscription.remove();
@@ -595,22 +618,22 @@ export default function ProfileScreen() {
   // Function to handle premium success deep links
   const handleDeepLink = (event: { url: string }) => {
     const { url } = event;
-    
+
     // Check if this is a premium success callback
     if (url.includes('premium-success')) {
       const params = Linking.parse(url);
-      
+
       // Check status parameter
       if (params.queryParams?.status === 'success') {
         logger.info('Premium', 'Premium upgrade successful via deep link');
-        
+
         // Navigate to the Profile screen
         // If we're already on the profile screen, this ensures we're at the top of it
         router.navigate('/profile');
-        
+
         // Refresh the premium status to show updated donation information
         refreshPremiumStatus();
-        
+
         // Show success message to user
         setTimeout(() => {
           Alert.alert(
@@ -623,18 +646,18 @@ export default function ProfileScreen() {
     // Check if this is a donation success callback
     else if (url.includes('donation-success')) {
       const params = Linking.parse(url);
-      
+
       // Check status parameter
       if (params.queryParams?.status === 'success') {
         logger.info('Donation', 'Donation successful via deep link');
-        
+
         // Navigate to the Profile screen
         // If we're already on the profile screen, this ensures we're at the top of it
         router.navigate('/profile');
-        
+
         // Refresh the premium status to show updated donation information
         refreshPremiumStatus();
-        
+
         // Show success message to user with slight delay to allow navigation
         setTimeout(() => {
           Alert.alert(
@@ -657,11 +680,11 @@ export default function ProfileScreen() {
         if (userDoc.exists()) {
           const data = userDoc.data() as UserData;
           setUserData(data);
-          
+
           // Get donation amount and premium status - check both fields
           const totalDonated = data.donationAmount || data.premiumAmount || 0;
           const isPremium = data.isPremium || false;
-          
+
           // Update the state
           setDonationStatus({
             tier: isPremium ? DonationTier.VIP : DonationTier.NONE,
@@ -673,7 +696,7 @@ export default function ProfileScreen() {
               customThemes: isPremium
             }
           });
-          
+
           logger.info('ProfileScreen', `Premium status refreshed: ${isPremium}, Donation amount: ${totalDonated}`);
         }
       }
@@ -697,10 +720,10 @@ export default function ProfileScreen() {
         type: 'text/xml',
         copyToCacheDirectory: true
       });
-      
+
       if (result.canceled === false && result.assets && result.assets.length > 0) {
         const fileUri = result.assets[0].uri;
-        
+
         // Show initial loading state
         setLoadingModal({
           visible: true,
@@ -713,23 +736,23 @@ export default function ProfileScreen() {
             failed: 0
           }
         });
-        
+
         // Read file content
         const fileContent = await FileSystem.readAsStringAsync(fileUri);
-        
+
         // Parse XML
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(fileContent, 'text/xml');
-        
+
         // Get all anime entries
         const animeNodes = xmlDoc.getElementsByTagName('anime');
-        
+
         if (animeNodes.length === 0) {
           setLoadingModal(prev => ({ ...prev, visible: false }));
           Alert.alert('Error', 'No anime entries found in the imported file.');
           return;
         }
-        
+
         // Update loading modal with total count
         setLoadingModal(prev => ({
           ...prev,
@@ -740,23 +763,23 @@ export default function ProfileScreen() {
             total: animeNodes.length
           }
         }));
-        
+
         // Access store functions
         const { addAnime } = useMyListStore.getState();
         const { addToHistory } = useWatchHistoryStore.getState();
-        
+
         // Increased batch size for better performance
         const BATCH_SIZE = 10;
-        
+
         // Create a cache to avoid duplicate API calls
         const apiCache = new Map();
-        
+
         // Track import counts separately from state to ensure accuracy
         let successCount = 0;
         let failedCount = 0;
         let processedCount = 0;
         let watchHistoryCount = 0;
-        
+
         // Function to search for an anime by title and match MAL ID
         const searchAndAddAnime = async (malId: string, title: string, watchedEpisodes?: number) => {
           try {
@@ -765,35 +788,35 @@ export default function ProfileScreen() {
             if (apiCache.has(cacheKey)) {
               const cachedData = apiCache.get(cacheKey);
               await addAnime(cachedData);
-              
+
               // If there are watched episodes, try to add to watch history
               if (watchedEpisodes && watchedEpisodes > 0) {
                 await addAnimeToWatchHistory(cachedData.id, cachedData.name, cachedData.img, watchedEpisodes);
               }
-              
+
               return true;
             }
-            
+
             // First try to fetch the anime by direct MAL ID (more accurate)
             const apiUrl = `${API_BASE}${ENDPOINTS.ANIME_INFO}?malId=${malId}`;
             let response = await fetch(apiUrl);
-            
+
             // If direct MAL ID search fails, fall back to title search
             if (!response.ok) {
               const searchQuery = title.toLowerCase().trim().replace(/\s+/g, '-');
               const searchUrl = `${API_BASE}${ENDPOINTS.SEARCH.replace(':query', searchQuery)}`;
               response = await fetch(searchUrl);
-              
+
               if (!response.ok) {
                 throw new Error(`API error: ${response.status}`);
               }
-              
+
               const data = await response.json();
-              
+
               if (data && data.results && data.results.length > 0) {
                 // Try to find exact MAL ID match first
                 let matchedAnime = null;
-                
+
                 for (const result of data.results) {
                   // Check for MAL ID in different possible properties
                   if (
@@ -805,12 +828,12 @@ export default function ProfileScreen() {
                     break;
                   }
                 }
-                
+
                 // If no exact match, take the first result
                 if (!matchedAnime) {
                   matchedAnime = data.results[0];
                 }
-                
+
                 // Create anime object with MAL ID
                 const animeToAdd = {
                   id: matchedAnime.id,
@@ -819,25 +842,25 @@ export default function ProfileScreen() {
                   addedAt: Date.now(),
                   malId: malId // Important: Save the MAL ID from the import file
                 };
-                
+
                 // Cache the result
                 apiCache.set(cacheKey, animeToAdd);
-                
+
                 // Add the anime
                 await addAnime(animeToAdd);
-                
+
                 // If there are watched episodes, try to add to watch history
                 if (watchedEpisodes && watchedEpisodes > 0) {
                   await addAnimeToWatchHistory(animeToAdd.id, animeToAdd.name, animeToAdd.img, watchedEpisodes);
                 }
-                
+
                 return true;
               }
               return false;
             } else {
               // Direct MAL ID search succeeded
               const animeData = await response.json();
-              
+
               if (animeData) {
                 // Create anime object with MAL ID
                 const animeToAdd = {
@@ -847,18 +870,18 @@ export default function ProfileScreen() {
                   addedAt: Date.now(),
                   malId: malId // Store the MAL ID explicitly
                 };
-                
+
                 // Cache the result
                 apiCache.set(cacheKey, animeToAdd);
-                
+
                 // Add the anime
                 await addAnime(animeToAdd);
-                
+
                 // If there are watched episodes, try to add to watch history
                 if (watchedEpisodes && watchedEpisodes > 0) {
                   await addAnimeToWatchHistory(animeData.id, animeData.title || title, animeData.image || '', watchedEpisodes);
                 }
-                
+
                 return true;
               }
               return false;
@@ -868,27 +891,27 @@ export default function ProfileScreen() {
             return false;
           }
         };
-        
+
         // Function to add an anime to watch history based on episode number
         const addAnimeToWatchHistory = async (animeId: string, animeName: string, animeImg: string, episodeNumber: number) => {
           try {
             // Fetch episodes for this anime
             const episodesUrl = `${API_BASE}${ENDPOINTS.INFO}?id=${animeId}`;
             const response = await fetch(episodesUrl);
-            
+
             if (!response.ok) {
               return false;
             }
-            
+
             const animeData = await response.json();
-            
+
             if (!animeData || !animeData.episodes || !animeData.episodes.length) {
               return false;
             }
-            
+
             // Find the episode with matching number
             let targetEpisode = animeData.episodes.find(ep => ep.number === episodeNumber);
-            
+
             // If exact match not found, find the closest episode number that's less than or equal to watched episodes
             if (!targetEpisode) {
               // Sort episodes by number in descending order
@@ -896,14 +919,14 @@ export default function ProfileScreen() {
               // Find the first episode with number less than or equal to watchedEpisodes
               targetEpisode = sortedEpisodes.find(ep => ep.number <= episodeNumber);
             }
-            
+
             // If still no match, use the latest episode
             if (!targetEpisode && animeData.episodes.length > 0) {
               // Sort episodes by number and take the latest
               const sortedByNumber = [...animeData.episodes].sort((a, b) => b.number - a.number);
               targetEpisode = sortedByNumber[0];
             }
-            
+
             if (targetEpisode) {
               // Add to watch history
               const watchHistoryItem = {
@@ -918,19 +941,19 @@ export default function ProfileScreen() {
                 lastWatched: Date.now(),
                 subOrDub: 'sub' as 'sub' | 'dub' // Default to sub
               };
-              
+
               await addToHistory(watchHistoryItem);
               watchHistoryCount++;
               return true;
             }
-            
+
             return false;
           } catch (error) {
             console.error('Error adding to watch history:', error);
             return false;
           }
         };
-        
+
         // Extract all anime entries first
         const animeEntries = [];
         for (let i = 0; i < animeNodes.length; i++) {
@@ -938,27 +961,27 @@ export default function ProfileScreen() {
           const idNode = animeNode.getElementsByTagName('series_animedb_id')[0];
           const titleNode = animeNode.getElementsByTagName('series_title')[0];
           const watchedEpisodesNode = animeNode.getElementsByTagName('my_watched_episodes')[0];
-          
+
           if (idNode && titleNode) {
             const malId = idNode.textContent || '';
             const title = titleNode.textContent || '';
-            const watchedEpisodes = watchedEpisodesNode ? 
+            const watchedEpisodes = watchedEpisodesNode ?
               parseInt(watchedEpisodesNode.textContent || '0', 10) : undefined;
-            
+
             if (malId && title) {
               animeEntries.push({ malId, title, watchedEpisodes });
             }
           }
         }
-        
+
         // Process anime in batches with Promise.all for parallel processing
         const processBatch = async (startIndex: number) => {
           const endIndex = Math.min(startIndex + BATCH_SIZE, animeEntries.length);
           const currentBatch = animeEntries.slice(startIndex, endIndex);
-          
+
           // Process batch in parallel
           const results = await Promise.all(
-            currentBatch.map(({ malId, title, watchedEpisodes }) => 
+            currentBatch.map(({ malId, title, watchedEpisodes }) =>
               searchAndAddAnime(malId, title, watchedEpisodes)
                 .then(success => {
                   // Update local counters
@@ -968,7 +991,7 @@ export default function ProfileScreen() {
                   } else {
                     failedCount++;
                   }
-                  
+
                   // Update UI
                   setLoadingModal(prev => ({
                     ...prev,
@@ -985,7 +1008,7 @@ export default function ProfileScreen() {
                   // Update local counters and UI on error
                   processedCount++;
                   failedCount++;
-                  
+
                   setLoadingModal(prev => ({
                     ...prev,
                     progress: {
@@ -998,7 +1021,7 @@ export default function ProfileScreen() {
                 })
             )
           );
-          
+
           if (endIndex < animeEntries.length) {
             // Process next batch with minimal delay
             setTimeout(() => processBatch(endIndex), 100);
@@ -1015,7 +1038,7 @@ export default function ProfileScreen() {
             }, 500);
           }
         };
-        
+
         // Start processing the first batch
         processBatch(0);
       }
@@ -1048,19 +1071,19 @@ export default function ProfileScreen() {
 
       // Get anime list from store
       const { myList } = useMyListStore.getState();
-      
+
       if (myList.length === 0) {
         setLoadingModal(prev => ({ ...prev, visible: false }));
         Alert.alert('Empty List', 'Your watchlist is empty. Nothing to export.');
         return;
       }
-      
+
       // Get watch history to include watched episodes in export
       const { history } = useWatchHistoryStore.getState();
-      
+
       // Create a map of animeId to highest episode watched
       const animeWatchedEpisodes = new Map<string, number>();
-      
+
       // Process watch history to find highest episode watched for each anime
       history.forEach(item => {
         const currentEpisode = animeWatchedEpisodes.get(item.id) || 0;
@@ -1068,11 +1091,11 @@ export default function ProfileScreen() {
           animeWatchedEpisodes.set(item.id, item.episodeNumber);
         }
       });
-      
+
       // Generate XML content
       let xmlContent = '<?xml version="1.0"?>\n<myanimelist>\n';
       xmlContent += '  <myinfo>\n    <user_export_type>1</user_export_type>\n  </myinfo>\n';
-      
+
       // Add each anime entry with proper MAL ID
       for (const anime of myList) {
         xmlContent += '  <anime>\n';
@@ -1080,19 +1103,19 @@ export default function ProfileScreen() {
         xmlContent += `    <series_animedb_id>${anime.malId || anime.id}</series_animedb_id>\n`;
         xmlContent += `    <series_title>${anime.name}</series_title>\n`;
         xmlContent += '    <my_status>Watching</my_status>\n';
-        
+
         // Add watched episodes if this anime is in watch history
         const watchedEpisodes = animeWatchedEpisodes.get(anime.id);
         if (watchedEpisodes) {
           xmlContent += `    <my_watched_episodes>${watchedEpisodes}</my_watched_episodes>\n`;
         }
-        
+
         xmlContent += '    <update_on_import>1</update_on_import>\n';
         xmlContent += '  </anime>\n';
       }
-      
+
       xmlContent += '</myanimelist>';
-      
+
       // Update progress
       setLoadingModal(prev => ({
         ...prev,
@@ -1102,19 +1125,19 @@ export default function ProfileScreen() {
           current: 1
         }
       }));
-      
+
       // Save file
       const fileName = `anipro_export_${Date.now()}.xml`;
       const fileUri = FileSystem.documentDirectory + fileName;
       await FileSystem.writeAsStringAsync(fileUri, xmlContent);
-      
+
       // Check if sharing is available
       const isAvailable = await Sharing.isAvailableAsync();
-      
+
       if (isAvailable) {
         // Hide loading modal before share dialog
         setLoadingModal(prev => ({ ...prev, visible: false }));
-        
+
         // Share file
         await Sharing.shareAsync(fileUri, {
           mimeType: 'text/xml',
@@ -1134,13 +1157,13 @@ export default function ProfileScreen() {
   // Function to render donor tier badge
   const renderDonorBadge = () => {
     if (!donationStatus || donationStatus.tier === DonationTier.NONE) return null;
-    
+
     const isPremium = donationStatus?.features?.premiumAvatars === true;
-    
+
     let badgeColor = '#FFD700'; // Default gold
     let badgeIcon: keyof typeof MaterialIcons.glyphMap = 'favorite';
     let badgeText = 'Donor';
-    
+
     switch (donationStatus.tier) {
       case DonationTier.VIP:
         badgeColor = '#e91e63'; // Pink
@@ -1158,7 +1181,7 @@ export default function ProfileScreen() {
         badgeText = 'Supporter';
         break;
     }
-    
+
     return (
       <View style={[styles.donorBadge, { borderColor: badgeColor }]}>
         <MaterialIcons name={badgeIcon} size={16} color={badgeColor} />
@@ -1170,11 +1193,11 @@ export default function ProfileScreen() {
   // Replace or enhance the renderDonorBadge function to make it more attractive:
   const renderPremiumSection = () => {
     if (!donationStatus) return null;
-    
+
     const isPremium = donationStatus.features.premiumAvatars === true;
     const donationAmount = donationStatus.amount || 0;
     const PREMIUM_THRESHOLD = 70; // Define the premium threshold
-    
+
     if (donationAmount === 0) {
       // Show upgrade option for non-donors
       return (
@@ -1183,8 +1206,8 @@ export default function ProfileScreen() {
           <Text style={styles.upgradeDescription}>
             Make a donation of ₹{PREMIUM_THRESHOLD} or more to support our app and get premium features!
           </Text>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.upgradePremiumButton}
             onPress={handleDonate}
           >
@@ -1194,12 +1217,12 @@ export default function ProfileScreen() {
         </View>
       );
     }
-    
+
     // For users who have donated but not enough for premium
     if (!isPremium && donationAmount < PREMIUM_THRESHOLD) {
       const remainingAmount = PREMIUM_THRESHOLD - donationAmount;
       const progressPercentage = (donationAmount / PREMIUM_THRESHOLD) * 100;
-      
+
       return (
         <LinearGradient
           colors={['#1e1e1e', '#2a2a2a']}
@@ -1211,12 +1234,12 @@ export default function ProfileScreen() {
             <MaterialIcons name="favorite" size={24} color="#f4511e" />
             <Text style={styles.donorTitle}>AniSurge Supporter</Text>
           </View>
-          
+
           <View style={styles.donorAmountContainer}>
             <Text style={styles.donorAmountLabel}>Total Donated</Text>
             <Text style={styles.donorAmount}>₹{donationAmount.toFixed(2)}</Text>
           </View>
-          
+
           <View style={styles.premiumProgressContainer}>
             <Text style={styles.premiumProgressText}>
               Donate ₹{remainingAmount.toFixed(2)} more to unlock Premium!
@@ -1227,7 +1250,7 @@ export default function ProfileScreen() {
             <Text style={styles.progressText}>
               {progressPercentage.toFixed(0)}% to Premium
             </Text>
-            
+
             <View style={styles.premiumMissingFeatures}>
               <Text style={styles.premiumMissingTitle}>Unlock Premium to get:</Text>
               <View style={styles.premiumMissingItem}>
@@ -1240,22 +1263,22 @@ export default function ProfileScreen() {
               </View>
             </View>
           </View>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.completePremiumButton}
             onPress={handleDonate}
           >
             <MaterialIcons name="star" size={18} color="#fff" />
             <Text style={styles.donateText}>Complete Premium Upgrade</Text>
           </TouchableOpacity>
-          
+
           <Text style={styles.donorThankYou}>
             Thank you for supporting AniSurge! Your donations help us improve the app for everyone.
           </Text>
         </LinearGradient>
       );
     }
-    
+
     // Show donor info for premium users
     return (
       <LinearGradient
@@ -1265,19 +1288,19 @@ export default function ProfileScreen() {
         style={styles.donorContainer}
       >
         <View style={styles.donorHeader}>
-          <MaterialIcons 
-            name="verified" 
-            size={24} 
-            color="#FFD700" 
+          <MaterialIcons
+            name="verified"
+            size={24}
+            color="#FFD700"
           />
           <Text style={styles.donorTitle}>Premium Member</Text>
         </View>
-        
+
         <View style={styles.donorAmountContainer}>
           <Text style={styles.donorAmountLabel}>Total Donated</Text>
           <Text style={styles.donorAmount}>₹{donationAmount.toFixed(2)}</Text>
         </View>
-        
+
         <View style={styles.premiumBenefitsContainer}>
           <Text style={styles.premiumBenefitsTitle}>Your Premium Benefits:</Text>
           <View style={styles.premiumBenefitItem}>
@@ -1293,7 +1316,7 @@ export default function ProfileScreen() {
             <Text style={styles.premiumBenefitText}>Unlimited Comments (No Rate Limits)</Text>
           </View>
         </View>
-        
+
         <Text style={styles.donorThankYou}>
           Thank you for supporting AniSurge! Your premium membership helps us improve the app for everyone.
         </Text>
@@ -1359,7 +1382,7 @@ export default function ProfileScreen() {
   return (
     <ScrollView style={[styles.container, { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
       <View style={styles.header}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.avatarContainer}
           onPress={() => authenticated && !updatingAvatar && setShowAvatarModal(true)}
           disabled={!authenticated || updatingAvatar}
@@ -1422,16 +1445,16 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
           {/* End Beta Updates Toggle */}
-          <View style={{padding: 16, backgroundColor: '#181818', borderBottomWidth: 1, borderBottomColor: '#222', marginBottom: 18}}>
-            <Text style={{fontSize: 16, fontWeight: 'bold', color: '#FFD700', marginBottom: 8}}>App Storage Folder:</Text>
+          <View style={{ padding: 16, backgroundColor: '#181818', borderBottomWidth: 1, borderBottomColor: '#222', marginBottom: 18 }}>
+            <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#FFD700', marginBottom: 8 }}>App Storage Folder:</Text>
             {storageFolder ? (
-              <Text style={{color: '#fff', fontSize: 13, marginBottom: 6}}>{storageFolder}</Text>
+              <Text style={{ color: '#fff', fontSize: 13, marginBottom: 6 }}>{storageFolder}</Text>
             ) : (
-              <Text style={{color: '#aaa', fontSize: 13, marginBottom: 6}}>No folder set</Text>
+              <Text style={{ color: '#aaa', fontSize: 13, marginBottom: 6 }}>No folder set</Text>
             )}
-            <TouchableOpacity style={{flexDirection: 'row', alignItems: 'center', padding: 8, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.08)'}} onPress={handleChangeStorageFolder}>
+            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', padding: 8, borderRadius: 6, backgroundColor: 'rgba(255,255,255,0.08)' }} onPress={handleChangeStorageFolder}>
               <MaterialIcons name="folder" size={18} color="#2196F3" />
-              <Text style={{color: '#fff', fontSize: 14, fontWeight: 'bold', marginLeft: 4}}>Change Storage Folder</Text>
+              <Text style={{ color: '#fff', fontSize: 14, fontWeight: 'bold', marginLeft: 4 }}>Change Storage Folder</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.infoSection}>
@@ -1471,7 +1494,7 @@ export default function ProfileScreen() {
                   placeholder="DD"
                   placeholderTextColor="#888"
                   value={birthDay}
-                  onChangeText={text => setBirthDay(text.replace(/[^0-9]/g, '').slice(0,2))}
+                  onChangeText={text => setBirthDay(text.replace(/[^0-9]/g, '').slice(0, 2))}
                   keyboardType="numeric"
                   maxLength={2}
                   selectionColor="#fff"
@@ -1483,7 +1506,7 @@ export default function ProfileScreen() {
                   placeholder="MM"
                   placeholderTextColor="#888"
                   value={birthMonth}
-                  onChangeText={text => setBirthMonth(text.replace(/[^0-9]/g, '').slice(0,2))}
+                  onChangeText={text => setBirthMonth(text.replace(/[^0-9]/g, '').slice(0, 2))}
                   keyboardType="numeric"
                   maxLength={2}
                   selectionColor="#fff"
@@ -1494,7 +1517,7 @@ export default function ProfileScreen() {
                   placeholder="YYYY"
                   placeholderTextColor="#888"
                   value={birthYear}
-                  onChangeText={text => setBirthYear(text.replace(/[^0-9]/g, '').slice(0,4))}
+                  onChangeText={text => setBirthYear(text.replace(/[^0-9]/g, '').slice(0, 4))}
                   keyboardType="numeric"
                   maxLength={4}
                   selectionColor="#fff"
@@ -1516,7 +1539,7 @@ export default function ProfileScreen() {
             )}
           </View>
 
-          {/* Donation Status Section */} 
+          {/* Donation Status Section */}
           <View style={styles.infoSection}>
             <Text style={styles.infoLabel}>Supporter Status</Text>
             {donationLoading ? (
@@ -1529,13 +1552,13 @@ export default function ProfileScreen() {
                     ₹{donationStatus.amount.toFixed(2)}
                   </Text>
                 )}
-                
+
                 <Text style={styles.infoValue}>
-                  {donationStatus.tier === DonationTier.VIP ? 'VIP Supporter' : 
-                   donationStatus.tier === DonationTier.PREMIUM ? 'Premium Supporter' : 
-                   donationStatus.amount > 0 ? 'Supporter' : 'Not a supporter yet'}
+                  {donationStatus.tier === DonationTier.VIP ? 'VIP Supporter' :
+                    donationStatus.tier === DonationTier.PREMIUM ? 'Premium Supporter' :
+                      donationStatus.amount > 0 ? 'Supporter' : 'Not a supporter yet'}
                 </Text>
-                
+
                 {donationStatus.amount > 0 ? (
                   <Text style={styles.donationAmount}>
                     Total donated so far
@@ -1545,33 +1568,22 @@ export default function ProfileScreen() {
                     Support the app to unlock premium features!
                   </Text>
                 )}
-                
+
                 {/* Premium Features List */}
                 {donationStatus.tier !== DonationTier.NONE && (
                   <View style={styles.featuresContainer}>
                     <Text style={styles.featuresTitle}>Your Premium Features:</Text>
-                    
-                    {donationStatus.features.premiumAvatars && (
-                      <View style={styles.featureItem}>
-                        <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
-                        <Text style={styles.featureText}>Premium Avatars</Text>
-                      </View>
-                    )}
-                    
-                    {donationStatus.features.disableAds && (
-                      <View style={styles.featureItem}>
-                        <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
-                        <Text style={styles.featureText}>Ad-Free Experience</Text>
-                      </View>
-                    )}
-                    
+
+
+                    {/* Premium Avatars now free for all users - removed from premium features */}
+
                     {donationStatus.features.earlyAccess && (
                       <View style={styles.featureItem}>
                         <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
                         <Text style={styles.featureText}>Early Access to New Features</Text>
                       </View>
                     )}
-                    
+
                     {donationStatus.features.customThemes && (
                       <View style={styles.featureItem}>
                         <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
@@ -1594,8 +1606,8 @@ export default function ProfileScreen() {
                 <Text style={styles.supporterText}>
                   Support the app to unlock premium features!
                 </Text>
-                
-                <TouchableOpacity 
+
+                <TouchableOpacity
                   style={styles.donateButton}
                   onPress={handleDonate}
                 >
@@ -1617,7 +1629,7 @@ export default function ProfileScreen() {
           {renderPremiumSection()}
 
           {/* Donate More Button */}
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.donateMoreButton}
             onPress={handleDonateMore}
           >
@@ -1635,8 +1647,8 @@ export default function ProfileScreen() {
           <Text style={styles.messageText}>
             You are not logged in. Sign in to access your profile.
           </Text>
-          <TouchableOpacity 
-            style={styles.loginButton} 
+          <TouchableOpacity
+            style={styles.loginButton}
             onPress={() => setShowAuthModal(true)}
           >
             <MaterialIcons name="login" size={24} color="#fff" />
@@ -1679,8 +1691,8 @@ export default function ProfileScreen() {
         <Text style={styles.sectionTitle}>Watchlist Management</Text>
         <Text style={styles.infoText}>Import or export your anime list using the dedicated page.</Text>
         <View style={styles.watchlistActionsContainer}>
-          <TouchableOpacity 
-            style={[styles.watchlistActionButton, {backgroundColor: '#2196F3'}]}
+          <TouchableOpacity
+            style={[styles.watchlistActionButton, { backgroundColor: '#2196F3' }]}
             onPress={() => router.push('/importExport')}
           >
             <MaterialIcons name="import-export" size={24} color="#fff" />
@@ -1697,8 +1709,8 @@ export default function ProfileScreen() {
             Your email is not verified yet. Some features like syncing watch history and
             watchlist across devices, commenting, and liking comments require email verification.
           </Text>
-          <TouchableOpacity 
-            style={styles.verifyButton} 
+          <TouchableOpacity
+            style={styles.verifyButton}
             onPress={handleResendVerificationEmail}
           >
             <MaterialIcons name="email" size={20} color="#fff" />
@@ -1707,7 +1719,7 @@ export default function ProfileScreen() {
         </View>
       )}
 
-      <AuthModal 
+      <AuthModal
         isVisible={showAuthModal}
         onClose={() => setShowAuthModal(false)}
         onAuthSuccess={handleAuthSuccess}
@@ -2062,13 +2074,13 @@ const createThemedStyles = (theme: any) => StyleSheet.create({
     padding: 10,
     marginTop: 12,
   },
-  
+
   donationInfoText: {
     color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 14,
     textAlign: 'center',
   },
-  
+
   nonPremiumDonationInfo: {
     backgroundColor: 'rgba(244, 81, 30, 0.1)',
     borderRadius: 8,
@@ -2077,7 +2089,7 @@ const createThemedStyles = (theme: any) => StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(244, 81, 30, 0.2)',
   },
-  
+
   nonPremiumDonationText: {
     color: '#ddd',
     fontSize: 14,

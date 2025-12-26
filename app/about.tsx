@@ -174,13 +174,15 @@ function FeedbackModal({ visible, onClose, onSubmit }: FeedbackModalProps) {
       Alert.alert(
         'Success',
         'Thank you for your feedback! We will review it shortly.',
-        [{ text: 'OK', onPress: () => {
-          setMessage('');
-          setEmail('');
-          setFeedbackType('general');
-          setAttachments([]);
-          onClose();
-        }}]
+        [{
+          text: 'OK', onPress: () => {
+            setMessage('');
+            setEmail('');
+            setFeedbackType('general');
+            setAttachments([]);
+            onClose();
+          }
+        }]
       );
 
     } catch (error) {
@@ -197,9 +199,9 @@ function FeedbackModal({ visible, onClose, onSubmit }: FeedbackModalProps) {
     return (
       <View key={index} style={styles.attachmentContainer}>
         {isImage ? (
-          <Image 
-            source={{ uri: attachment.url }} 
-            style={styles.attachmentPreview} 
+          <Image
+            source={{ uri: attachment.url }}
+            style={styles.attachmentPreview}
             resizeMode="contain"
           />
         ) : (
@@ -208,7 +210,7 @@ function FeedbackModal({ visible, onClose, onSubmit }: FeedbackModalProps) {
             <Text style={styles.fileName} numberOfLines={1}>{attachment.name}</Text>
           </View>
         )}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.removeButton}
           onPress={() => removeAttachment(index)}
         >
@@ -229,8 +231,8 @@ function FeedbackModal({ visible, onClose, onSubmit }: FeedbackModalProps) {
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Send Feedback</Text>
-            <TouchableOpacity 
-              style={styles.closeButton} 
+            <TouchableOpacity
+              style={styles.closeButton}
               onPress={onClose}
               disabled={isSubmitting}
             >
@@ -239,9 +241,9 @@ function FeedbackModal({ visible, onClose, onSubmit }: FeedbackModalProps) {
           </View>
 
           <View style={styles.feedbackTypeContainer}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
-                styles.typeButton, 
+                styles.typeButton,
                 feedbackType === 'general' && styles.selectedType,
                 styles.typeButtonGeneral
               ]}
@@ -252,9 +254,9 @@ function FeedbackModal({ visible, onClose, onSubmit }: FeedbackModalProps) {
                 General
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
-                styles.typeButton, 
+                styles.typeButton,
                 feedbackType === 'bug' && styles.selectedType,
                 styles.typeButtonBug
               ]}
@@ -265,9 +267,9 @@ function FeedbackModal({ visible, onClose, onSubmit }: FeedbackModalProps) {
                 Bug Report
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
-                styles.typeButton, 
+                styles.typeButton,
                 feedbackType === 'feature' && styles.selectedType,
                 styles.typeButtonFeature
               ]}
@@ -323,17 +325,17 @@ function FeedbackModal({ visible, onClose, onSubmit }: FeedbackModalProps) {
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
                 <>
-                  <MaterialIcons 
-                    name="attach-file" 
-                    size={20} 
-                    color={attachments.length > 0 ? '#fff' : '#666'} 
+                  <MaterialIcons
+                    name="attach-file"
+                    size={20}
+                    color={attachments.length > 0 ? '#fff' : '#666'}
                   />
                   <Text style={[
                     styles.attachButtonText,
                     attachments.length > 0 && styles.attachButtonTextActive
                   ]}>
-                    {attachments.length > 0 
-                      ? `${attachments.length} File${attachments.length !== 1 ? 's' : ''} Attached` 
+                    {attachments.length > 0
+                      ? `${attachments.length} File${attachments.length !== 1 ? 's' : ''} Attached`
                       : 'Attach Files'}
                   </Text>
                 </>
@@ -347,19 +349,19 @@ function FeedbackModal({ visible, onClose, onSubmit }: FeedbackModalProps) {
           </View>
 
           <View style={styles.modalButtons}>
-            <TouchableOpacity 
-              style={[styles.cancelButton, isSubmitting && styles.buttonDisabled]} 
+            <TouchableOpacity
+              style={[styles.cancelButton, isSubmitting && styles.buttonDisabled]}
               onPress={onClose}
               disabled={isSubmitting}
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
-                styles.submitButton, 
+                styles.submitButton,
                 isSubmitting && styles.buttonDisabled,
                 !message.trim() && styles.buttonDisabled
-              ]} 
+              ]}
               onPress={handleSubmit}
               disabled={isSubmitting || !message.trim()}
             >
@@ -403,7 +405,7 @@ export default function AboutScreen() {
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
   const [simulatedArchitecture, setSimulatedArchitecture] = useState<string | null>(null);
-  
+
   // Add state for the "What's New" modal
   const [whatsNewInfo, setWhatsNewInfo] = useState<WhatsNewInfo | null>(null);
   const [showWhatsNewModal, setShowWhatsNewModal] = useState(false);
@@ -478,13 +480,13 @@ export default function AboutScreen() {
       // Get device architecture
       const deviceArch = Device.supportedCpuArchitectures;
       const primaryArch = deviceArch && deviceArch.length > 0 ? deviceArch[0] : 'unknown';
-      
+
       // Get the URL key that would be used for downloads
       const urlKey = getDeviceArchitectureUrlKey(simulatedArchitecture);
-      
+
       // Format architecture for display
       const formatArchitecture = (arch: string) => {
-        switch(arch.toLowerCase()) {
+        switch (arch.toLowerCase()) {
           case 'arm64':
             return 'ARM64 (64-bit)';
           case 'arm64-v8a':
@@ -499,7 +501,7 @@ export default function AboutScreen() {
             return arch;
         }
       };
-      
+
       return {
         deviceArchitecture: formatArchitecture(primaryArch),
         detectedUrlKey: urlKey
@@ -519,7 +521,7 @@ export default function AboutScreen() {
       const info = await getArchitectureInfo();
       setDeviceInfo(info);
     };
-    
+
     updateDeviceInfo();
   }, [simulatedArchitecture]);
 
@@ -540,7 +542,7 @@ export default function AboutScreen() {
         setIsLoading(false);
       }
     };
-    
+
     preloadVideo();
   }, []);
 
@@ -549,14 +551,14 @@ export default function AboutScreen() {
     const calculateStats = () => {
       // Count unique anime by creating a Set of unique anime IDs from watch history
       const uniqueAnime = new Set(history.map(item => item.id));
-      
+
       // Set real statistics based on user's actual data
       setStats({
         watchedAnime: uniqueAnime.size, // Number of unique anime watched
         bookmarkedAnime: myList.length // Number of bookmarked anime
       });
     };
-    
+
     calculateStats();
   }, [history, myList]);
 
@@ -608,50 +610,50 @@ Architecture: ${deviceInfo.deviceArchitecture}
       if (!response.ok) {
         throw new Error(`Failed to check for updates: ${response.status}`);
       }
-      
+
       const data: UpdateInfo = await response.json();
       logger.debug('Update check response:', JSON.stringify(data));
-      
+
       // Validate the required fields
       if (!data || !data.latestVersion || !data.downloadUrls || !data.downloadUrls.universal) {
         logger.error('Invalid update data received:', JSON.stringify(data));
         Alert.alert('Update Check Failed', 'Received invalid update data from server.');
         return;
       }
-      
+
       // Ensure required fields exist
       if (data.isForced === undefined) {
         data.isForced = false;
       }
-      
+
       if (data.changelog === undefined) {
         data.changelog = [];
       }
-      
+
       // Handle legacy format (string[] instead of ChangelogItem[])
-      if (data.changelog && Array.isArray(data.changelog) && 
-          data.changelog.length > 0 && typeof data.changelog[0] === 'string') {
+      if (data.changelog && Array.isArray(data.changelog) &&
+        data.changelog.length > 0 && typeof data.changelog[0] === 'string') {
         data.changelog = (data.changelog as unknown as string[]).map(item => ({
           type: 'text',
           content: item,
           format: 'normal'
         }));
       }
-      
+
       // Set currentAppVersion to our actual app version (overriding any server value)
       // This ensures we're displaying the correct current version in the UI
       data.currentAppVersion = getAppVersion();
-      
+
       const currentVersion = getAppVersion();
       const currentVersionCode = getAppVersionCode();
-      
+
       // Compare our actual app version with the server's latest version
       if (data.versionCode > currentVersionCode) {
         logger.info('New version available:', data.latestVersion);
-        
+
         // Store update info
         setUpdateInfo(data);
-        
+
         // Show update modal
         setShowUpdateModal(true);
       } else {
@@ -663,10 +665,10 @@ Architecture: ${deviceInfo.deviceArchitecture}
       Alert.alert('Update Check Failed', 'Failed to check for updates. Please try again later.');
     }
   };
-  
+
   const handleUpdate = () => {
     if (!updateInfo) return;
-    
+
     // The URL opening is now handled in the UpdateModal component
     // This function is called after the URL is opened
     logger.info('Update initiated for version:', updateInfo.latestVersion);
@@ -736,7 +738,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
     await getArchitectureInfo();
     // If we have update info, refresh the debug section
     if (updateInfo) {
-      setUpdateInfo({...updateInfo});
+      setUpdateInfo({ ...updateInfo });
     }
   };
 
@@ -745,7 +747,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
       setShowUpdateModal(true);
     } else {
       Alert.alert(
-        'No Update Info', 
+        'No Update Info',
         'Please check for updates first to load update information.',
         [{ text: 'OK' }]
       );
@@ -780,10 +782,10 @@ Architecture: ${deviceInfo.deviceArchitecture}
   const handleShowWhatsNew = async () => {
     try {
       setIsLoadingWhatsNew(true);
-      
+
       // Fetch the "What's New" information
       const info = await fetchWhatsNewInfo();
-      
+
       if (info) {
         setWhatsNewInfo(info);
         setShowWhatsNewModal(true);
@@ -809,13 +811,13 @@ Architecture: ${deviceInfo.deviceArchitecture}
 
     // Create a callback URL for deep linking back to the app
     const callbackUrl = Linking.createURL('profile/premium-success');
-    
+
     // Create the payment URL with user information
     const paymentUrl = `https://mg.anishkumar.tech/anime-premium.html?userId=${user.uid}&email=${encodeURIComponent(user.email || '')}&callback=${encodeURIComponent(callbackUrl)}`;
-    
+
     // Log the attempt
     logger.info('Premium', `Opening payment page for user: ${user.uid}`);
-    
+
     // Open the payment page in the device's browser
     Linking.openURL(paymentUrl).catch(err => {
       logger.error('Premium', `Error opening payment URL: ${err}`);
@@ -833,13 +835,13 @@ Architecture: ${deviceInfo.deviceArchitecture}
 
     // Create a callback URL for deep linking back to the app
     const callbackUrl = Linking.createURL('profile/donation-success');
-    
+
     // Create the donation URL with user information
     const donationUrl = `https://mg.anishkumar.tech/donate.html?userId=${user.uid}&email=${encodeURIComponent(user.email || '')}&callback=${encodeURIComponent(callbackUrl)}`;
-    
+
     // Log the attempt
     logger.info('Donation', `Opening donation page for user: ${user.uid}`);
-    
+
     // Open the donation page in the device's browser
     Linking.openURL(donationUrl).catch(err => {
       logger.error('Donation', `Error opening donation URL: ${err}`);
@@ -880,9 +882,9 @@ Architecture: ${deviceInfo.deviceArchitecture}
     try {
       const currentUser = getCurrentUser();
       if (!currentUser) return;
-      
+
       setIsCheckingMentions(true);
-      
+
       // Query the notifications collection for unread mention notifications
       const notificationsRef = collection(db, 'notifications');
       const mentionsQuery = query(
@@ -892,7 +894,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
         where('read', '==', false),
         limit(1)
       );
-      
+
       const snapshot = await getDocs(mentionsQuery);
       setHasUnreadMentions(!snapshot.empty);
     } catch (error) {
@@ -901,14 +903,14 @@ Architecture: ${deviceInfo.deviceArchitecture}
       setIsCheckingMentions(false);
     }
   };
-  
+
   // Check for unread mentions when the screen loads
   useEffect(() => {
     checkUnreadMentions();
-    
+
     // Set up an interval to periodically check for new mentions
     const mentionsInterval = setInterval(checkUnreadMentions, 60000); // Check every minute
-    
+
     return () => {
       clearInterval(mentionsInterval);
     };
@@ -925,10 +927,10 @@ Architecture: ${deviceInfo.deviceArchitecture}
           headerTintColor: '#fff',
         }}
       />
-      
+
       {/* Update Modal */}
       {updateInfo && (
-        <UpdateModal 
+        <UpdateModal
           visible={showUpdateModal}
           updateInfo={updateInfo}
           onClose={() => setShowUpdateModal(false)}
@@ -936,17 +938,17 @@ Architecture: ${deviceInfo.deviceArchitecture}
           simulatedArch={simulatedArchitecture}
         />
       )}
-      
+
       {/* What's New Modal */}
       {whatsNewInfo && (
-        <WhatsNewModal 
+        <WhatsNewModal
           visible={showWhatsNewModal}
           whatsNewInfo={whatsNewInfo}
           onClose={() => setShowWhatsNewModal(false)}
         />
       )}
-      
-      <ScrollView 
+
+      <ScrollView
         ref={scrollViewRef}
         style={styles.container}
       >
@@ -967,11 +969,11 @@ Architecture: ${deviceInfo.deviceArchitecture}
                 <Text style={styles.appVersion}>Version {appVersion}</Text>
               </View>
               <View style={styles.socialButtons}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.discordButton}
                   onPress={() => openLink('https://anisurge.me/discord')}
                 >
-                  <Image 
+                  <Image
                     source={require('../assets/discord-white.png')}
                     style={styles.socialIcon}
                     resizeMode="contain"
@@ -1003,11 +1005,11 @@ Architecture: ${deviceInfo.deviceArchitecture}
                 <Text style={styles.appVersion}>Version {appVersion}</Text>
               </View>
               <View style={styles.socialButtons}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.discordButton}
                   onPress={() => openLink('https://anisurge.me/discord')}
                 >
-                  <Image 
+                  <Image
                     source={require('../assets/discord-white.png')}
                     style={styles.socialIcon}
                     resizeMode="contain"
@@ -1031,8 +1033,8 @@ Architecture: ${deviceInfo.deviceArchitecture}
             </Text>
           </View>
           {/* Schedule Page Button */}
-          <TouchableOpacity 
-            style={[styles.profileButton, {marginBottom: 16}]}
+          <TouchableOpacity
+            style={[styles.profileButton, { marginBottom: 16 }]}
             onPress={() => router.push('/schedule')}
           >
             <MaterialIcons name="event" size={24} color="#fff" />
@@ -1044,7 +1046,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Appearance</Text>
           <View style={styles.infoCard}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.profileButton}
               onPress={() => router.push('/theme-settings')}
             >
@@ -1062,7 +1064,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>User Account</Text>
           <View style={styles.infoCard}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.profileButton}
               onPress={() => router.push('/profile')}
             >
@@ -1071,8 +1073,8 @@ Architecture: ${deviceInfo.deviceArchitecture}
                 {auth.currentUser ? "View Profile" : "Login / Register"}
               </Text>
             </TouchableOpacity>
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.profileButton}
               onPress={() => router.push('/importExport')}
             >
@@ -1080,7 +1082,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
               <Text style={styles.profileButtonText}>Import/Export List</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.profileButton}
               onPress={() => router.push('/notifications')}
             >
@@ -1095,9 +1097,9 @@ Architecture: ${deviceInfo.deviceArchitecture}
           <Text style={styles.sectionTitle}>Support Development</Text>
           <View style={styles.donationCard}>
             <Text style={styles.donationText}>
-              If you enjoy using {APP_CONFIG.APP_NAME}, please consider supporting the development. Your donations help keep the app free and ad-free!
+              If you enjoy using {APP_CONFIG.APP_NAME}, please consider supporting the development. Your donations help keep the app free!
             </Text>
-            
+
             <View style={styles.premiumFeaturesContainer}>
               <Text style={styles.premiumFeaturesTitle}>Premium Benefits:</Text>
               <View style={styles.premiumFeatureItem}>
@@ -1113,7 +1115,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
                 <Text style={styles.premiumFeatureText}>Unlimited Comments (No Rate Limits)</Text>
               </View>
             </View>
-            
+
             <View style={styles.donationButtonsContainer}>
               {checkingPremium ? (
                 <View style={styles.loadingContainer}>
@@ -1121,7 +1123,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
                   <Text style={styles.loadingText}>Checking premium status...</Text>
                 </View>
               ) : !hasPremium ? (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.premiumButton}
                   onPress={handlePremiumUpgrade}
                 >
@@ -1134,8 +1136,8 @@ Architecture: ${deviceInfo.deviceArchitecture}
                   <Text style={styles.premiumStatusText}>You have Premium access!</Text>
                 </View>
               )}
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={styles.donateButton}
                 onPress={handleDonate}
               >
@@ -1150,17 +1152,17 @@ Architecture: ${deviceInfo.deviceArchitecture}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Support & Feedback</Text>
           <View style={styles.infoCard}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.supportButton}
               onPress={() => router.push('/gallery')}
             >
               <MaterialIcons name="photo-library" size={24} color="#fff" style={styles.buttonIcon} />
               <Text style={styles.supportButtonText}>Gallery</Text>
             </TouchableOpacity>
-            
+
             <SectionDivider />
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.supportButton}
               onPress={() => router.push('/mentions')}
             >
@@ -1176,10 +1178,10 @@ Architecture: ${deviceInfo.deviceArchitecture}
                 ) : null}
               </View>
             </TouchableOpacity>
-            
+
             <SectionDivider />
-            
-            <TouchableOpacity 
+
+            <TouchableOpacity
               style={styles.supportButton}
               onPress={() => setIsFeedbackModalVisible(true)}
             >
@@ -1199,7 +1201,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
                 <Text style={styles.statValue}>{stats.watchedAnime}</Text>
                 <Text style={styles.statLabel}>Anime Watched</Text>
               </View>
-              
+
               <View style={styles.statItem}>
                 <MaterialIcons name="bookmark" size={24} color="#f4511e" />
                 <Text style={styles.statValue}>{stats.bookmarkedAnime}</Text>
@@ -1214,27 +1216,27 @@ Architecture: ${deviceInfo.deviceArchitecture}
           <Text style={styles.sectionTitle}>Version Information</Text>
           <View style={styles.infoCard}>
             <TouchableOpacity onPress={showVersionDetails}>
-              <InfoRow 
-                icon="info" 
-                label="App Version" 
-                value={appVersion} 
+              <InfoRow
+                icon="info"
+                label="App Version"
+                value={appVersion}
                 isLink
               />
             </TouchableOpacity>
             <SectionDivider />
             <TouchableOpacity onPress={handleShowWhatsNew} disabled={isLoadingWhatsNew}>
-              <InfoRow 
-                icon="new-releases" 
-                label="What's New" 
-                value={isLoadingWhatsNew ? "Loading..." : "View"} 
+              <InfoRow
+                icon="new-releases"
+                label="What's New"
+                value={isLoadingWhatsNew ? "Loading..." : "View"}
                 isLink
               />
             </TouchableOpacity>
             <SectionDivider />
-            <InfoRow 
-              icon="tag" 
-              label="Version Code" 
-              value={getAppVersionCode().toString()} 
+            <InfoRow
+              icon="tag"
+              label="Version Code"
+              value={getAppVersionCode().toString()}
             />
           </View>
         </View>
@@ -1248,11 +1250,11 @@ Architecture: ${deviceInfo.deviceArchitecture}
             </TouchableOpacity>
             <SectionDivider />
             <TouchableOpacity onPress={() => router.push('/notifications')}>
-              <InfoRow 
-                icon="notifications" 
-                label="Notifications" 
-                value="View" 
-                isLink 
+              <InfoRow
+                icon="notifications"
+                label="Notifications"
+                value="View"
+                isLink
               />
             </TouchableOpacity>
             <SectionDivider />
@@ -1274,22 +1276,22 @@ Architecture: ${deviceInfo.deviceArchitecture}
         <View ref={deviceInfoSectionRef} style={styles.section}>
           <Text style={styles.sectionTitle}>Device Information</Text>
           <View style={styles.infoCard}>
-            <InfoRow 
-              icon="smartphone" 
-              label="Device" 
-              value={`${Device.modelName || 'Unknown'}`} 
+            <InfoRow
+              icon="smartphone"
+              label="Device"
+              value={`${Device.modelName || 'Unknown'}`}
             />
             <SectionDivider />
-            <InfoRow 
-              icon="memory" 
-              label="Device Architecture" 
-              value={deviceInfo.deviceArchitecture} 
+            <InfoRow
+              icon="memory"
+              label="Device Architecture"
+              value={deviceInfo.deviceArchitecture}
             />
             <SectionDivider />
-            <InfoRow 
-              icon="system-update" 
-              label="Update Package Type" 
-              value={deviceInfo.detectedUrlKey} 
+            <InfoRow
+              icon="system-update"
+              label="Update Package Type"
+              value={deviceInfo.detectedUrlKey}
             />
           </View>
         </View>
@@ -1299,11 +1301,11 @@ Architecture: ${deviceInfo.deviceArchitecture}
           <Text style={styles.sectionTitle}>Data Management</Text>
           <View style={styles.infoCard}>
             <TouchableOpacity onPress={clearAppCache} disabled={clearingCache}>
-              <InfoRow 
-                icon="cleaning-services" 
-                label="Clear Cache" 
-                value={clearingCache ? "Clearing..." : "Clear"} 
-                isLink 
+              <InfoRow
+                icon="cleaning-services"
+                label="Clear Cache"
+                value={clearingCache ? "Clearing..." : "Clear"}
+                isLink
               />
             </TouchableOpacity>
           </View>
@@ -1313,22 +1315,22 @@ Architecture: ${deviceInfo.deviceArchitecture}
         <View ref={appSectionRef} style={styles.section}>
           <Text style={styles.sectionTitle}>App</Text>
           <View style={styles.socialButtonsContainer}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.discordButton}
               onPress={() => openLink('https://anisurge.me/discord')}
             >
-              <Image 
+              <Image
                 source={require('../assets/discord-white.png')}
                 style={styles.socialIcon}
                 resizeMode="contain"
               />
               <Text style={styles.socialButtonText}>Discord</Text>
             </TouchableOpacity>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.telegramButton}
               onPress={() => openLink('https://anisurge.me/telegram')}
             >
-              <Image 
+              <Image
                 source={require('../assets/telegram-white.png')}
                 style={styles.socialIcon}
                 resizeMode="contain"
@@ -1363,7 +1365,7 @@ Architecture: ${deviceInfo.deviceArchitecture}
             <SectionDivider />
             <TouchableOpacity onPress={() => openLink('https://www.buymeacoffee.com/r3ap3redit')}>
               <View style={styles.buyMeCoffeeButton}>
-                <Image 
+                <Image
                   source={{ uri: 'https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png' }}
                   style={styles.buyMeCoffeeImage}
                   resizeMode="contain"

@@ -196,6 +196,7 @@ export default function Search() {
       return '';
     }
     try {
+      // Just decode URL encoding - query now comes with original text (spaces preserved)
       return decodeURIComponent(rawQuery);
     } catch {
       return rawQuery;
@@ -248,14 +249,15 @@ export default function Search() {
     setSearchText(text);
     setCurrentPage(1);
     const trimmed = text.trim();
+    // Convert spaces to single dash, but keep existing single dashes as-is
     const apiQuery = trimmed.length > 0 ? trimmed.toLowerCase().replace(/\s+/g, '-') : undefined;
     router.setParams(apiQuery ? { query: apiQuery } : {});
   };
 
   // Add genre toggle handler
   const toggleGenre = (genreId: string) => {
-    setSelectedGenres(prev => 
-      prev.includes(genreId) 
+    setSelectedGenres(prev =>
+      prev.includes(genreId)
         ? prev.filter(id => id !== genreId)
         : [...prev, genreId]
     );
@@ -548,7 +550,7 @@ export default function Search() {
             </View>
           </LinearGradient>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.bookmarkButton}
           onPress={async () => {
             if (isBookmarked(item.id)) {
@@ -563,10 +565,10 @@ export default function Search() {
             }
           }}
         >
-          <MaterialIcons 
-            name={isBookmarked(item.id) ? "bookmark" : "bookmark-outline"} 
-            size={24} 
-            color="#f4511e" 
+          <MaterialIcons
+            name={isBookmarked(item.id) ? "bookmark" : "bookmark-outline"}
+            size={24}
+            color="#f4511e"
           />
         </TouchableOpacity>
       </View>
@@ -589,7 +591,7 @@ export default function Search() {
             autoCorrect={false}
           />
           {searchText ? (
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => handleSearch('')}
               style={styles.clearButton}
             >
@@ -597,17 +599,17 @@ export default function Search() {
             </TouchableOpacity>
           ) : null}
         </View>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.filterToggle}
           onPress={() => {
             setPendingFilters(getCurrentFilters());
             setFilterModalVisible(true);
           }}
         >
-          <MaterialIcons 
-            name="filter-list" 
-            size={24} 
-            color={Object.values(appliedFilters).some(v => v && (Array.isArray(v) ? v.length : true)) ? "#f4511e" : "#666"} 
+          <MaterialIcons
+            name="filter-list"
+            size={24}
+            color={Object.values(appliedFilters).some(v => v && (Array.isArray(v) ? v.length : true)) ? "#f4511e" : "#666"}
           />
         </TouchableOpacity>
       </View>
