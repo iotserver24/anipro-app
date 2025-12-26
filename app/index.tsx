@@ -26,7 +26,6 @@ import { notificationEmitter } from './notifications';
 // Removed import to avoid circular dependency issues
 import * as Notifications from 'expo-notifications';
 import AuthModal from '../components/AuthModal';
-import RewindWebViewModal from '../components/RewindWebViewModal';
 import { auth } from '../services/firebase';
 import * as FileSystem from 'expo-file-system';
 
@@ -251,7 +250,7 @@ export default function Home() {
   const [showStorageModal, setShowStorageModal] = useState(false);
   const [betaUpdatesEnabled, setBetaUpdatesEnabled] = useState(false);
   const [betaChecked, setBetaChecked] = useState(false);
-  const [showRewindModal, setShowRewindModal] = useState(false);
+  const [showRewindBanner, setShowRewindBanner] = useState(false);
 
   // Optimized fetch function - prioritize trending for immediate display
   const fetchAnime = async (bypassCache: boolean = false) => {
@@ -684,6 +683,17 @@ export default function Home() {
     }, 1000);
   }, []);
 
+  // Check if Rewind banner was already dismissed
+  useEffect(() => {
+    const checkRewindBanner = async () => {
+      const dismissed = await AsyncStorage.getItem('rewind_banner_dismissed');
+      if (!dismissed) {
+        setShowRewindBanner(true);
+      }
+    };
+    checkRewindBanner();
+  }, []);
+
   const handleAuthSuccess = () => {
     setShowAuthModal(false);
   };
@@ -989,57 +999,58 @@ export default function Home() {
         </View>
       </Modal>
 
-      {/* Rewind Banner */}
-      {auth.currentUser && (
-        <TouchableOpacity
-          style={{
-            marginHorizontal: 16,
-            marginVertical: 12,
-            borderRadius: 16,
-            overflow: 'hidden',
-          }}
-          onPress={() => setShowRewindModal(true)}
-          activeOpacity={0.9}
-        >
-          <LinearGradient
-            colors={['#667eea', '#764ba2', '#f4511e']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{
-              padding: 16,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-              <Text style={{ fontSize: 28, marginRight: 12 }}>✨</Text>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>
-                  Your 2025 Anime Rewind is Ready!
-                </Text>
-                <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, marginTop: 2 }}>
-                  See your year in anime
-                </Text>
-              </View>
-            </View>
-            <MaterialIcons name="arrow-forward-ios" size={20} color="#fff" />
-          </LinearGradient>
-        </TouchableOpacity>
-      )}
-
-      {/* Rewind WebView Modal */}
-      <RewindWebViewModal
-        visible={showRewindModal}
-        onClose={() => setShowRewindModal(false)}
-        userId={auth.currentUser?.uid}
-      />
-
       <ScrollView
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f4511e" />
         }
       >
+        {/* Rewind Banner - Show once */}
+        {auth.currentUser && showRewindBanner && (
+          <TouchableOpacity
+            style={{
+              marginHorizontal: 16,
+              marginTop: 12,
+              marginBottom: 8,
+              borderRadius: 16,
+              overflow: 'hidden',
+            }}
+            onPress={async () => {
+              // Hide banner permanently
+              setShowRewindBanner(false);
+              await AsyncStorage.setItem('rewind_banner_dismissed', 'true');
+              // Open Rewind in browser
+              const rewindUrl = `https://rewind.anisurge.me/rewind/${auth.currentUser?.uid}`;
+              Linking.openURL(rewindUrl);
+            }}
+            activeOpacity={0.9}
+          >
+            <LinearGradient
+              colors={['#667eea', '#764ba2', '#f4511e']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{
+                padding: 16,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                <Text style={{ fontSize: 28, marginRight: 12 }}>✨</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>
+                    Your 2025 Anime Rewind is Ready!
+                  </Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, marginTop: 2 }}>
+                    See your year in anime
+                  </Text>
+                </View>
+              </View>
+              <MaterialIcons name="arrow-forward-ios" size={20} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
+
         {/* Redesigned Trending Section */}
         <View style={styles.trendingSection}>
           <View style={styles.sectionHeader}>
