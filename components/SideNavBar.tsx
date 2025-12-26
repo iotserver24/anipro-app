@@ -510,9 +510,9 @@ function SideNavBar() {
                 <LinearGradient
                   colors={['#667eea', '#764ba2', '#f4511e']}
                   start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
+                  end={{ x: 1, y: 0 }}
                   style={{
-                    padding: 14,
+                    padding: 8,
                     flexDirection: 'row',
                     alignItems: 'center',
                   }}
@@ -525,6 +525,33 @@ function SideNavBar() {
                 </LinearGradient>
               </TouchableOpacity>
             )}
+
+            {/* Manual Farewell Popup Trigger */}
+            <TouchableOpacity
+              onPress={() => {
+                useGlobalStore.getState().setShowFarewellModal(true);
+                setIsMenuOpen(false);
+              }}
+              activeOpacity={0.7}
+              style={{
+                marginHorizontal: 14,
+                marginBottom: 20,
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: 'rgba(244, 81, 30, 0.1)',
+                paddingVertical: 8,
+                paddingHorizontal: 12,
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: 'rgba(244, 81, 30, 0.3)',
+                alignSelf: 'flex-start',
+              }}
+            >
+              <MaterialIcons name="favorite" size={16} color="#f4511e" style={{ marginRight: 6 }} />
+              <Text style={{ color: '#f4511e', fontSize: 13, fontWeight: 'bold' }}>
+                Thank You ❤️
+              </Text>
+            </TouchableOpacity>
 
             {/* Navigation items */}
             <View style={styles.navItemsContainer}>

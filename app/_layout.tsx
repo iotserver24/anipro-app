@@ -23,6 +23,7 @@ import { Tabs } from 'expo-router';
 import { NativeStackNavigationOptions } from '@react-navigation/native-stack';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import FarewellModal from '../components/FarewellModal';
 // Make sure SplashScreen is prevented from auto-hiding
 SplashScreen.preventAutoHideAsync();
 
@@ -754,6 +755,8 @@ function ThemedLayout({ onLayoutRootView }: { onLayoutRootView: () => void }) {
           {!isVideoFullscreen && !isChatPage && <ResponsiveNav />}
         </View>
       )}
+      {/* Farewell Modal for last update */}
+      <FarewellModal />
     </NavigationThemeProvider>
   );
 }

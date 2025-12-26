@@ -6,11 +6,13 @@ interface GlobalStore {
   isWatchPage: boolean;
   isChatPage: boolean;
   isMenuOpen: boolean;
+  showFarewellModal: boolean;
   setEmailVerificationStatus: (status: boolean) => void;
   setIsVideoFullscreen: (status: boolean) => void;
   setIsWatchPage: (status: boolean) => void;
   setIsChatPage: (status: boolean) => void;
   setIsMenuOpen: (status: boolean) => void;
+  setShowFarewellModal: (status: boolean) => void;
   toggleMenu: () => void;
 }
 
@@ -20,7 +22,8 @@ export const useGlobalStore = create<GlobalStore>((set) => ({
   isWatchPage: false,
   isChatPage: false,
   isMenuOpen: false,
-  
+  showFarewellModal: false,
+
   setEmailVerificationStatus: (status: boolean) => {
     set({ emailVerified: status });
   },
@@ -35,6 +38,9 @@ export const useGlobalStore = create<GlobalStore>((set) => ({
   },
   setIsMenuOpen: (status: boolean) => {
     set({ isMenuOpen: status });
+  },
+  setShowFarewellModal: (status: boolean) => {
+    set({ showFarewellModal: status });
   },
   toggleMenu: () => {
     set((state) => ({ isMenuOpen: !state.isMenuOpen }));
