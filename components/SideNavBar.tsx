@@ -4,6 +4,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { router, usePathname } from 'expo-router';
 import { useTheme } from '../hooks/useTheme';
 import { getTVFocusProps } from '../hooks/useTVRemoteHandler';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useGlobalStore } from '../store/globalStore';
 import { openDonationPage } from '../services/donationService';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -37,7 +38,7 @@ interface NavItemConfig {
 // Create a memoized nav item component to prevent unnecessary re-renders
 const NavItem = memo(({ path, name, icon, IconComponent, isActive, onPress, theme }: NavItemProps) => {
   const [pressAnim] = useState(new Animated.Value(1));
-  
+
   const handlePressIn = () => {
     Animated.timing(pressAnim, {
       toValue: 0.95,
@@ -45,7 +46,7 @@ const NavItem = memo(({ path, name, icon, IconComponent, isActive, onPress, them
       useNativeDriver: true
     }).start();
   };
-  
+
   const handlePressOut = () => {
     Animated.timing(pressAnim, {
       toValue: 1,
@@ -70,7 +71,7 @@ const NavItem = memo(({ path, name, icon, IconComponent, isActive, onPress, them
       pressRetentionOffset={{ top: 10, left: 10, bottom: 10, right: 10 }}
       {...getTVFocusProps(isActive)}
     >
-      <Animated.View style={{ 
+      <Animated.View style={{
         transform: [{ scale: pressAnim }],
         flexDirection: 'row',
         alignItems: 'center',
@@ -142,7 +143,7 @@ const toTranslucentColor = (color: string, alpha: number) => {
 function SideNavBar() {
   const { theme } = useTheme();
   const pathname = usePathname();
-  
+
   // Navigation items - organized by category
   const navItems: NavItemConfig[] = [
     // Main Navigation
@@ -253,7 +254,7 @@ function SideNavBar() {
   const [shouldRender, setShouldRender] = useState(isMenuOpen);
   const slideAnim = useRef(new Animated.Value(-250)).current; // Start off-screen
   const backdropOpacity = useRef(new Animated.Value(0)).current;
-  
+
   // Profile avatar state
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -287,7 +288,7 @@ function SideNavBar() {
       }
 
       const userDoc = await getDoc(doc(db, 'users', user.uid));
-      
+
       if (!userDoc.exists()) {
         setAvatarUrl(DEFAULT_AVATARS[0].url);
         setLoading(false);
@@ -395,7 +396,7 @@ function SideNavBar() {
     >
       <View style={styles.modalContainer}>
         {/* Backdrop overlay */}
-        <Animated.View 
+        <Animated.View
           style={[
             styles.backdrop,
             { opacity: backdropOpacity }
@@ -487,6 +488,43 @@ function SideNavBar() {
                 Version {versionLabel} (build {buildLabel})
               </Text>
             </TouchableOpacity>
+
+            {/* Rewind 2025 Special Button */}
+            {user && (
+              <TouchableOpacity
+                onPress={() => {
+                  const rewindUrl = `https://rewind.anisurge.me/rewind/${user.uid}`;
+                  import('react-native').then(({ Linking }) => {
+                    Linking.openURL(rewindUrl);
+                  });
+                  setIsMenuOpen(false);
+                }}
+                activeOpacity={0.8}
+                style={{
+                  marginHorizontal: 10,
+                  marginBottom: 16,
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                }}
+              >
+                <LinearGradient
+                  colors={['#667eea', '#764ba2', '#f4511e']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={{
+                    padding: 14,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: 20, marginRight: 10 }}>✨</Text>
+                  <Text style={{ color: '#fff', fontSize: 15, fontWeight: 'bold', flex: 1 }}>
+                    2025 Rewind
+                  </Text>
+                  <MaterialIcons name="arrow-forward-ios" size={16} color="#fff" />
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
 
             {/* Navigation items */}
             <View style={styles.navItemsContainer}>

@@ -26,6 +26,7 @@ import { notificationEmitter } from './notifications';
 // Removed import to avoid circular dependency issues
 import * as Notifications from 'expo-notifications';
 import AuthModal from '../components/AuthModal';
+import RewindWebViewModal from '../components/RewindWebViewModal';
 import { auth } from '../services/firebase';
 import * as FileSystem from 'expo-file-system';
 
@@ -193,12 +194,12 @@ const getNext1AMIST = () => {
   const ist = new Date(now.getTime() + (5.5 * 60 * 60 * 1000)); // Convert to IST
   const next1AM = new Date(ist);
   next1AM.setHours(1, 0, 0, 0);
-  
+
   // If it's past 1 AM IST, schedule for next day
   if (ist.getHours() >= 1) {
     next1AM.setDate(next1AM.getDate() + 1);
   }
-  
+
   // Convert back to local time
   return new Date(next1AM.getTime() - (5.5 * 60 * 60 * 1000));
 };
@@ -207,7 +208,7 @@ const getNext1AMIST = () => {
 const compareVersions = (v1: string, v2: string) => {
   const parts1 = v1.split('.').map(Number);
   const parts2 = v2.split('.').map(Number);
-  
+
   for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
     const num1 = parts1[i] || 0;
     const num2 = parts2[i] || 0;
@@ -250,6 +251,7 @@ export default function Home() {
   const [showStorageModal, setShowStorageModal] = useState(false);
   const [betaUpdatesEnabled, setBetaUpdatesEnabled] = useState(false);
   const [betaChecked, setBetaChecked] = useState(false);
+  const [showRewindModal, setShowRewindModal] = useState(false);
 
   // Optimized fetch function - prioritize trending for immediate display
   const fetchAnime = async (bypassCache: boolean = false) => {
@@ -259,7 +261,7 @@ export default function Home() {
       if (!bypassCache) {
         // Try loading from cache first - prioritize trending for immediate display
         const trendingRecentCache = await AsyncStorage.getItem(CACHE_KEYS.TRENDING_RECENT);
-        
+
         if (trendingRecentCache) {
           const { timestamp, data } = JSON.parse(trendingRecentCache);
           if (isTrendingRecentCacheValid(timestamp)) {
@@ -267,7 +269,7 @@ export default function Home() {
             setRecentAnime(data.recent);
             setLoading(false); // Show trending immediately
             setRefreshing(false);
-            
+
             // Load other sections in background
             Promise.all([
               AsyncStorage.getItem(CACHE_KEYS.NEW_EPISODES),
@@ -316,7 +318,7 @@ export default function Home() {
       await fetchTrendingAndRecent();
       setLoading(false); // Show trending immediately
       setRefreshing(false);
-      
+
       // Load other sections in background
       Promise.all([
         fetchNewEpisodes(),
@@ -424,47 +426,47 @@ export default function Home() {
   const checkForUpdates = async () => {
     try {
       const response = await fetch(`${APP_CONFIG.API_BASE_URL}/updates`);
-      
+
       // Check if the response is ok
       if (!response.ok) {
         throw new Error(`Failed to check for updates: ${response.status}`);
       }
-      
+
       const updateData: UpdateInfo = await response.json();
-      
+
       // Validate the required fields
       if (!updateData || !updateData.latestVersion || !updateData.downloadUrls || !updateData.downloadUrls.universal) {
         logger.error('Invalid update data received:', JSON.stringify(updateData));
         return;
       }
-      
+
       // Handle legacy format (string[] instead of ChangelogItem[])
-      if (updateData.changelog && Array.isArray(updateData.changelog) && 
-          updateData.changelog.length > 0 && typeof updateData.changelog[0] === 'string') {
+      if (updateData.changelog && Array.isArray(updateData.changelog) &&
+        updateData.changelog.length > 0 && typeof updateData.changelog[0] === 'string') {
         updateData.changelog = (updateData.changelog as unknown as string[]).map(item => ({
           type: 'text',
           content: item,
           format: 'normal'
         }));
       }
-      
+
       // Ensure aboutUpdate exists
       if (updateData.aboutUpdate === undefined) {
         updateData.aboutUpdate = '';
       }
-      
+
       // Set currentAppVersion to our actual app version (overriding any server value)
       // This ensures we're displaying the correct current version in the UI
       updateData.currentAppVersion = getAppVersion();
-      
+
       // Ensure isForced exists
       if (updateData.isForced === undefined) {
         updateData.isForced = false;
       }
-      
+
       const currentVersion = getAppVersion();
       const currentVersionCode = getAppVersionCode();
-      
+
       // Compare our actual app version with the server's latest version
       const versionComparison = compareVersions(currentVersion, updateData.latestVersion);
       if (versionComparison < 0 || (versionComparison === 0 && currentVersionCode < updateData.versionCode)) {
@@ -485,7 +487,7 @@ export default function Home() {
 
   const handleUpdate = () => {
     if (!updateInfo) return;
-    
+
     // The URL opening is now handled in the UpdateModal component
     // This function is called after the URL is opened
     logger.info('Update initiated for version:', updateInfo.latestVersion);
@@ -495,11 +497,11 @@ export default function Home() {
     try {
       // Check if the modal should be shown
       const shouldShow = await shouldShowWhatsNew();
-      
+
       if (shouldShow) {
         // Fetch the "What's New" information
         const info = await fetchWhatsNewInfo();
-        
+
         if (info) {
           setWhatsNewInfo(info);
           setShowWhatsNewModal(true);
@@ -515,25 +517,25 @@ export default function Home() {
       // Get device ID
       const deviceId = await AsyncStorage.getItem('device_id');
       if (!deviceId) return;
-      
+
       // Get locally stored read notifications
       const readIdsStr = await AsyncStorage.getItem('read_notifications');
       const readIds = readIdsStr ? JSON.parse(readIdsStr) : [];
-      
+
       // Fetch notifications from API
       const response = await fetch(`${APP_CONFIG.API_BASE_URL}/notifications`);
-      
+
       if (!response.ok) {
         throw new Error(`Failed to fetch notifications: ${response.status}`);
       }
-      
+
       const notifications = await response.json();
-      
+
       // Count unread notifications
-      const unreadCount = notifications.filter((notification: any) => 
+      const unreadCount = notifications.filter((notification: any) =>
         !readIds.includes(notification.id)
       ).length;
-      
+
       setNotificationCount(unreadCount);
       setHasUnreadNotifications(unreadCount > 0);
     } catch (error) {
@@ -544,7 +546,7 @@ export default function Home() {
   useEffect(() => {
     // Initialize watch history
     initializeHistory();
-    
+
     // Initial fetch - prioritize trending for immediate display
     fetchAnime(false);
 
@@ -555,7 +557,7 @@ export default function Home() {
     setTimeout(() => {
       checkWhatsNew();
     }, 1000);
-    
+
     // Check for unread notifications - defer to avoid blocking initial render
     setTimeout(() => {
       checkForUnreadNotifications();
@@ -595,7 +597,7 @@ export default function Home() {
     setTimeout(() => {
       checkForUpdates();
     }, 3000);
-    
+
     // Check for updates when app comes to foreground
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (nextAppState === 'active') {
@@ -743,17 +745,17 @@ export default function Home() {
   // Handle manual scroll end with improved logic
   const handleScrollEnd = useCallback((event: any) => {
     if (!trendingAnime.length) return;
-    
+
     const ITEM_WIDTH = responsive.isLandscape ? responsive.width * 0.4 : responsive.width * 0.85;
     const ITEM_SPACING = responsive.isLandscape ? 20 : 10;
-    
+
     const offsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(offsetX / (ITEM_WIDTH + ITEM_SPACING));
-    
+
     // Ensure index is within bounds
     const boundedIndex = Math.max(0, Math.min(index, trendingAnime.length - 1));
     setCurrentIndex(boundedIndex);
-    
+
     // Reset timer when user manually scrolls
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -764,9 +766,9 @@ export default function Home() {
   // Completely redesigned trending item renderer
   const renderTrendingItem = ({ item, index }: { item: AnimeItem; index: number }) => {
     const isCurrentItem = index === currentIndex;
-    
+
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[
           styles.trendingCard,
           isCurrentItem && styles.trendingCardActive
@@ -777,29 +779,29 @@ export default function Home() {
           params: { id: item.id }
         })}
       >
-        <Image 
-          source={{ uri: item.banner || item.image }} 
-          style={styles.trendingImage} 
+        <Image
+          source={{ uri: item.banner || item.image }}
+          style={styles.trendingImage}
           resizeMode="cover"
         />
-        
+
         {/* Overlay gradient for better text visibility */}
         <LinearGradient
           colors={['transparent', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.9)']}
           style={styles.trendingGradient}
         />
-        
+
         {/* Content container */}
         <View style={styles.trendingContent}>
           {/* Title and metadata */}
           <View style={styles.trendingInfo}>
             <Text style={styles.trendingTitle} numberOfLines={2}>{item.title}</Text>
-            
+
             {/* Japanese Title if available */}
             {item.japaneseTitle ? (
               <Text style={styles.japaneseTitleText} numberOfLines={1}>{item.japaneseTitle}</Text>
             ) : null}
-            
+
             <View style={styles.trendingMeta}>
               {/* Type badge */}
               {item.type ? (
@@ -807,12 +809,12 @@ export default function Home() {
                   <Text style={styles.typeBadgeText}>{item.type}</Text>
                 </View>
               ) : null}
-              
+
               {/* Year */}
               {item.releaseDate ? (
                 <Text style={styles.yearText}>{item.releaseDate}</Text>
               ) : null}
-              
+
               {/* Episodes with Sub/Dub indicators */}
               <View style={styles.episodeInfo}>
                 {item.sub && item.sub > 0 ? (
@@ -821,7 +823,7 @@ export default function Home() {
                     <Text style={styles.episodeText}>{item.sub}</Text>
                   </View>
                 ) : null}
-                
+
                 {item.dub && item.dub > 0 ? (
                   <View style={styles.langContainer}>
                     <MaterialCommunityIcons name="microphone" size={16} color="#fff" />
@@ -830,7 +832,7 @@ export default function Home() {
                 ) : null}
               </View>
             </View>
-            
+
             {/* Genres */}
             {item.genres && item.genres.length > 0 ? (
               <View style={styles.genreContainer}>
@@ -849,7 +851,7 @@ export default function Home() {
 
   const renderAnimeCard = useCallback(({ item }: { item: AnimeItem }) => (
     <View style={styles.animeCardContainer}>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.animeCard}
         onPress={() => router.push({
           pathname: "/anime/[id]",
@@ -867,7 +869,7 @@ export default function Home() {
           </View>
         </LinearGradient>
       </TouchableOpacity>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.bookmarkButton}
         onPress={async () => {
           if (isBookmarked(item.id)) {
@@ -882,10 +884,10 @@ export default function Home() {
           }
         }}
       >
-        <MaterialIcons 
-          name={isBookmarked(item.id) ? "bookmark" : "bookmark-outline"} 
-          size={24} 
-          color="#f4511e" 
+        <MaterialIcons
+          name={isBookmarked(item.id) ? "bookmark" : "bookmark-outline"}
+          size={24}
+          color="#f4511e"
         />
       </TouchableOpacity>
     </View>
@@ -910,13 +912,13 @@ export default function Home() {
 
   return (
     <View style={[styles.container, { backgroundColor: hasBackgroundMedia ? 'transparent' : theme.colors.background }]}>
-      <AuthModal 
+      <AuthModal
         isVisible={showAuthModal}
         onClose={() => setShowAuthModal(false)}
         onAuthSuccess={handleAuthSuccess}
       />
       {betaChecked && showUpdateBanner && updateInfo && (
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.updateBanner}
           onPress={() => setShowUpdateModal(true)}
         >
@@ -935,10 +937,10 @@ export default function Home() {
           <MaterialIcons name="arrow-forward" size={24} color="#fff" />
         </TouchableOpacity>
       )}
-      
+
       {/* Notification Banner */}
       {hasUnreadNotifications && (
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.notificationBanner}
           onPress={() => router.push('/notifications')}
         >
@@ -949,10 +951,10 @@ export default function Home() {
           <MaterialIcons name="arrow-forward" size={24} color="#fff" />
         </TouchableOpacity>
       )}
-      
+
       {/* Update Modal */}
       {betaChecked && updateInfo && (
-        <UpdateModal 
+        <UpdateModal
           visible={showUpdateModal}
           updateInfo={updateInfo}
           onClose={() => setShowUpdateModal(false)}
@@ -960,33 +962,79 @@ export default function Home() {
           simulatedArch={null}
         />
       )}
-      
+
       {/* What's New Modal */}
       {whatsNewInfo && (
-        <WhatsNewModal 
+        <WhatsNewModal
           visible={showWhatsNewModal}
           whatsNewInfo={whatsNewInfo}
           onClose={() => setShowWhatsNewModal(false)}
         />
       )}
-      
+
       <Modal visible={showStorageModal} transparent animationType="fade">
-        <View style={{flex:1,backgroundColor:'rgba(0,0,0,0.7)',justifyContent:'center',alignItems:'center'}}>
-          <View style={{backgroundColor:'#222',padding:24,borderRadius:12,width:'85%',alignItems:'center'}}>
-            <Text style={{color:'#FFD700',fontWeight:'bold',fontSize:18,marginBottom:12}}>Storage Permission Needed</Text>
-            <Text style={{color:'#fff',fontSize:15,marginBottom:18,textAlign:'center'}}>To save files locally (exports, downloads, etc), please create a folder and grant permission. You can skip for now and set it later from your profile.</Text>
-            <View style={{flexDirection:'row',justifyContent:'space-between',width:'100%'}}>
-              <TouchableOpacity style={{flex:1,backgroundColor:'#2196F3',padding:12,borderRadius:8,marginRight:8,alignItems:'center'}} onPress={handleChooseFolder}>
-                <Text style={{color:'#fff',fontWeight:'bold'}}>Choose Folder</Text>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' }}>
+          <View style={{ backgroundColor: '#222', padding: 24, borderRadius: 12, width: '85%', alignItems: 'center' }}>
+            <Text style={{ color: '#FFD700', fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>Storage Permission Needed</Text>
+            <Text style={{ color: '#fff', fontSize: 15, marginBottom: 18, textAlign: 'center' }}>To save files locally (exports, downloads, etc), please create a folder and grant permission. You can skip for now and set it later from your profile.</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+              <TouchableOpacity style={{ flex: 1, backgroundColor: '#2196F3', padding: 12, borderRadius: 8, marginRight: 8, alignItems: 'center' }} onPress={handleChooseFolder}>
+                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Choose Folder</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={{flex:1,backgroundColor:'#444',padding:12,borderRadius:8,alignItems:'center'}} onPress={handleCancelStorageModal}>
-                <Text style={{color:'#fff',fontWeight:'bold'}}>Cancel</Text>
+              <TouchableOpacity style={{ flex: 1, backgroundColor: '#444', padding: 12, borderRadius: 8, alignItems: 'center' }} onPress={handleCancelStorageModal}>
+                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-      
+
+      {/* Rewind Banner */}
+      {auth.currentUser && (
+        <TouchableOpacity
+          style={{
+            marginHorizontal: 16,
+            marginVertical: 12,
+            borderRadius: 16,
+            overflow: 'hidden',
+          }}
+          onPress={() => setShowRewindModal(true)}
+          activeOpacity={0.9}
+        >
+          <LinearGradient
+            colors={['#667eea', '#764ba2', '#f4511e']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              padding: 16,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+              <Text style={{ fontSize: 28, marginRight: 12 }}>✨</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>
+                  Your 2025 Anime Rewind is Ready!
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 13, marginTop: 2 }}>
+                  See your year in anime
+                </Text>
+              </View>
+            </View>
+            <MaterialIcons name="arrow-forward-ios" size={20} color="#fff" />
+          </LinearGradient>
+        </TouchableOpacity>
+      )}
+
+      {/* Rewind WebView Modal */}
+      <RewindWebViewModal
+        visible={showRewindModal}
+        onClose={() => setShowRewindModal(false)}
+        userId={auth.currentUser?.uid}
+      />
+
       <ScrollView
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#f4511e" />
@@ -997,7 +1045,7 @@ export default function Home() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Trending Now</Text>
           </View>
-          
+
           {loading ? (
             <ActivityIndicator size="large" color="#f4511e" />
           ) : trendingAnime && trendingAnime.length > 0 ? (
@@ -1009,9 +1057,9 @@ export default function Home() {
                 renderItem={({ item, index }) => {
                   const ITEM_WIDTH = responsive.isLandscape ? responsive.width * 0.4 : responsive.width * 0.85;
                   const ITEM_SPACING = responsive.isLandscape ? 20 : 10;
-                  
+
                   return (
-                    <View style={{ 
+                    <View style={{
                       width: ITEM_WIDTH,
                       marginHorizontal: ITEM_SPACING / 2, // Half spacing on each side
                     }}>
@@ -1037,8 +1085,8 @@ export default function Home() {
                   };
                 }}
                 contentContainerStyle={{
-                  paddingHorizontal: responsive.isLandscape ? 
-                    (responsive.width - responsive.width * 0.4) / 2 - 10 : 
+                  paddingHorizontal: responsive.isLandscape ?
+                    (responsive.width - responsive.width * 0.4) / 2 - 10 :
                     (responsive.width - responsive.width * 0.85) / 2 - 5
                 }}
                 initialScrollIndex={0}
@@ -1055,7 +1103,7 @@ export default function Home() {
                   });
                 }}
               />
-              
+
               {/* Optional: Visual indicator for position/total */}
               <View style={styles.carouselIndicator}>
                 <Text style={styles.carouselIndicatorText}>
@@ -1188,8 +1236,8 @@ const createThemedStyles = (theme: any, responsive: any) => StyleSheet.create({
     color: theme.colors.text,
   },
   trendingListContainer: {
-    paddingHorizontal: responsive.isLandscape ? 
-      (responsive.width - responsive.width * 0.4) / 2 : 
+    paddingHorizontal: responsive.isLandscape ?
+      (responsive.width - responsive.width * 0.4) / 2 :
       (responsive.width - responsive.width * 0.85) / 2
   },
   trendingCard: {
